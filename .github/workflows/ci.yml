@@ -24,3 +24,25 @@ jobs:
       # No --nologo: in Microsoft.Testing.Platform mode it is forwarded to the
       # test executable, which rejects it (exit 5). See build/test.sh.
       - run: dotnet test --solution StrangeSharpTerm.slnx -c Release --no-build
+
+  # The real acceptance gate: an unprivileged sshd on loopback, driven through
+  # stctl. It needs no Docker and no admin rights on macOS; on Windows it installs
+  # the OpenSSH server capability if the image lacks it.
+  integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Integration test (macOS)
+        if: runner.os == 'macOS'
+        run: ./build/integration-test.sh
+      - name: Integration test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./build/integration-test.ps1
