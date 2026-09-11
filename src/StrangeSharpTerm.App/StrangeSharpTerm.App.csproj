@@ -5,7 +5,6 @@
     <AssemblyName>StrangeSharpTerm</AssemblyName>
     <RootNamespace>StrangeSharpTerm.App</RootNamespace>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
-    <ApplicationIcon Condition="'$(OS)' == 'Windows_NT'">../../build/icon/strangesharpterm.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

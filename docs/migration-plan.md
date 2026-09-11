@@ -241,7 +241,7 @@ Deliberately deferred to M8: MSIX or installer, Authenticode signing, and dedica
 
 Each is independently demonstrable; nothing is merged that cannot be run.
 
-**M0 — Skeleton. Done on macOS; three items open.** Repo, solution layout, CI
+**M0 — Skeleton. Done on macOS; two items open.** Repo, solution layout, CI
 workflow, reference material copied across. Both spikes ran green
 against a real sshd on loopback (`spikes/`, and `docs/adr/0002`):
 
@@ -259,11 +259,11 @@ by SHA-256, and a host key fingerprint matching `ssh-keygen -lf` exactly.
 
 Still open, in order:
 
-1. **The Windows build fails today.** `StrangeSharpTerm.App.csproj` sets
-   `ApplicationIcon` to `build/icon/strangesharpterm.ico` when building on Windows, and
-   that file was never committed. Forcing the condition on macOS (`-p:OS=Windows_NT`)
-   reproduces it: Avalonia's `GenerateAvaloniaResourcesTask` throws
-   `FileNotFoundException`. Commit an icon, or drop the property until M8.
+1. ~~**The Windows build failed.**~~ **Fixed.** `StrangeSharpTerm.App.csproj` pointed
+   `ApplicationIcon` at `build/icon/strangesharpterm.ico` on Windows, and that file was
+   never committed. Forcing the condition on macOS (`-p:OS=Windows_NT`) reproduced it:
+   Avalonia's `GenerateAvaloniaResourcesTask` threw `FileNotFoundException`. The
+   property is removed; the Windows icon comes back with packaging in M8.
 2. **CI has never run.** The workflow exists, but the repository has no GitHub remote
    yet, so "builds on both OSes" has only been observed on macOS. Once pushed, get one
    green run on `macos-latest` and `windows-latest` before any M1 work merges.
