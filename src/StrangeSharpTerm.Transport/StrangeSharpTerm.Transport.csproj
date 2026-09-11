@@ -5,6 +5,11 @@
     <PackageReference Include="SshNet.Agent" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The probe's section parsers are pinned by tests without being public API. -->
+    <InternalsVisibleTo Include="StrangeSharpTerm.Transport.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../StrangeSharpTerm.Model/StrangeSharpTerm.Model.csproj" />
     <ProjectReference Include="../StrangeSharpTerm.Security/StrangeSharpTerm.Security.csproj" />
   </ItemGroup>
