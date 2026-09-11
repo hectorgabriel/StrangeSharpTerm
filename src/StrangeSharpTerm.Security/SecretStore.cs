@@ -36,14 +36,23 @@ public sealed class SecretStoreException(string message, Exception? inner = null
 /// </summary>
 public sealed class PlatformSecretStore : ISecretStore
 {
-    public const string DefaultService = "dev.strangeterm.credentials";
+    /// <summary>
+    /// What a secret is filed under.
+    ///
+    /// macOS keeps the Swift app's service name, so its keychain items are the
+    /// same generic passwords and a migrating user's saved secrets keep working.
+    /// Windows Credential Manager is addressed by URL through this library and
+    /// throws on a name that is not a URI, so there it gets a URI-shaped one.
+    /// </summary>
+    public static string DefaultService { get; } =
+        OperatingSystem.IsMacOS() ? "dev.strangeterm.credentials" : "strangesharpterm://credentials";
 
     private readonly ICredentialStore _store;
     private readonly string _service;
 
-    public PlatformSecretStore(string service = DefaultService, string @namespace = "strangesharpterm")
+    public PlatformSecretStore(string? service = null, string @namespace = "strangesharpterm")
     {
-        _service = service;
+        _service = service ?? DefaultService;
         try
         {
             _store = CredentialManager.Create(@namespace);

@@ -7,7 +7,13 @@ namespace StrangeSharpTerm.Security.Tests;
 /// </summary>
 public class SecretStoreTests
 {
-    private static PlatformSecretStore Store() => new($"dev.strangeterm.tests.{Guid.NewGuid():N}");
+    /// <summary>
+    /// A service name of its own per test, shaped the way each platform's store
+    /// requires: Windows Credential Manager addresses credentials by URL.
+    /// </summary>
+    private static PlatformSecretStore Store() => new(OperatingSystem.IsMacOS()
+        ? $"dev.strangeterm.tests.{Guid.NewGuid():N}"
+        : $"strangesharpterm://tests/{Guid.NewGuid():N}");
 
     [Fact]
     public void ASecretRoundTrips()
