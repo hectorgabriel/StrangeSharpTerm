@@ -88,6 +88,15 @@ try {
     $released = if ($forwardOutput -match 'released=(\w+)') { $Matches[1] } else { '' }
     Check 'the forward released its port' $released 'yes'
 
+    Write-Host "`nterminal:"
+    # A real pty on the server, interpreted by our own engine: the only way to
+    # assert on what a terminal actually shows.
+    Run terminal $target --run "echo MARKER_42" --expect MARKER_42 | Out-Null
+    Check 'the terminal renders what the shell prints' `
+        $(if ($LASTEXITCODE -eq 0) { 'rendered' } else { 'missing' }) 'rendered'
+    Run terminal $target --resize 120x40 --run "mode con" --expect 120 | Out-Null
+    Check 'resize reaches the remote pty' $(if ($LASTEXITCODE -eq 0) { '120' } else { 'other' }) '120'
+
     Write-Host "`nsftp:"
     $sandbox = Join-Path $work 'remote'
     New-Item -ItemType Directory -Path $sandbox | Out-Null
