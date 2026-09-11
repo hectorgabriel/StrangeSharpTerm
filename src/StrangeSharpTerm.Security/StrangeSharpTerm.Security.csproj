@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Devlooped.CredentialManager" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../StrangeSharpTerm.Model/StrangeSharpTerm.Model.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>StrangeSharpTerm</AssemblyName>
+    <RootNamespace>StrangeSharpTerm.App</RootNamespace>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationIcon Condition="'$(OS)' == 'Windows_NT'">../../build/icon/strangesharpterm.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../StrangeSharpTerm.Assist/StrangeSharpTerm.Assist.csproj" />
+    <ProjectReference Include="../StrangeSharpTerm.Mcp/StrangeSharpTerm.Mcp.csproj" />
+    <ProjectReference Include="../StrangeSharpTerm.Model/StrangeSharpTerm.Model.csproj" />
+    <ProjectReference Include="../StrangeSharpTerm.Security/StrangeSharpTerm.Security.csproj" />
+    <ProjectReference Include="../StrangeSharpTerm.Store/StrangeSharpTerm.Store.csproj" />
+    <ProjectReference Include="../StrangeSharpTerm.Terminal/StrangeSharpTerm.Terminal.csproj" />
+    <ProjectReference Include="../StrangeSharpTerm.Transport/StrangeSharpTerm.Transport.csproj" />
+  </ItemGroup>
+</Project>

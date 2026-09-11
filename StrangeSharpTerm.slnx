@@ -1,0 +1,22 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/stctl/stctl.csproj" />
+    <Project Path="src/StrangeSharpTerm.App/StrangeSharpTerm.App.csproj" />
+    <Project Path="src/StrangeSharpTerm.Assist/StrangeSharpTerm.Assist.csproj" />
+    <Project Path="src/StrangeSharpTerm.Mcp/StrangeSharpTerm.Mcp.csproj" />
+    <Project Path="src/StrangeSharpTerm.Model/StrangeSharpTerm.Model.csproj" />
+    <Project Path="src/StrangeSharpTerm.Security/StrangeSharpTerm.Security.csproj" />
+    <Project Path="src/StrangeSharpTerm.Store/StrangeSharpTerm.Store.csproj" />
+    <Project Path="src/StrangeSharpTerm.Terminal/StrangeSharpTerm.Terminal.csproj" />
+    <Project Path="src/StrangeSharpTerm.Transport/StrangeSharpTerm.Transport.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/StrangeSharpTerm.Assist.Tests/StrangeSharpTerm.Assist.Tests.csproj" />
+    <Project Path="tests/StrangeSharpTerm.Mcp.Tests/StrangeSharpTerm.Mcp.Tests.csproj" />
+    <Project Path="tests/StrangeSharpTerm.Model.Tests/StrangeSharpTerm.Model.Tests.csproj" />
+    <Project Path="tests/StrangeSharpTerm.Security.Tests/StrangeSharpTerm.Security.Tests.csproj" />
+    <Project Path="tests/StrangeSharpTerm.Store.Tests/StrangeSharpTerm.Store.Tests.csproj" />
+    <Project Path="tests/StrangeSharpTerm.Terminal.Tests/StrangeSharpTerm.Terminal.Tests.csproj" />
+    <Project Path="tests/StrangeSharpTerm.Transport.Tests/StrangeSharpTerm.Transport.Tests.csproj" />
+  </Folder>
+</Solution>

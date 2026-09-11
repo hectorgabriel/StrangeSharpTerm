@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    # Both targets, every time. The whole point of the move off Swift is that
+    # Windows is a first-class target; a macOS-only CI would let it rot.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore StrangeSharpTerm.slnx
+      - run: dotnet build StrangeSharpTerm.slnx -c Release --no-restore --nologo
+      # No --nologo: in Microsoft.Testing.Platform mode it is forwarded to the
+      # test executable, which rejects it (exit 5). See build/test.sh.
+      - run: dotnet test --solution StrangeSharpTerm.slnx -c Release --no-build

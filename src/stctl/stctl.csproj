@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>StrangeSharpTerm.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../StrangeSharpTerm.Model/StrangeSharpTerm.Model.csproj" />
+    <ProjectReference Include="../StrangeSharpTerm.Security/StrangeSharpTerm.Security.csproj" />
+    <ProjectReference Include="../StrangeSharpTerm.Store/StrangeSharpTerm.Store.csproj" />
+    <ProjectReference Include="../StrangeSharpTerm.Transport/StrangeSharpTerm.Transport.csproj" />
+  </ItemGroup>
+</Project>

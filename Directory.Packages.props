@@ -1,0 +1,52 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <!--
+    Every version is pinned here, in exactly one place, and deliberately.
+    The Swift project pinned SwiftTerm with exactVersion for the same reason:
+    the generated project file was not in version control, so the pin was the
+    only record of what had actually been tested. Here that record is this file.
+    Bump on purpose.
+  -->
+
+  <ItemGroup Label="UI">
+    <PackageVersion Include="Avalonia" Version="12.1.2" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.1.2" />
+    <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.2" />
+    <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.2" />
+    <PackageVersion Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
+    <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
+  <ItemGroup Label="Terminal">
+    <!--
+      XTerm.NET is the headless VT100/ANSI engine: byte-fed and decoupled from
+      any pty, which is exactly what lets an SSH channel drive it directly.
+      Iciclecreek is an Avalonia renderer over it, under evaluation in
+      spikes/terminal. See docs/adr/0002.
+    -->
+    <PackageVersion Include="XTerm.NET" Version="2.0.2" />
+    <PackageVersion Include="Iciclecreek.Avalonia.Terminal" Version="4.0.2" />
+  </ItemGroup>
+
+  <ItemGroup Label="Transport">
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
+    <PackageVersion Include="SshNet.Agent" Version="2026.0.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Platform">
+    <!-- Git Credential Manager's store: macOS Keychain, Windows Credential Manager. -->
+    <PackageVersion Include="Devlooped.CredentialManager" Version="2.7.0" />
+    <PackageVersion Include="ModelContextProtocol.Core" Version="2.2.0" />
+    <PackageVersion Include="System.CommandLine" Version="2.0.12" />
+  </ItemGroup>
+
+  <ItemGroup Label="Test">
+    <PackageVersion Include="xunit.v3" Version="4.0.0" />
+    <!-- Shouldly, not FluentAssertions: FluentAssertions moved to a paid licence at v8. -->
+    <PackageVersion Include="Shouldly" Version="4.3.0" />
+  </ItemGroup>
+</Project>

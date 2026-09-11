@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../StrangeSharpTerm.Assist/StrangeSharpTerm.Assist.csproj" />
+  </ItemGroup>
+</Project>

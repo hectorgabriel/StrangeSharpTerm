@@ -1,0 +1,10 @@
+bin/
+obj/
+*.user
+.vs/
+.idea/
+.DS_Store
+artifacts/
+publish/
+*.received.*
+Signing.local.props
