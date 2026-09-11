@@ -53,32 +53,36 @@ packaging scripts across. That README is the actual specification.
 | Concern | Choice |
 |---|---|
 | UI | **Avalonia 12** on **.NET 10** (`net10.0`), `osx-arm64`, `osx-x64`, `win-x64`, `win-arm64` |
-| SSH / SFTP / tunnels | **SSH.NET** (`Renci.SshNet`, 2026.0.0) |
-| ssh-agent auth | **SshNet.Agent** (OpenSSH agent + Pageant) — spike first, see Risks |
+| SSH / SFTP / tunnels | **SSH.NET** 2026.0.0 (package `SSH.NET`, namespace `Renci.SshNet`) |
+| ssh-agent auth | **SshNet.Agent** 2026.0.0 (OpenSSH agent + Pageant) — proven on macOS, Windows still open, see Risks |
 | Terminal emulation | **XTerm.NET** (MIT, headless VT100/ANSI engine, byte-fed) |
 | Terminal rendering | **Iciclecreek.Avalonia.Terminal** if its `AttachConnection(IPtyConnection)` accepts a shim; else own Avalonia control over XTerm.NET |
 | Secrets | **Devlooped.CredentialManager** (Git Credential Manager's store: macOS Keychain, Windows Credential Manager) |
 | MCP client | **ModelContextProtocol.Core** 2.2.0 (official C# SDK) |
 | LLM HTTP | Raw `HttpClient` — keep the current no-SDK stance |
 | MVVM | `CommunityToolkit.Mvvm` source generators |
-| Tests | xUnit + FluentAssertions |
-| CI | GitHub Actions — `macos-latest` + `windows-latest`. There is none today; add it. |
+| Tests | xUnit v3 + Shouldly on Microsoft.Testing.Platform. Not FluentAssertions: it moved to a paid licence at v8. |
+| CI | GitHub Actions — `macos-latest` + `windows-latest` on every push and PR. See "Working rules". |
+
+Exact versions live in `Directory.Packages.props`. That file, not this table, is the
+record of what was tested.
 
 ## Solution layout
 
 ```
-StrangeTerm.sln
-  src/StrangeTerm.Model/        ← STModel          (pure value types)
-  src/StrangeTerm.Store/        ← STStore          (inventory JSON, ssh_config parser)
-  src/StrangeTerm.Security/     ← STSecurity       (known_hosts, credential store)
-  src/StrangeTerm.Transport/    ← STTransport      (SSH.NET connection pool, probes)
-  src/StrangeTerm.Assist/       ← STAssist         (providers, tool loop, CommandPolicy)
-  src/StrangeTerm.Mcp/          ← STMCP            (thin wrapper over the MCP SDK)
-  src/StrangeTerm.Terminal/     ←                  (new: XTerm.NET ↔ SSH channel glue)
-  src/StrangeTerm.App/          ← App/             (Avalonia views + view models)
-  src/stctl/                    ← stctl            (headless driver)
-  tests/…                       ← one per src project
-  build/                        ← packaging scripts
+StrangeSharpTerm.slnx
+  src/StrangeSharpTerm.Model/        ← STModel      (pure value types)
+  src/StrangeSharpTerm.Store/        ← STStore      (inventory JSON, ssh_config parser)
+  src/StrangeSharpTerm.Security/     ← STSecurity   (known_hosts, credential store)
+  src/StrangeSharpTerm.Transport/    ← STTransport  (SSH.NET connection pool, probes)
+  src/StrangeSharpTerm.Assist/       ← STAssist     (providers, tool loop, CommandPolicy)
+  src/StrangeSharpTerm.Mcp/          ← STMCP        (thin wrapper over the MCP SDK)
+  src/StrangeSharpTerm.Terminal/     ←              (new: XTerm.NET ↔ SSH channel glue)
+  src/StrangeSharpTerm.App/          ← App/         (Avalonia views + view models)
+  src/stctl/                         ← stctl        (headless driver)
+  tests/…                            ← one per library project
+  spikes/                            ← throwaway risk answers, outside the solution
+  build/                             ← build, test, and local sshd scripts; packaging later
 ```
 
 ## Module-by-module map
@@ -186,12 +190,59 @@ What needs real design work:
   that only dodges a renderer limitation.
 - **Delete** `MountManager.swift` (78) and `AgentRegistrar.swift` (83).
 
+## Platform strategy: macOS first, Windows always
+
+Day-to-day development and manual testing happen on macOS, because the Swift app —
+the parity reference — only runs there. Windows is **not** a later phase. It is the
+first reason for the rewrite, and a Windows pass after parity would find its
+design-shaping problems after the design has set. Three rules:
+
+1. **CI is the Windows baseline.** Every push builds and tests on `windows-latest`. A
+   red Windows job is a failure, never "fix later".
+2. **Design-shaping Windows questions are answered in the milestone they shape**, and
+   each answer is recorded as an ADR:
+
+| Windows question | Why it cannot wait | Closed in |
+|---|---|---|
+| ssh-agent over a named pipe (`\\.\pipe\openssh-ssh-agent`) | Agent auth is the preferred credential method; if `SshNet.Agent` fails here, the credential path changes | M2, before it ships |
+| Paths, key-file permissions, CRLF in `ssh_config` | Cheap as test cases while porting, tedious to retrofit | M1 (store, parser), M2 (known_hosts, keys) |
+| Running sshd for tests | `build/local-sshd.sh` is POSIX `sh`; the integration gate must run on both OSes | M2 |
+| Terminal keyboard input: Ctrl/Alt sequences, AltGr, IME | Verified on macOS only; it lives in the control's input layer, which M3 builds on | Start of M3 — run `spikes/TerminalSpike` on Windows first |
+| Title bar, menu bar, ⌘ vs Ctrl shortcuts | The hidden title bar and its hard-coded spacers shape the M4 layout | Start of M4 |
+
+3. **Some checks need a Windows desktop, not a runner.** CI can cover the agent pipe;
+   keyboard input and window chrome need a person at a Windows machine or VM. A
+   Windows ARM VM on Apple Silicon is enough for that; `win-x64` stays covered by CI.
+
+Deliberately deferred to M8: MSIX or installer, Authenticode signing, and dedicated
+`win-arm64` testing.
+
+## Working rules
+
+- **One branch per milestone, merged by pull request**, so CI gates the merge rather
+  than reporting after the fact. Branch protection on `main` requires both OS jobs.
+- **A milestone is done when** its CI jobs are green on both OSes *and* its manual
+  checks are recorded in the milestone PR's description.
+- **CI grows with the milestones:**
+
+| Milestone | CI adds | Manual checks before "done" |
+|---|---|---|
+| M1 | Model and Store suites | Round-trip the real `inventory.json`; import the real `~/.ssh/config` |
+| M2 | Integration job: loopback sshd + ported integration test, both OSes | Agent auth on Windows (may itself be a CI job) |
+| M3 | `--dump-terminal` assertions | Typing test in a real Windows window |
+| M4–M5 | Headless UI driver; `--render` screenshots | Screenshot diff against `docs/reference/screenshots/` |
+| M6–M7 | Assist and MCP suites | One real assistant turn; one real MCP server |
+| M8 | Packaging workflow: signing, notarization | Parity review; one real host per OS |
+
+- **Real user data never enters the repo.** Fixtures derived from a real
+  `inventory.json` or `~/.ssh/config` are sanitised first.
+
 ## Milestones
 
 Each is independently demonstrable; nothing is merged that cannot be run.
 
-**M0 — Skeleton. Done, except the Windows half of spike (b).** Repo, solution
-layout, CI on both OSes, reference material copied across. Both spikes ran green
+**M0 — Skeleton. Done on macOS; three items open.** Repo, solution layout, CI
+workflow, reference material copied across. Both spikes ran green
 against a real sshd on loopback (`spikes/`, and `docs/adr/0002`):
 
 - *(a)* `Iciclecreek.Avalonia.Terminal` drives cleanly from an SSH.NET
@@ -206,9 +257,43 @@ The spikes also folded in most of M2's risk: one authentication across three
 execs, a working local forward that releases its port, a 700 KiB SFTP round-trip
 by SHA-256, and a host key fingerprint matching `ssh-keygen -lf` exactly.
 
-**M1 — Model + Store.** Port `STModel` and `STStore` with their 84 tests. Load a real
-`inventory.json` written by the Swift app and round-trip it byte-identically. Import a
-real `~/.ssh/config`.
+Still open, in order:
+
+1. **The Windows build fails today.** `StrangeSharpTerm.App.csproj` sets
+   `ApplicationIcon` to `build/icon/strangesharpterm.ico` when building on Windows, and
+   that file was never committed. Forcing the condition on macOS (`-p:OS=Windows_NT`)
+   reproduces it: Avalonia's `GenerateAvaloniaResourcesTask` throws
+   `FileNotFoundException`. Commit an icon, or drop the property until M8.
+2. **CI has never run.** The workflow exists, but the repository has no GitHub remote
+   yet, so "builds on both OSes" has only been observed on macOS. Once pushed, get one
+   green run on `macos-latest` and `windows-latest` before any M1 work merges.
+3. **The Windows half of spike (b)**, above.
+
+**M1 — Model + Store.** Port `STModel` and `STStore` with their 84 tests — Model 44
+(Credential 9, FuzzyMatch 10, Inheritance 15, Snippet 10) and Store 40 (SSHConfig 30,
+InventoryStore 10). Model first; it depends on nothing. Load a real `inventory.json`
+written by the Swift app and round-trip it byte-identically. Import a real
+`~/.ssh/config`.
+
+Byte-identical is real work, not a formality. `InventoryStore.swift` writes with
+`JSONEncoder` and `[.prettyPrinted, .sortedKeys]`, and a real file confirms the output
+differs from `System.Text.Json`'s defaults:
+
+| Swift writes | `System.Text.Json` default |
+|---|---|
+| `"key" : value` — a space before the colon | `"key": value` |
+| keys sorted | property declaration order |
+| UUIDs uppercase | `Guid` lowercase |
+| non-ASCII and `<>&'+` unescaped | escaped unless the encoder is relaxed |
+
+Both use a 2-space indent and no trailing newline. Expect a small custom writer. Two
+behaviours the sample file could not show must be pinned with fixtures: Swift escapes
+`/` as `\/` unless `.withoutEscapingSlashes` is set, and `.sortedKeys` ordering may not
+be plain ordinal. Atomic write via `File.Replace` needs a fallback, because it requires
+the target to exist already — the first write has none.
+
+Add the Windows cases while porting: CRLF line endings in `ssh_config`, and
+`%USERPROFILE%` / `%APPDATA%` paths.
 
 **M2 — Transport.** `ConnectionPool` over SSH.NET: connect, exec, disconnect. Port
 `KnownHosts` and wire host-key verification to `HostKeyReceived` — including the rule
@@ -217,15 +302,20 @@ that `changed` **never** prompts. Credential store via `Devlooped.CredentialMana
 Rewrite `stctl` far enough to drive all of this headlessly, then port
 `Scripts/integration-test.sh` to run against the unprivileged sshd on 127.0.0.1:22022.
 That script is the real acceptance gate: it already asserts connection reuse, forward
-liveness, and a 700 KiB SFTP round-trip by SHA-256.
+liveness, and a 700 KiB SFTP round-trip by SHA-256. It becomes its own CI job on both
+OSes, which needs a Windows counterpart to `build/local-sshd.sh`. The Windows ssh-agent
+risk closes here, not later.
 
-**M3 — Terminal.** The `StrangeTerm.Terminal` control: `ShellStream` ↔ XTerm.NET,
+**M3 — Terminal.** The `StrangeSharpTerm.Terminal` control: `ShellStream` ↔ XTerm.NET,
 resize via `window-change`, 16-colour theming, scrollback read-back, broadcast
-interception, title and exit handling.
+interception, title and exit handling. `spikes/TerminalSpike/SshPtyConnection.cs` is
+the starting point. Before building on it, run the spike on a Windows desktop: keyboard
+input (Ctrl/Alt sequences, AltGr, IME) is unverified there.
 
 **M4 — App shell.** Avalonia window, sidebar, host detail, tabs/panes/splits,
 `NativeMenuBar`, command palette, theme system. The `Theme` static and its
-`.id(themeID)` redraw hack collapse into ordinary `DynamicResource`s.
+`.id(themeID)` redraw hack collapse into ordinary `DynamicResource`s. First decide, as
+an ADR, the Windows title bar, where the menu lives, and how ⌘ shortcuts map to Ctrl.
 
 **M5 — Feature panes.** SFTP browser (SSH.NET `SftpClient`), tunnels (`ForwardedPort*`),
 dashboards, credentials, snippets, all editor dialogs via `IDialogService`.
@@ -237,8 +327,8 @@ orchestrator panes.
 **M7 — MCP.** Wrap the official SDK, port the config and OAuth surface, port the 58
 tests. MCP settings and server editor UI.
 
-**M8 — Packaging.** See below. Parity review against the Swift app, then archive
-`strangeterm-swift`.
+**M8 — Packaging.** See below. Parity review against the Swift app, then archive the
+Swift `StrangeTerm` repo (it keeps its name; see Repository).
 
 ## Packaging — what actually gets easier
 
@@ -301,8 +391,9 @@ What is new:
   `--orchestrate`/`--plan-run` driver. `--dump-terminal` remains the only way to assert
   on rendered terminal content and is how M3 is proven.
 - **Snapshots**: rebuild the `--render` path on `RenderTargetBitmap` and regenerate every
-  image in `Docs/screenshots/` from the same `SampleInventory` fixtures. Diffing the new
-  screenshots against the committed Swift ones is the cheapest parity check available.
+  image the Swift app committed (copied to `docs/reference/screenshots/`) from the same
+  `SampleInventory` fixtures. Diffing the new screenshots against those is the cheapest
+  parity check available.
 - **Manual**: against one real host per platform — connect, split, broadcast, an SFTP
   edit-in-place, a tunnel, a dashboard refresh, and one assistant turn that stages a
   command without running it.
@@ -313,7 +404,9 @@ What is new:
 |---|---|
 | ~~`SshNet.Agent` is a third-party extension~~ — **half closed.** Agent auth works on macOS; the Windows named-pipe path is untested | The last open M0 item. ssh-agent is the *preferred* credential method per the README, so this must be closed before M2 ships, not after. |
 | ~~`Iciclecreek.Avalonia.Terminal` may be too coupled to `Porta.Pty`~~ — **closed.** The shim works | One limitation found: `PtyExitedEventArgs` has an internal constructor, so `ProcessExited` cannot be raised from outside. Costs nothing — we own the `SshClient` and signal session exit ourselves. See `docs/adr/0002`. |
-| Avalonia 12 released April 2026; XTerm.NET 2.0 targets .NET 10 | Both are current, but pin exact versions the way `project.yml` pins SwiftTerm 1.20.0 — and for the same stated reason. |
+| Avalonia 12 released April 2026; XTerm.NET 2.0 targets .NET 10 | Both are current. Pinned exactly in `Directory.Packages.props` (Avalonia 12.1.2, XTerm.NET 2.0.2), the way `project.yml` pinned SwiftTerm 1.20.0 and for the same stated reason. |
+| Terminal keyboard input on Windows is unverified | Run `spikes/TerminalSpike` on a Windows desktop at the start of M3, before building on the control's input handling. |
+| CI has never executed | Push, and get one green run on both OSes before any M1 work merges. |
 | Windows path/permission assumptions | `ControlPath`'s `0o700` dirs and `sun_path` arithmetic disappear, but audit `InventoryStore` and the known_hosts path for POSIX assumptions. |
 | .NET self-contained publish is ~70 MB per RID | Accept, or evaluate NativeAOT later — Avalonia supports it, but it interacts badly with reflection-based JSON and MVVM source generators. Not a v1 concern. |
 | Scope: ~29 k LOC of Swift becomes ~18–22 k LOC of C# | The milestones are ordered so M1–M3 produce a usable terminal client before any of the assistant/MCP work starts. If the project stalls, it stalls somewhere useful. |

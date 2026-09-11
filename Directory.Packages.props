@@ -25,8 +25,8 @@
     <!--
       XTerm.NET is the headless VT100/ANSI engine: byte-fed and decoupled from
       any pty, which is exactly what lets an SSH channel drive it directly.
-      Iciclecreek is an Avalonia renderer over it, under evaluation in
-      spikes/terminal. See docs/adr/0002.
+      Iciclecreek is the Avalonia renderer over it, chosen after
+      spikes/TerminalSpike proved it drives from an SSH channel. See docs/adr/0002.
     -->
     <PackageVersion Include="XTerm.NET" Version="2.0.2" />
     <PackageVersion Include="Iciclecreek.Avalonia.Terminal" Version="4.0.2" />

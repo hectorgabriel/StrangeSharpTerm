@@ -10,14 +10,16 @@ Swift/SwiftUI app. No Swift code carries over; the design does.
 
 ## Status
 
-**M0 — skeleton and spikes.** The solution builds clean on both platforms and
-both technical risks named in the plan are closed against a real sshd: SSH.NET
-covers what ControlMaster gave us, and the Avalonia terminal control drives from
-an SSH channel. See `spikes/README.md` and `docs/adr/`.
+**M0 — skeleton and spikes.** The solution builds clean on macOS, and both
+technical risks named in the plan are closed against a real sshd on macOS:
+SSH.NET covers what ControlMaster gave us, and the Avalonia terminal control
+drives from an SSH channel. See `spikes/README.md` and `docs/adr/`.
 
-No product feature is implemented yet. Next is M1 (model + store). The one
-unclosed risk is ssh-agent authentication on Windows. See
-`docs/migration-plan.md` for the full milestone list.
+No product feature is implemented yet. Next is M1 (model + store). Two things
+are still open: CI for macOS and Windows is written but has not run, because
+the repository has not been pushed yet; and ssh-agent authentication on Windows
+is unverified. See `docs/migration-plan.md` for the full milestone list, the
+platform strategy, and the working rules.
 
 ## Why the rewrite
 
