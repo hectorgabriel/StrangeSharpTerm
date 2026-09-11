@@ -1,0 +1,52 @@
+# A representative client config for parity testing, written for the purpose.
+# Not anyone's real file. Each block exercises a different importer rule.
+Compression yes
+Include ~/.ssh/config.d/*
+
+Host *
+    ServerAliveInterval 60
+    User ops
+    IdentityFile ~/.ssh/id_ed25519
+    AddKeysToAgent yes
+    ControlMaster auto
+    ControlPath ~/.ssh/cm-%r@%h:%p
+    SetEnv LANG=en_US.UTF-8
+
+Host bastion bastion-alt
+    HostName bastion.example.com
+    Port 2222
+    User=admin
+    ForwardAgent yes
+    StrictHostKeyChecking accept-new
+    UserKnownHostsFile ~/.ssh/known_hosts.bastion
+
+Host db-01 db-02 prod-*
+    HostName shared-db.internal
+    User postgres
+    ProxyJump bastion,edge
+    LocalForward 5432 localhost:5432
+    LocalForward 127.0.0.1:6379:cache.internal:6379
+    RemoteForward [::1]:9000 localhost:9000
+    DynamicForward 1080
+    SetEnv PGDATABASE=orders "TZ=Europe/Madrid"
+
+Host web
+    HostName web.example.com
+    Port notaport
+    ConnectTimeout 10
+    Compression no
+    StrictHostKeyChecking maybe
+    LocalForward 8080
+    IdentityFile "~/My Keys/web key"
+    IdentityFile ~/.ssh/web_rsa # trailing comment
+    FrobnicateWidgets yes
+
+Match host *.corp exec "test -f /tmp/vpn"
+    User corp
+
+Host !skip *.example.org
+    User nobody
+
+Host last
+    ProxyJump none
+    StrictHostKeyChecking no

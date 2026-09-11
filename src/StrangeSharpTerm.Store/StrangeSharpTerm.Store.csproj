@@ -3,4 +3,9 @@
   <ItemGroup>
     <ProjectReference Include="../StrangeSharpTerm.Model/StrangeSharpTerm.Model.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- The lexer and the Swift-format writer are pinned by tests without being public API. -->
+    <InternalsVisibleTo Include="StrangeSharpTerm.Store.Tests" />
+  </ItemGroup>
 </Project>
