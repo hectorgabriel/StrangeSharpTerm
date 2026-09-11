@@ -18,9 +18,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-# Without this, an empty argument is dropped or passed as two quote characters,
-# and ssh-keygen ends up encrypting the host key with a passphrase of `""`.
-$PSNativeCommandArgumentPassing = 'Standard'
+# Windows PowerShell 5.1 has no say in how native arguments are quoted, and
+# PowerShell 7 only behaves with this set. Key generation goes through cmd.exe
+# below so it works the same in both, but this still helps everything else.
+if (Get-Variable -Name PSNativeCommandArgumentPassing -ErrorAction SilentlyContinue) {
+    $PSNativeCommandArgumentPassing = 'Standard'
+}
 
 function Find-Sshd {
     $candidates = @(
@@ -48,6 +51,28 @@ function Restrict-ToOwner([string]$Path) {
     icacls $Path /grant:r 'SYSTEM:(R,W)' | Out-Null
 }
 
+<#
+.SYNOPSIS
+    Generate a key with a genuinely empty passphrase.
+.DESCRIPTION
+    Passing an empty argument to a native command is the one thing PowerShell
+    cannot be trusted to do: 5.1 drops it, and 7 only passes it through with
+    Standard argument passing. Either way ssh-keygen can end up encrypting the
+    key with a passphrase of two quote characters, and sshd then fails to
+    decrypt the host key it was just handed. cmd.exe quotes it the same way
+    everywhere, so the call goes through it.
+#>
+function New-UnencryptedKey([string]$Path) {
+    cmd.exe /c "ssh-keygen -t ed25519 -f `"$Path`" -N `"`" -q" | Out-Null
+
+    # Reading the public half back fails on an encrypted key, which is the whole
+    # failure this function exists to prevent -- so it is checked, not assumed.
+    cmd.exe /c "ssh-keygen -y -f `"$Path`" -P `"`"" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "ssh-keygen wrote an encrypted key to $Path; this shell mangled the empty passphrase."
+    }
+}
+
 if ($Action -eq 'stop') {
     if ($Work -and (Test-Path (Join-Path $Work 'sshd.pid'))) {
         $processId = Get-Content (Join-Path $Work 'sshd.pid')
@@ -62,8 +87,8 @@ $sftpServer = Join-Path (Split-Path $sshd) 'sftp-server.exe'
 $Work = Join-Path ([System.IO.Path]::GetTempPath()) ("st-sshd-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $Work | Out-Null
 
-ssh-keygen -t ed25519 -f (Join-Path $Work 'host') -N '' -q
-ssh-keygen -t ed25519 -f (Join-Path $Work 'client') -N '' -q
+New-UnencryptedKey (Join-Path $Work 'host')
+New-UnencryptedKey (Join-Path $Work 'client')
 Copy-Item (Join-Path $Work 'client.pub') (Join-Path $Work 'authorized_keys')
 Restrict-ToOwner (Join-Path $Work 'host')
 Restrict-ToOwner (Join-Path $Work 'client')
