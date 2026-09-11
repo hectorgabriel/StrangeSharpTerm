@@ -14,6 +14,7 @@
 param([int]$Port = 22022, [int]$ForwardPort = 18080)
 
 $ErrorActionPreference = 'Continue'
+$PSNativeCommandArgumentPassing = 'Standard'
 $root = Split-Path -Parent $PSScriptRoot
 $failures = 0
 
