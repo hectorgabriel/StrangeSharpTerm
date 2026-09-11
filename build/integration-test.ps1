@@ -96,32 +96,37 @@ try {
     [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
     [System.IO.File]::WriteAllBytes($payload, $bytes)
 
-    # sftp-server on Windows speaks POSIX-looking paths.
-    $remotePath = ($sandbox -replace '\\', '/') + '/uploaded.bin'
-    Run sftp put $target $payload $remotePath | Out-Null
+    # Windows OpenSSH's sftp-server addresses a drive as /C:/..., leading slash and all.
+    $remotePath = '/' + ($sandbox -replace '\\', '/') + '/uploaded.bin'
+    $putOutput = (& $stctl --key $clientKey --known-hosts $knownHosts sftp put $target $payload $remotePath 2>&1 | Out-String)
     Check 'upload lands on the server' `
-        $(if (Test-Path (Join-Path $sandbox 'uploaded.bin')) { 'yes' } else { 'no' }) 'yes'
+        $(if (Test-Path (Join-Path $sandbox 'uploaded.bin')) { 'yes' } else { "no ($($putOutput.Trim()))" }) 'yes'
 
     $downloaded = Join-Path $work 'downloaded.bin'
-    Run sftp get $target $remotePath $downloaded | Out-Null
+    & $stctl --key $clientKey --known-hosts $knownHosts sftp get $target $remotePath $downloaded 2>&1 | Out-Null
     $expected = (Get-FileHash $payload -Algorithm SHA256).Hash
     $actual = if (Test-Path $downloaded) { (Get-FileHash $downloaded -Algorithm SHA256).Hash } else { 'missing' }
     Check '700 KiB round-trips by SHA-256' $actual $expected
 
     Write-Host "`nfailure classification:"
-    $authError = (& $stctl --key $clientKey --known-hosts $knownHosts exec "nosuchuser@127.0.0.1:$Port" true 2>&1 1>$null) -join ' '
+    # Merged into one stream: stderr alone comes back empty through pwsh's redirection.
+    $authError = (& $stctl --key $clientKey --known-hosts $knownHosts exec "nosuchuser@127.0.0.1:$Port" true 2>&1 | Out-String)
     Check 'a bad user reports authentication, not a mystery' `
-        $(if ($authError -match 'Authentication failed') { 'authentication' } else { $authError }) 'authentication'
-    $refusedError = (& $stctl --key $clientKey --known-hosts $knownHosts exec "$env:USERNAME@127.0.0.1:$($Port + 1)" true 2>&1 1>$null) -join ' '
+        $(if ($authError -match 'Authentication failed') { 'authentication' } else { $authError.Trim() }) 'authentication'
+    $refusedError = (& $stctl --key $clientKey --known-hosts $knownHosts exec "$env:USERNAME@127.0.0.1:$($Port + 1)" true 2>&1 | Out-String)
     Check 'a refused port says so' `
-        $(if ($refusedError -match 'refused') { 'refused' } else { $refusedError }) 'refused'
+        $(if ($refusedError -match 'refused') { 'refused' } else { $refusedError.Trim() }) 'refused'
 
     Write-Host "`nssh-agent (a named pipe here, not a socket):"
+    # Whatever happens here is the answer to the last question M0 left open, so
+    # the evidence is printed rather than summarised.
     Start-Service ssh-agent -ErrorAction SilentlyContinue
-    ssh-add $clientKey 2>$null | Out-Null
-    $agentOutput = (& $stctl --known-hosts $knownHosts exec $target echo agent-ok 2>$null) -join ''
+    Write-Host "    service: $((Get-Service ssh-agent).Status)"
+    Write-Host "    ssh-add: $((ssh-add $clientKey 2>&1 | Out-String).Trim())"
+    Write-Host "    loaded:  $((ssh-add -l 2>&1 | Out-String).Trim())"
+    $agentOutput = (& $stctl --known-hosts $knownHosts exec $target echo agent-ok 2>&1 | Out-String)
     Check 'authenticates with an agent-held key' $agentOutput.Trim() 'agent-ok'
-    ssh-add -d $clientKey 2>$null | Out-Null
+    ssh-add -d $clientKey 2>&1 | Out-Null
 }
 finally {
     & "$root/build/local-sshd.ps1" stop -Work $work | Out-Null
