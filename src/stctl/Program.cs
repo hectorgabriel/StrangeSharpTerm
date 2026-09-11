@@ -12,6 +12,7 @@ using System.Security.Cryptography;
 using System.Text;
 using StrangeSharpTerm.Model;
 using StrangeSharpTerm.Security;
+using StrangeSharpTerm.Terminal;
 using StrangeSharpTerm.Transport;
 
 var target = new Argument<string>("target") { Description = "[user@]host[:port]" };
@@ -165,6 +166,63 @@ forward.SetAction(async (parsed, cancellationToken) =>
 });
 root.Add(forward);
 
+
+// -------------------------------------------------------------- terminal
+var runOption = new Option<string?>("--run") { Description = "Type this line into the shell." };
+var expectOption = new Option<string?>("--expect") { Description = "Wait until this text appears on screen, and fail if it does not." };
+var resizeOption = new Option<string?>("--resize") { Description = "Resize the window first, as COLSxROWS." };
+var linesOption = new Option<int>("--lines") { Description = "Dump this much scrollback instead of the visible screen.", DefaultValueFactory = _ => 0 };
+var waitOption = new Option<int>("--wait") { Description = "Seconds to wait for --expect.", DefaultValueFactory = _ => 15 };
+
+var terminal = new Command("terminal", "Open a shell and dump what the terminal shows.")
+    { target, runOption, expectOption, resizeOption, linesOption, waitOption };
+terminal.SetAction(async (parsed, cancellationToken) =>
+{
+    var size = ParseSize(parsed.GetValue(resizeOption));
+    if (parsed.GetValue(resizeOption) is not null && size is null)
+    {
+        Console.Error.WriteLine("A size is COLSxROWS.");
+        return 1;
+    }
+
+    try
+    {
+        using var session = Open(parsed);
+        using var channel = SshTerminalChannel.Open(session);
+        using var pane = new TerminalSession(channel);
+        // Read in the background: the engine has to be fed while we wait, because
+        // what it shows is the thing under test.
+        var pump = pane.RunAsync(cancellationToken);
+
+        if (size is { } wanted)
+            pane.Resize(wanted.Columns, wanted.Rows);
+        if (parsed.GetValue(runOption) is { } line)
+            pane.Send(line + "\n");
+
+        var expected = parsed.GetValue(expectOption);
+        var deadline = DateTime.UtcNow.AddSeconds(parsed.GetValue(waitOption));
+        var found = expected is null;
+        while (!found && DateTime.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
+        {
+            found = (pane.RecentText() ?? pane.VisibleText).Contains(expected!, StringComparison.Ordinal);
+            if (!found)
+                await Task.Delay(100, cancellationToken);
+        }
+
+        var lines = parsed.GetValue(linesOption);
+        Console.WriteLine(lines > 0 ? pane.RecentText(lines) ?? "" : pane.VisibleText);
+        if (!found)
+            Console.Error.WriteLine($"The terminal never showed {expected}.");
+        return found ? 0 : 1;
+    }
+    catch (Exception e)
+    {
+        Console.Error.WriteLine(SshFailure.Classify(e).Summary);
+        return 1;
+    }
+});
+root.Add(terminal);
+
 // ------------------------------------------------------------------ sftp
 var localArgument = new Argument<string>("local");
 var remoteArgument = new Argument<string>("remote");
@@ -192,6 +250,17 @@ var sftp = new Command("sftp", "Move files over SFTP.") { put, get };
 root.Add(sftp);
 
 return root.Parse(args).Invoke();
+
+/// <summary>COLSxROWS, as people write a terminal size.</summary>
+static (int Columns, int Rows)? ParseSize(string? text)
+{
+    if (text is null)
+        return null;
+    var parts = text.Split('x', 'X');
+    return parts.Length == 2 && int.TryParse(parts[0], out var columns) && int.TryParse(parts[1], out var rows)
+        ? (columns, rows)
+        : null;
+}
 
 static string Sha256(string path)
 {

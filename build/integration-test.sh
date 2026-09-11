@@ -83,6 +83,17 @@ check "the forward released its port" \
     "$(printf '%s\n' "$FORWARD_OUT" | sed -n 's/^released=//p')" "yes"
 
 echo
+echo "terminal:"
+# --dump-terminal is the only way to assert on rendered content: this is a real
+# pty on the server, interpreted by our own engine, not a captured stdout.
+check "the terminal renders what the shell prints" \
+    "$(run terminal "$TARGET" --run 'echo MARKER_$((6*7))' --expect MARKER_42 >/dev/null 2>&1 \
+        && echo rendered || echo missing)" "rendered"
+check "resize reaches the remote pty" \
+    "$(run terminal "$TARGET" --resize 120x40 --run 'tput cols' --expect 120 >/dev/null 2>&1 \
+        && echo 120 || echo other)" "120"
+
+echo
 echo "sftp:"
 SANDBOX="$WORK/remote"
 mkdir -p "$SANDBOX"
