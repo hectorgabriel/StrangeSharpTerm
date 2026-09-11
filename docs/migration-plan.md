@@ -207,7 +207,7 @@ design-shaping problems after the design has set. Three rules:
 | ~~ssh-agent over a named pipe~~ — **closed in M2** | Agent auth is the preferred credential method; it authenticates on Windows, asserted by the gate | M2 |
 | Paths, key-file permissions, CRLF in `ssh_config` | Cheap as test cases while porting, tedious to retrofit | M1 (store, parser), M2 (known_hosts, keys) |
 | ~~Running sshd for tests~~ — **closed in M2** | `build/local-sshd.ps1` is the counterpart of `local-sshd.sh`, installing the OpenSSH server capability when an image lacks it | M2 |
-| Terminal keyboard input: Ctrl/Alt sequences, AltGr, IME | Verified on macOS only; it lives in the control's input layer, which M3 builds on | Start of M3 — run `spikes/TerminalSpike` on Windows first |
+| ~~Terminal keyboard input: Ctrl/Alt sequences, AltGr, IME~~ — **closed** | Verified by running `spikes/TerminalSpike` on a Windows desktop before building on it | Before M3 |
 | Title bar, menu bar, ⌘ vs Ctrl shortcuts | The hidden title bar and its hard-coded spacers shape the M4 layout | Start of M4 |
 
 3. **Some checks need a Windows desktop, not a runner.** CI can cover the agent pipe;
@@ -332,7 +332,12 @@ authentication where the Swift app's rode the ControlMaster connection. It is
 cached per session to hold that to one, and it is the price of deleting 690 lines
 of hand-written SFTP v3.
 
-**M3 — Terminal.** The `StrangeSharpTerm.Terminal` control: `ShellStream` ↔ XTerm.NET,
+**M3 — Terminal.** The Windows keyboard check that gated this milestone is done:
+typing, AltGr characters, dead-key accents, arrows and history, Ctrl-C, Tab
+completion and resize all behave in `spikes/TerminalSpike` on a Windows desktop.
+That was the open question, and the answer makes this a straight port.
+
+The `StrangeSharpTerm.Terminal` control: `ShellStream` ↔ XTerm.NET,
 resize via `window-change`, 16-colour theming, scrollback read-back, broadcast
 interception, title and exit handling. `spikes/TerminalSpike/SshPtyConnection.cs` is
 the starting point. Before building on it, run the spike on a Windows desktop: keyboard
@@ -431,7 +436,7 @@ What is new:
 | ~~`SshNet.Agent` is a third-party extension~~ — **closed.** Agent auth works on macOS and, over the named pipe, on Windows | Asserted by the integration gate on both operating systems, so a regression fails CI rather than surfacing in front of a user. |
 | ~~`Iciclecreek.Avalonia.Terminal` may be too coupled to `Porta.Pty`~~ — **closed.** The shim works | One limitation found: `PtyExitedEventArgs` has an internal constructor, so `ProcessExited` cannot be raised from outside. Costs nothing — we own the `SshClient` and signal session exit ourselves. See `docs/adr/0002`. |
 | Avalonia 12 released April 2026; XTerm.NET 2.0 targets .NET 10 | Both are current. Pinned exactly in `Directory.Packages.props` (Avalonia 12.1.2, XTerm.NET 2.0.2), the way `project.yml` pinned SwiftTerm 1.20.0 and for the same stated reason. |
-| Terminal keyboard input on Windows is unverified | Run `spikes/TerminalSpike` on a Windows desktop at the start of M3, before building on the control's input handling. |
+| ~~Terminal keyboard input on Windows is unverified~~ — **closed.** Typing, AltGr, dead keys, arrows, Ctrl-C, Tab completion and resize all behave | Checked by hand against the spike on a Windows desktop, since no runner can type. Re-check by hand if the control's input handling changes. |
 | Windows path/permission assumptions | `ControlPath`'s `0o700` dirs and `sun_path` arithmetic disappear, but audit `InventoryStore` and the known_hosts path for POSIX assumptions. |
 | .NET self-contained publish is ~70 MB per RID | Accept, or evaluate NativeAOT later — Avalonia supports it, but it interacts badly with reflection-based JSON and MVVM source generators. Not a v1 concern. |
 | Scope: ~29 k LOC of Swift becomes ~18–22 k LOC of C# | The milestones are ordered so M1–M3 produce a usable terminal client before any of the assistant/MCP work starts. If the project stalls, it stalls somewhere useful. |
