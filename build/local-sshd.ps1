@@ -18,6 +18,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Without this, an empty argument is dropped or passed as two quote characters,
+# and ssh-keygen ends up encrypting the host key with a passphrase of `""`.
+$PSNativeCommandArgumentPassing = 'Standard'
 
 function Find-Sshd {
     $candidates = @(
@@ -59,8 +62,8 @@ $sftpServer = Join-Path (Split-Path $sshd) 'sftp-server.exe'
 $Work = Join-Path ([System.IO.Path]::GetTempPath()) ("st-sshd-" + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $Work | Out-Null
 
-ssh-keygen -t ed25519 -f (Join-Path $Work 'host') -N '""' -q
-ssh-keygen -t ed25519 -f (Join-Path $Work 'client') -N '""' -q
+ssh-keygen -t ed25519 -f (Join-Path $Work 'host') -N '' -q
+ssh-keygen -t ed25519 -f (Join-Path $Work 'client') -N '' -q
 Copy-Item (Join-Path $Work 'client.pub') (Join-Path $Work 'authorized_keys')
 Restrict-ToOwner (Join-Path $Work 'host')
 Restrict-ToOwner (Join-Path $Work 'client')
@@ -88,7 +91,9 @@ $process = Start-Process -FilePath $sshd -ArgumentList @('-f', $config, '-D', '-
 $process.Id | Set-Content -Path (Join-Path $Work 'sshd.pid')
 
 $listening = $false
-foreach ($attempt in 1..60) {
+foreach ($attempt in 1..40) {
+    # A dead sshd will never start listening; say so now rather than in a minute.
+    if ($process.HasExited) { break }
     try {
         $client = [System.Net.Sockets.TcpClient]::new()
         $client.Connect('127.0.0.1', $Port)
