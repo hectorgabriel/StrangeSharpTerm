@@ -120,6 +120,12 @@ try {
     Write-Host "`nssh-agent (a named pipe here, not a socket):"
     # Whatever happens here is the answer to the last question M0 left open, so
     # the evidence is printed rather than summarised.
+    # The service ships disabled on a fresh Windows image, and Start-Service cannot
+    # start a disabled service: without this the agent check only proves the agent
+    # was not running.
+    if ((Get-Service ssh-agent).StartType -eq 'Disabled') {
+        Set-Service ssh-agent -StartupType Manual
+    }
     Start-Service ssh-agent -ErrorAction SilentlyContinue
     Write-Host "    service: $((Get-Service ssh-agent).Status)"
     Write-Host "    ssh-add: $((ssh-add $clientKey 2>&1 | Out-String).Trim())"
