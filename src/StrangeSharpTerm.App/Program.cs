@@ -17,7 +17,6 @@ class Program
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
 #if DEBUG
-            .UsePlatformDetect()
             .WithDeveloperTools()
 #endif
             .WithInterFont()
