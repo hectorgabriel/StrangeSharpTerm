@@ -204,9 +204,9 @@ design-shaping problems after the design has set. Three rules:
 
 | Windows question | Why it cannot wait | Closed in |
 |---|---|---|
-| ssh-agent over a named pipe (`\\.\pipe\openssh-ssh-agent`) | Agent auth is the preferred credential method; if `SshNet.Agent` fails here, the credential path changes | M2, before it ships |
+| ~~ssh-agent over a named pipe~~ — **closed in M2** | Agent auth is the preferred credential method; it authenticates on Windows, asserted by the gate | M2 |
 | Paths, key-file permissions, CRLF in `ssh_config` | Cheap as test cases while porting, tedious to retrofit | M1 (store, parser), M2 (known_hosts, keys) |
-| Running sshd for tests | `build/local-sshd.sh` is POSIX `sh`; the integration gate must run on both OSes | M2 |
+| ~~Running sshd for tests~~ — **closed in M2** | `build/local-sshd.ps1` is the counterpart of `local-sshd.sh`, installing the OpenSSH server capability when an image lacks it | M2 |
 | Terminal keyboard input: Ctrl/Alt sequences, AltGr, IME | Verified on macOS only; it lives in the control's input layer, which M3 builds on | Start of M3 — run `spikes/TerminalSpike` on Windows first |
 | Title bar, menu bar, ⌘ vs Ctrl shortcuts | The hidden title bar and its hard-coded spacers shape the M4 layout | Start of M4 |
 
@@ -242,17 +242,16 @@ Deliberately deferred to M8: MSIX or installer, Authenticode signing, and dedica
 
 Each is independently demonstrable; nothing is merged that cannot be run.
 
-**M0 — Skeleton. Done; one item open.** Repo, solution layout, CI
+**M0 — Skeleton. Done.** Repo, solution layout, CI
 workflow, reference material copied across. Both spikes ran green
 against a real sshd on loopback (`spikes/`, and `docs/adr/0002`):
 
 - *(a)* `Iciclecreek.Avalonia.Terminal` drives cleanly from an SSH.NET
   `ShellStream` through an `IPtyConnection` shim. The fallback (our own control
   over XTerm.NET) is not needed.
-- *(b)* `SshNet.Agent` enumerates agent identities and authenticates with one —
-  **on macOS**. The Windows path, where the OpenSSH agent is a named pipe rather
-  than a Unix socket, is the single remaining M0 risk and needs a Windows machine
-  or a CI job with sshd to close.
+- *(b)* `SshNet.Agent` enumerates agent identities and authenticates with one.
+  Proven on macOS by the spike and, in M2, on Windows too, where the OpenSSH
+  agent is a named pipe rather than a Unix socket.
 
 The spikes also folded in most of M2's risk: one authentication across three
 execs, a working local forward that releases its port, a 700 KiB SFTP round-trip
@@ -267,7 +266,9 @@ Still open, in order:
    property is removed; the Windows icon comes back with packaging in M8.
 2. ~~**CI has never run.**~~ **Done.** The first run after the initial push was green
    on `macos-latest` and `windows-latest`, which was this project's first Windows build.
-3. **The Windows half of spike (b)**, above.
+3. ~~**The Windows half of spike (b)**.~~ **Closed in M2.** The integration gate
+   authenticates with an agent-held key on a Windows runner, so nothing in the
+   credential path is now untested there.
 
 **M1 — Model + Store. Done.** Port `STModel` and `STStore` with their 84 tests — Model 44
 (Credential 9, FuzzyMatch 10, Inheritance 15, Snippet 10) and Store 40 (SSHConfig 30,
@@ -306,16 +307,30 @@ Two deliberate divergences from Swift, both tested: CRLF is one line break rathe
 two (Swift's split doubled every line number in a file saved on Windows), and listing
 the descendants of a corrupted cycle terminates instead of recursing forever.
 
-**M2 — Transport.** `ConnectionPool` over SSH.NET: connect, exec, disconnect. Port
-`KnownHosts` and wire host-key verification to `HostKeyReceived` — including the rule
-that `changed` **never** prompts. Credential store via `Devlooped.CredentialManager`.
-`SshNet.Agent`, key+passphrase, and password auth. Port `ServerProbe` and its parsers.
-Rewrite `stctl` far enough to drive all of this headlessly, then port
-`Scripts/integration-test.sh` to run against the unprivileged sshd on 127.0.0.1:22022.
-That script is the real acceptance gate: it already asserts connection reuse, forward
-liveness, and a 700 KiB SFTP round-trip by SHA-256. It becomes its own CI job on both
-OSes, which needs a Windows counterpart to `build/local-sshd.sh`. The Windows ssh-agent
-risk closes here, not later.
+**M2 — Transport. Done.** `ConnectionPool` gives what `ControlMasterSupervisor`
+gave — one authentication per host, everything else multiplexed over it — with no
+control socket and no path-length arithmetic. `KnownHosts` is ported and wired to
+`HostKeyReceived`, including the rule that a changed key **never** prompts, and an
+accepted key is appended to OpenSSH's own file. Secrets live in
+`Devlooped.CredentialManager`; agent, key-and-passphrase and password
+authentication all work. `ServerProbe` and its parsers port as-is. `stctl` is
+rewritten on `System.CommandLine` far enough to drive all of it, and
+`Scripts/integration-test.sh` is ported to `build/integration-test.sh` with a
+PowerShell counterpart.
+
+The gate runs on **both** operating systems in CI. It asserts what the Swift one
+did — three execs cost one authentication, a forward carries an `SSH-2.0-` banner
+and releases its port, 700 KiB round-trips through SFTP by SHA-256, and failures
+classify as authentication, resolution or refusal — plus five assertions that are
+new: an unknown host key is refused with nothing recorded, an accepted one is
+findable by `ssh-keygen -F`, a changed key is refused, it stays refused even when
+the caller asks to accept new keys, and an agent-held key authenticates.
+
+One property did not survive. SSH.NET's `SftpClient` owns its own session rather
+than opening a subsystem channel on an existing one, so SFTP costs a second
+authentication where the Swift app's rode the ControlMaster connection. It is
+cached per session to hold that to one, and it is the price of deleting 690 lines
+of hand-written SFTP v3.
 
 **M3 — Terminal.** The `StrangeSharpTerm.Terminal` control: `ShellStream` ↔ XTerm.NET,
 resize via `window-change`, 16-colour theming, scrollback read-back, broadcast
@@ -413,7 +428,7 @@ What is new:
 
 | Risk | Handling |
 |---|---|
-| ~~`SshNet.Agent` is a third-party extension~~ — **half closed.** Agent auth works on macOS; the Windows named-pipe path is untested | The last open M0 item. ssh-agent is the *preferred* credential method per the README, so this must be closed before M2 ships, not after. |
+| ~~`SshNet.Agent` is a third-party extension~~ — **closed.** Agent auth works on macOS and, over the named pipe, on Windows | Asserted by the integration gate on both operating systems, so a regression fails CI rather than surfacing in front of a user. |
 | ~~`Iciclecreek.Avalonia.Terminal` may be too coupled to `Porta.Pty`~~ — **closed.** The shim works | One limitation found: `PtyExitedEventArgs` has an internal constructor, so `ProcessExited` cannot be raised from outside. Costs nothing — we own the `SshClient` and signal session exit ourselves. See `docs/adr/0002`. |
 | Avalonia 12 released April 2026; XTerm.NET 2.0 targets .NET 10 | Both are current. Pinned exactly in `Directory.Packages.props` (Avalonia 12.1.2, XTerm.NET 2.0.2), the way `project.yml` pinned SwiftTerm 1.20.0 and for the same stated reason. |
 | Terminal keyboard input on Windows is unverified | Run `spikes/TerminalSpike` on a Windows desktop at the start of M3, before building on the control's input handling. |
