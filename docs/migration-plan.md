@@ -129,9 +129,12 @@ The integration contract from `TerminalPane.swift` is small and already well-def
 | `TerminalRegistry.send(text:to:)` (snippets, staged commands) | write to `ShellStream` |
 | `applyTheme` → `installColors([Color])` for 16 ANSI slots | `TerminalOptions` palette; `ThemePalette`'s `UInt32` hex values port unchanged |
 | `setTerminalTitle`, `processTerminated` | XTerm.NET title event; stream close |
-| `sizeChanged` — **an empty no-op today** | **we must implement it**: `ShellStream.SendWindowChangeRequest` on layout |
+| `sizeChanged` — **an empty no-op today** | `IPtyConnection.Resize` → `ShellStream.ChangeWindowSize` |
 
-Resize is the one thing that was free and no longer is. Budget for it.
+~~Resize is the one thing that was free and no longer is. Budget for it.~~
+**Corrected by the spike:** resize is still the library's job. `ShellStream`
+exposes `ChangeWindowSize`, and the Avalonia control calls `IPtyConnection.Resize`
+on layout. Proven end to end in `spikes/TerminalSpike`.
 
 `TerminalRegistry`'s weak-reference singleton exists only because `NSViewRepresentable`
 hands back no view reference; in Avalonia the control is an ordinary bound object and
@@ -187,11 +190,21 @@ What needs real design work:
 
 Each is independently demonstrable; nothing is merged that cannot be run.
 
-**M0 — Skeleton.** New repo, solution layout, CI on both OSes, `README.md`/`Docs/`
-copied across. Two spikes, both time-boxed, both of which can change the plan:
-*(a)* drive `Iciclecreek.Avalonia.Terminal` from an SSH.NET `ShellStream` through an
-`IPtyConnection` shim; *(b)* authenticate to a real host using `SshNet.Agent` on macOS
-**and** Windows. Do these first — they are the only two unresolved technical risks.
+**M0 — Skeleton. Done, except the Windows half of spike (b).** Repo, solution
+layout, CI on both OSes, reference material copied across. Both spikes ran green
+against a real sshd on loopback (`spikes/`, and `docs/adr/0002`):
+
+- *(a)* `Iciclecreek.Avalonia.Terminal` drives cleanly from an SSH.NET
+  `ShellStream` through an `IPtyConnection` shim. The fallback (our own control
+  over XTerm.NET) is not needed.
+- *(b)* `SshNet.Agent` enumerates agent identities and authenticates with one —
+  **on macOS**. The Windows path, where the OpenSSH agent is a named pipe rather
+  than a Unix socket, is the single remaining M0 risk and needs a Windows machine
+  or a CI job with sshd to close.
+
+The spikes also folded in most of M2's risk: one authentication across three
+execs, a working local forward that releases its port, a 700 KiB SFTP round-trip
+by SHA-256, and a host key fingerprint matching `ssh-keygen -lf` exactly.
 
 **M1 — Model + Store.** Port `STModel` and `STStore` with their 84 tests. Load a real
 `inventory.json` written by the Swift app and round-trip it byte-identically. Import a
@@ -298,8 +311,8 @@ What is new:
 
 | Risk | Handling |
 |---|---|
-| `SshNet.Agent` is a third-party extension, and OpenSSH agent on Windows is a named pipe rather than a Unix socket | **M0 spike (b).** ssh-agent is the *preferred* credential method per the README — the key never enters the app. If it fails on Windows, we need a fallback before committing, not after. |
-| `Iciclecreek.Avalonia.Terminal` may be too coupled to `Porta.Pty` to accept an SSH-backed `IPtyConnection` | **M0 spike (a).** Fallback is an own Avalonia control over XTerm.NET — which is MIT, headless, and explicitly byte-fed, so the emulator itself is not at risk either way. |
+| ~~`SshNet.Agent` is a third-party extension~~ — **half closed.** Agent auth works on macOS; the Windows named-pipe path is untested | The last open M0 item. ssh-agent is the *preferred* credential method per the README, so this must be closed before M2 ships, not after. |
+| ~~`Iciclecreek.Avalonia.Terminal` may be too coupled to `Porta.Pty`~~ — **closed.** The shim works | One limitation found: `PtyExitedEventArgs` has an internal constructor, so `ProcessExited` cannot be raised from outside. Costs nothing — we own the `SshClient` and signal session exit ourselves. See `docs/adr/0002`. |
 | Avalonia 12 released April 2026; XTerm.NET 2.0 targets .NET 10 | Both are current, but pin exact versions the way `project.yml` pins SwiftTerm 1.20.0 — and for the same stated reason. |
 | Windows path/permission assumptions | `ControlPath`'s `0o700` dirs and `sun_path` arithmetic disappear, but audit `InventoryStore` and the known_hosts path for POSIX assumptions. |
 | .NET self-contained publish is ~70 MB per RID | Accept, or evaluate NativeAOT later — Avalonia supports it, but it interacts badly with reflection-based JSON and MVVM source generators. Not a v1 concern. |

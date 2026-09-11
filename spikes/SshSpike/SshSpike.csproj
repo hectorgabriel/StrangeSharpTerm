@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>StrangeSharpTerm.Spikes.Ssh</RootNamespace>
+    <!-- A spike is allowed to be scruffy; it is not shipped. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SSH.NET" />
+    <PackageReference Include="SshNet.Agent" />
+  </ItemGroup>
+</Project>
