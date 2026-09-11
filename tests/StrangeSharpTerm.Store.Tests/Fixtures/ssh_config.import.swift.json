@@ -1,0 +1,283 @@
+{
+  "document" : {
+    "connections" : [
+      {
+        "hostname" : "bastion.example.com",
+        "id" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000010"
+        },
+        "importedFromSSHConfig" : true,
+        "name" : "bastion",
+        "parentID" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000001"
+        },
+        "settings" : {
+          "forwardAgent" : true,
+          "hostKeyPolicy" : "acceptNew",
+          "knownHostsFile" : "$HOME\/.ssh\/known_hosts.bastion",
+          "port" : 2222,
+          "username" : "admin"
+        },
+        "sortIndex" : 0,
+        "tags" : [
+
+        ]
+      },
+      {
+        "hostname" : "bastion.example.com",
+        "id" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000011"
+        },
+        "importedFromSSHConfig" : true,
+        "name" : "bastion-alt",
+        "parentID" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000001"
+        },
+        "settings" : {
+          "forwardAgent" : true,
+          "hostKeyPolicy" : "acceptNew",
+          "knownHostsFile" : "$HOME\/.ssh\/known_hosts.bastion",
+          "port" : 2222,
+          "username" : "admin"
+        },
+        "sortIndex" : 1,
+        "tags" : [
+
+        ]
+      },
+      {
+        "hostname" : "shared-db.internal",
+        "id" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000012"
+        },
+        "importedFromSSHConfig" : true,
+        "name" : "db-01",
+        "parentID" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000001"
+        },
+        "settings" : {
+          "environment" : {
+            "PGDATABASE" : "orders",
+            "TZ" : "Europe\/Madrid"
+          },
+          "jumpHosts" : [
+            "bastion",
+            "edge"
+          ],
+          "portForwards" : [
+            {
+              "autoStart" : false,
+              "bindAddress" : "",
+              "bindPort" : 5432,
+              "destinationHost" : "localhost",
+              "destinationPort" : 5432,
+              "id" : {
+                "rawValue" : "00000000-0000-4000-8000-000000001001"
+              },
+              "kind" : "local",
+              "name" : "localhost:5432"
+            },
+            {
+              "autoStart" : false,
+              "bindAddress" : "127.0.0.1",
+              "bindPort" : 6379,
+              "destinationHost" : "cache.internal",
+              "destinationPort" : 6379,
+              "id" : {
+                "rawValue" : "00000000-0000-4000-8000-000000001002"
+              },
+              "kind" : "local",
+              "name" : "cache.internal:6379"
+            },
+            {
+              "autoStart" : false,
+              "bindAddress" : "::1",
+              "bindPort" : 9000,
+              "destinationHost" : "localhost",
+              "destinationPort" : 9000,
+              "id" : {
+                "rawValue" : "00000000-0000-4000-8000-000000001003"
+              },
+              "kind" : "remote",
+              "name" : "localhost:9000"
+            },
+            {
+              "autoStart" : false,
+              "bindAddress" : "",
+              "bindPort" : 1080,
+              "destinationHost" : "",
+              "destinationPort" : 0,
+              "id" : {
+                "rawValue" : "00000000-0000-4000-8000-000000001004"
+              },
+              "kind" : "dynamic",
+              "name" : "SOCKS 1080"
+            }
+          ],
+          "username" : "postgres"
+        },
+        "sortIndex" : 2,
+        "tags" : [
+
+        ]
+      },
+      {
+        "hostname" : "shared-db.internal",
+        "id" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000013"
+        },
+        "importedFromSSHConfig" : true,
+        "name" : "db-02",
+        "parentID" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000001"
+        },
+        "settings" : {
+          "environment" : {
+            "PGDATABASE" : "orders",
+            "TZ" : "Europe\/Madrid"
+          },
+          "jumpHosts" : [
+            "bastion",
+            "edge"
+          ],
+          "portForwards" : [
+            {
+              "autoStart" : false,
+              "bindAddress" : "",
+              "bindPort" : 5432,
+              "destinationHost" : "localhost",
+              "destinationPort" : 5432,
+              "id" : {
+                "rawValue" : "00000000-0000-4000-8000-000000001005"
+              },
+              "kind" : "local",
+              "name" : "localhost:5432"
+            },
+            {
+              "autoStart" : false,
+              "bindAddress" : "127.0.0.1",
+              "bindPort" : 6379,
+              "destinationHost" : "cache.internal",
+              "destinationPort" : 6379,
+              "id" : {
+                "rawValue" : "00000000-0000-4000-8000-000000001006"
+              },
+              "kind" : "local",
+              "name" : "cache.internal:6379"
+            },
+            {
+              "autoStart" : false,
+              "bindAddress" : "::1",
+              "bindPort" : 9000,
+              "destinationHost" : "localhost",
+              "destinationPort" : 9000,
+              "id" : {
+                "rawValue" : "00000000-0000-4000-8000-000000001007"
+              },
+              "kind" : "remote",
+              "name" : "localhost:9000"
+            },
+            {
+              "autoStart" : false,
+              "bindAddress" : "",
+              "bindPort" : 1080,
+              "destinationHost" : "",
+              "destinationPort" : 0,
+              "id" : {
+                "rawValue" : "00000000-0000-4000-8000-000000001008"
+              },
+              "kind" : "dynamic",
+              "name" : "SOCKS 1080"
+            }
+          ],
+          "username" : "postgres"
+        },
+        "sortIndex" : 3,
+        "tags" : [
+
+        ]
+      },
+      {
+        "hostname" : "web.example.com",
+        "id" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000014"
+        },
+        "importedFromSSHConfig" : true,
+        "name" : "web",
+        "parentID" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000001"
+        },
+        "settings" : {
+          "compression" : false,
+          "connectTimeout" : 10,
+          "identityFiles" : [
+            "$HOME\/My Keys\/web key",
+            "$HOME\/.ssh\/web_rsa"
+          ]
+        },
+        "sortIndex" : 4,
+        "tags" : [
+
+        ]
+      },
+      {
+        "hostname" : "last",
+        "id" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000015"
+        },
+        "importedFromSSHConfig" : true,
+        "name" : "last",
+        "parentID" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000001"
+        },
+        "settings" : {
+          "hostKeyPolicy" : "acceptAny",
+          "jumpHosts" : [
+
+          ]
+        },
+        "sortIndex" : 5,
+        "tags" : [
+
+        ]
+      }
+    ],
+    "credentials" : [
+
+    ],
+    "folders" : [
+      {
+        "id" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000001"
+        },
+        "name" : "SSH Config",
+        "settings" : {
+          "compression" : true,
+          "environment" : {
+            "LANG" : "en_US.UTF-8"
+          },
+          "identityFiles" : [
+            "$HOME\/.ssh\/id_ed25519"
+          ],
+          "keepAliveInterval" : 60,
+          "username" : "nobody"
+        },
+        "sortIndex" : 0,
+        "tags" : [
+
+        ]
+      }
+    ],
+    "snippets" : [
+
+    ],
+    "version" : 1
+  },
+  "warnings" : [
+    "35 malformedValue Port notaport",
+    "38 malformedValue StrictHostKeyChecking maybe",
+    "39 malformedValue LocalForward 8080",
+    "42 unsupportedKeyword FrobnicateWidgets",
+    "45 matchBlockSkipped host *.corp exec test -f \/tmp\/vpn"
+  ]
+}

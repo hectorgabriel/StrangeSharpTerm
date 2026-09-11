@@ -1,0 +1,4 @@
+# Golden files are compared byte for byte against output produced on every OS.
+# Checkout must not rewrite their line endings (Windows runners default to
+# core.autocrlf=true), or the comparison fails for a reason that is not ours.
+tests/**/Fixtures/** -text

@@ -89,8 +89,8 @@ StrangeSharpTerm.slnx
 
 | Swift | LOC | Disposition |
 |---|---|---|
-| `STModel` | 769 | **Port, ~1:1.** Records + `System.Text.Json`. `PortForward`'s enum-with-payload becomes an abstract record hierarchy. |
-| `STStore` | 630 | **Port, ~95%.** `InventoryDocument` versioning and the hand-written decoder map onto a `JsonConverter`. Atomic write → `File.Replace`. App-group container path is deleted; use `Environment.SpecialFolder.ApplicationData`. `SSHConfigParser`/`SSHConfigImporter` (452 LOC) are pure text processing and port directly — **config-file fidelity survives the move off OpenSSH**, because it was always ours. |
+| `STModel` | 769 | **Ported ~1:1.** Records + `System.Text.Json`. `PortForward` is a struct with a `Kind` enum, not an enum with payloads — the abstract-record-hierarchy shape is what `SshConfigHeader` and the importer's warning reasons needed instead. |
+| `STStore` | 630 | **Ported ~95%.** `InventoryDocument` versioning and the hand-written decoder map onto optional properties plus a version check before decoding. Atomic write → write beside, flush, `File.Move(overwrite: true)`; `File.Replace` needs the target to exist, which a first save has not got. App-group container path is deleted; `Environment.SpecialFolder.ApplicationData` is `%APPDATA%` on Windows and `~/Library/Application Support` on macOS. `SSHConfigParser`/`SSHConfigImporter` (452 LOC) are pure text processing and port directly — **config-file fidelity survives the move off OpenSSH**, because it was always ours. |
 | `STAssist` | 2,957 | **Port, ~90%.** `URLSession.bytes(for:)` → `HttpClient` + `HttpCompletionOption.ResponseHeadersRead`; `AsyncThrowingStream` → `IAsyncEnumerable<T>`. `CommandPolicy` (458 LOC, the safety allowlist) ports verbatim and keeps its tests. Watch `Redaction.swift`'s regexes for ICU→.NET dialect drift. |
 | `STMCP` | 1,989 | **Replace.** The official SDK covers stdio, Streamable HTTP, and JSON-RPC. Keep our own `MCPServerConfig`, `MCPToolName.qualified/split`, and the `dataDestination` sentences. `MCPLoopback`'s `NWListener` → `HttpListener` on 127.0.0.1:33418-33421. If the SDK's OAuth 2.1 story is thin, port `MCPOAuth.swift` (476 LOC) on top of it. Net ~1,000 LOC deleted. |
 | `STTransport` | 2,467 | **Mostly delete.** `SSHInvocationBuilder`, `ControlMasterSupervisor`, `ControlPath`, `AskpassChannel`, all 690 LOC of the hand-written SFTP v3 client, and `HostKeyScanner` are replaced by SSH.NET. Keep the *behaviour* of `SSHFailure`'s 11-case classification, re-mapped from SSH.NET exception types instead of OpenSSH stderr prose. `ServerProbe` (196 LOC, the dashboard probe and its Linux/macOS parsers) ports as-is over `SshClient.RunCommand`. `LocalPortProbe` → `Socket` with a connect timeout. Est. ~700 LOC new. |
@@ -220,7 +220,8 @@ Deliberately deferred to M8: MSIX or installer, Authenticode signing, and dedica
 ## Working rules
 
 - **One branch per milestone, merged by pull request**, so CI gates the merge rather
-  than reporting after the fact. Branch protection on `main` requires both OS jobs.
+  than reporting after the fact. GitHub Free allows no branch protection on a private
+  repository, so nothing enforces this server-side: the gate is the rule, not a setting.
 - **A milestone is done when** its CI jobs are green on both OSes *and* its manual
   checks are recorded in the milestone PR's description.
 - **CI grows with the milestones:**
@@ -241,7 +242,7 @@ Deliberately deferred to M8: MSIX or installer, Authenticode signing, and dedica
 
 Each is independently demonstrable; nothing is merged that cannot be run.
 
-**M0 — Skeleton. Done on macOS; two items open.** Repo, solution layout, CI
+**M0 — Skeleton. Done; one item open.** Repo, solution layout, CI
 workflow, reference material copied across. Both spikes ran green
 against a real sshd on loopback (`spikes/`, and `docs/adr/0002`):
 
@@ -264,36 +265,46 @@ Still open, in order:
    never committed. Forcing the condition on macOS (`-p:OS=Windows_NT`) reproduced it:
    Avalonia's `GenerateAvaloniaResourcesTask` threw `FileNotFoundException`. The
    property is removed; the Windows icon comes back with packaging in M8.
-2. **CI has never run.** The workflow exists, but the repository has no GitHub remote
-   yet, so "builds on both OSes" has only been observed on macOS. Once pushed, get one
-   green run on `macos-latest` and `windows-latest` before any M1 work merges.
+2. ~~**CI has never run.**~~ **Done.** The first run after the initial push was green
+   on `macos-latest` and `windows-latest`, which was this project's first Windows build.
 3. **The Windows half of spike (b)**, above.
 
-**M1 — Model + Store.** Port `STModel` and `STStore` with their 84 tests — Model 44
+**M1 — Model + Store. Done.** Port `STModel` and `STStore` with their 84 tests — Model 44
 (Credential 9, FuzzyMatch 10, Inheritance 15, Snippet 10) and Store 40 (SSHConfig 30,
 InventoryStore 10). Model first; it depends on nothing. Load a real `inventory.json`
 written by the Swift app and round-trip it byte-identically. Import a real
 `~/.ssh/config`.
 
-Byte-identical is real work, not a formality. `InventoryStore.swift` writes with
-`JSONEncoder` and `[.prettyPrinted, .sortedKeys]`, and a real file confirms the output
-differs from `System.Text.Json`'s defaults:
+Byte-identical was real work. `InventoryStore.swift` writes with `JSONEncoder` and
+`[.prettyPrinted, .sortedKeys]`, and none of that matches `System.Text.Json`'s defaults.
+Rather than infer the rules from documentation, `build/swift-parity/generate.sh`
+compiles the Swift app's own model and store sources together with a generator, and
+writes golden files the C# tests compare against byte for byte. What they showed:
 
 | Swift writes | `System.Text.Json` default |
 |---|---|
 | `"key" : value` — a space before the colon | `"key": value` |
-| keys sorted | property declaration order |
-| UUIDs uppercase | `Guid` lowercase |
-| non-ASCII and `<>&'+` unescaped | escaped unless the encoder is relaxed |
+| keys sorted by Unicode scalar value | property declaration order |
+| ids as `{"rawValue": "…"}`, uppercase | a bare lowercase `Guid` |
+| `/` escaped as `\/`, non-ASCII raw | `/` raw, non-ASCII and `<>&'+` escaped |
+| an empty container as its bracket, a blank line, its close | `[]` |
+| a double past 2^53 or below 0.0001 in exponent form | other thresholds, other spelling |
 
-Both use a 2-space indent and no trailing newline. Expect a small custom writer. Two
-behaviours the sample file could not show must be pinned with fixtures: Swift escapes
-`/` as `\/` unless `.withoutEscapingSlashes` is set, and `.sortedKeys` ordering may not
-be plain ordinal. Atomic write via `File.Replace` needs a fallback, because it requires
-the target to exist already — the first write has none.
+`SwiftJson` implements that layout. `Timestamp` keeps a Swift `Date` as the double it
+is on disk, because `DateTimeOffset`'s ticks cannot hold every one of them exactly, and
+a value that shifted on load would break the round trip. Tags stay an ordered list
+rather than a set, so the order the Swift app happened to write survives a save.
 
-Add the Windows cases while porting: CRLF line endings in `ssh_config`, and
-`%USERPROFILE%` / `%APPDATA%` paths.
+Verified: the real `inventory.json` this machine's Swift app wrote round-trips byte for
+byte, and the importer agrees with Swift's — settings, ids, ordering and warnings — on a
+representative config (`tests/StrangeSharpTerm.Store.Tests/Fixtures/ssh_config.sample`).
+The real-config check is opt-in and waits for a machine that has one: point
+`STRANGESHARPTERM_REAL_SSH_CONFIG` at it, and `STRANGESHARPTERM_REAL_INVENTORY` at an
+inventory.
+
+Two deliberate divergences from Swift, both tested: CRLF is one line break rather than
+two (Swift's split doubled every line number in a file saved on Windows), and listing
+the descendants of a corrupted cycle terminates instead of recursing forever.
 
 **M2 — Transport.** `ConnectionPool` over SSH.NET: connect, exec, disconnect. Port
 `KnownHosts` and wire host-key verification to `HostKeyReceived` — including the rule
@@ -406,7 +417,6 @@ What is new:
 | ~~`Iciclecreek.Avalonia.Terminal` may be too coupled to `Porta.Pty`~~ — **closed.** The shim works | One limitation found: `PtyExitedEventArgs` has an internal constructor, so `ProcessExited` cannot be raised from outside. Costs nothing — we own the `SshClient` and signal session exit ourselves. See `docs/adr/0002`. |
 | Avalonia 12 released April 2026; XTerm.NET 2.0 targets .NET 10 | Both are current. Pinned exactly in `Directory.Packages.props` (Avalonia 12.1.2, XTerm.NET 2.0.2), the way `project.yml` pinned SwiftTerm 1.20.0 and for the same stated reason. |
 | Terminal keyboard input on Windows is unverified | Run `spikes/TerminalSpike` on a Windows desktop at the start of M3, before building on the control's input handling. |
-| CI has never executed | Push, and get one green run on both OSes before any M1 work merges. |
 | Windows path/permission assumptions | `ControlPath`'s `0o700` dirs and `sun_path` arithmetic disappear, but audit `InventoryStore` and the known_hosts path for POSIX assumptions. |
 | .NET self-contained publish is ~70 MB per RID | Accept, or evaluate NativeAOT later — Avalonia supports it, but it interacts badly with reflection-based JSON and MVVM source generators. Not a v1 concern. |
 | Scope: ~29 k LOC of Swift becomes ~18–22 k LOC of C# | The milestones are ordered so M1–M3 produce a usable terminal client before any of the assistant/MCP work starts. If the project stalls, it stalls somewhere useful. |

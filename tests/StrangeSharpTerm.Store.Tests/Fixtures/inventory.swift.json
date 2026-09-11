@@ -1,0 +1,251 @@
+{
+  "connections" : [
+    {
+      "hostname" : "db-01.internal",
+      "id" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000011"
+      },
+      "importedFromSSHConfig" : false,
+      "lastConnectedAt" : 779000000.123456,
+      "name" : "db-01",
+      "parentID" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000002"
+      },
+      "settings" : {
+        "terminalFontSize" : 13,
+        "username" : "postgres"
+      },
+      "sortIndex" : 0,
+      "tags" : [
+        "postgres",
+        "primary"
+      ]
+    },
+    {
+      "hostname" : "web-01.example.com",
+      "id" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000012"
+      },
+      "importedFromSSHConfig" : true,
+      "lastConnectedAt" : -12345.5,
+      "name" : "web-01",
+      "parentID" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000001"
+      },
+      "settings" : {
+
+      },
+      "sortIndex" : 0,
+      "tags" : [
+
+      ]
+    },
+    {
+      "hostname" : "192.168.1.20",
+      "id" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000013"
+      },
+      "importedFromSSHConfig" : false,
+      "name" : "home-nas",
+      "parentID" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000003"
+      },
+      "settings" : {
+        "credentialID" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000102"
+        },
+        "port" : 2222
+      },
+      "sortIndex" : 1,
+      "tags" : [
+
+      ]
+    }
+  ],
+  "credentials" : [
+    {
+      "id" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000101"
+      },
+      "identityFile" : "\/keys\/ops_ed25519",
+      "method" : "identityFile",
+      "name" : "Ops key",
+      "sortIndex" : 0,
+      "username" : "ops"
+    },
+    {
+      "id" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000103"
+      },
+      "method" : "password",
+      "name" : "Vault \"legacy\" password",
+      "sortIndex" : 1,
+      "username" : "admin"
+    },
+    {
+      "id" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000102"
+      },
+      "method" : "agent",
+      "name" : "Personal agent",
+      "sortIndex" : 1
+    }
+  ],
+  "folders" : [
+    {
+      "id" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000001"
+      },
+      "name" : "Production",
+      "settings" : {
+        "compression" : true,
+        "connectTimeout" : 20,
+        "credentialID" : {
+          "rawValue" : "00000000-0000-4000-8000-000000000101"
+        },
+        "environment" : {
+          "A01" : "n1",
+          "A1" : "n2",
+          "AWS_PROFILE" : "prod",
+          "LANG" : "en_US.UTF-8",
+          "PATH_10" : "ten",
+          "PATH_2" : "two",
+          "TZ" : "UTC",
+          "Zeta" : "z",
+          "_PRIVATE" : "1",
+          "a1" : "n3",
+          "alpha" : "a",
+          "aws_region" : "eu-west-1"
+        },
+        "forwardAgent" : false,
+        "hostKeyPolicy" : "strict",
+        "identityFiles" : [
+          "\/keys\/a",
+          "\/keys\/b"
+        ],
+        "jumpHosts" : [
+          "bastion",
+          "edge"
+        ],
+        "keepAliveInterval" : 45,
+        "knownHostsFile" : "~\/.ssh\/known_hosts.prod",
+        "port" : 22,
+        "portForwards" : [
+          {
+            "autoStart" : true,
+            "bindAddress" : "",
+            "bindPort" : 5432,
+            "destinationHost" : "localhost",
+            "destinationPort" : 5432,
+            "id" : {
+              "rawValue" : "00000000-0000-4000-8000-000000000201"
+            },
+            "kind" : "local",
+            "name" : "postgres"
+          },
+          {
+            "autoStart" : false,
+            "bindAddress" : "0.0.0.0",
+            "bindPort" : 9000,
+            "destinationHost" : "127.0.0.1",
+            "destinationPort" : 9000,
+            "id" : {
+              "rawValue" : "00000000-0000-4000-8000-000000000202"
+            },
+            "kind" : "remote",
+            "name" : "callback"
+          },
+          {
+            "autoStart" : false,
+            "bindAddress" : "",
+            "bindPort" : 1080,
+            "destinationHost" : "",
+            "destinationPort" : 0,
+            "id" : {
+              "rawValue" : "00000000-0000-4000-8000-000000000203"
+            },
+            "kind" : "dynamic",
+            "name" : "SOCKS 1080"
+          }
+        ],
+        "terminalFontSize" : 13.5,
+        "terminalTheme" : "Solarized \/ Dark",
+        "username" : "deploy"
+      },
+      "sortIndex" : 0,
+      "tags" : [
+        "critical",
+        "eu-west",
+        "prod"
+      ]
+    },
+    {
+      "id" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000002"
+      },
+      "name" : "Databases",
+      "parentID" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000001"
+      },
+      "settings" : {
+
+      },
+      "sortIndex" : 0,
+      "tags" : [
+
+      ]
+    },
+    {
+      "id" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000003"
+      },
+      "name" : "Personal — café ☕",
+      "settings" : {
+
+      },
+      "sortIndex" : 1,
+      "tags" : [
+
+      ]
+    }
+  ],
+  "snippets" : [
+    {
+      "command" : "df -h | grep '\/dev\/' && echo \"done\"\t# tab",
+      "id" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000302"
+      },
+      "name" : "disk usage",
+      "sortIndex" : 0,
+      "tags" : [
+
+      ]
+    },
+    {
+      "command" : "tail -f {{path}}",
+      "folderID" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000001"
+      },
+      "id" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000301"
+      },
+      "name" : "tail a log",
+      "sortIndex" : 0,
+      "tags" : [
+        "logs"
+      ]
+    },
+    {
+      "command" : "back\\slash \u0001\u001f   😀 <>&'+ \r\n",
+      "id" : {
+        "rawValue" : "00000000-0000-4000-8000-000000000303"
+      },
+      "name" : "escaping",
+      "sortIndex" : 2,
+      "tags" : [
+
+      ]
+    }
+  ],
+  "version" : 1
+}
