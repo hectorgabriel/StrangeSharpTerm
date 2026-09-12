@@ -33,7 +33,7 @@
                             <DataTemplate x:DataType="vm:SidebarRow">
                                 <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                                         Padding="6,4" Background="Transparent" BorderThickness="0"
-                                        Command="{Binding #Root.((vm:ShellViewModel)DataContext).ActivateCommand}"
+                                        Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).ActivateCommand}"
                                         CommandParameter="{Binding}">
                                     <StackPanel Orientation="Horizontal" Spacing="6" Margin="{Binding Indent}">
                                         <Path Classes="icon" Width="12" Height="12" Opacity="0.6"
@@ -71,7 +71,7 @@
                                 Converter={x:Static views:ActiveTabBrush.Instance}}">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <Button Padding="8,4" Background="Transparent" BorderThickness="0"
-                                        Command="{Binding #Root.((vm:ShellViewModel)DataContext).FocusTabCommand}"
+                                        Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).FocusTabCommand}"
                                         CommandParameter="{Binding}">
                                     <StackPanel Orientation="Horizontal" Spacing="6">
                                         <Path Classes="icon" Width="12" Height="12"
@@ -80,7 +80,7 @@
                                     </StackPanel>
                                 </Button>
                                 <Button Padding="4" Background="Transparent" BorderThickness="0"
-                                        Command="{Binding #Root.((vm:ShellViewModel)DataContext).CloseTabCommand}"
+                                        Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).CloseTabCommand}"
                                         CommandParameter="{Binding}">
                                     <Path Classes="icon" Width="10" Height="10" Opacity="0.6"
                                           Data="{Binding Source=IconX, Converter={StaticResource Icon}}" />
