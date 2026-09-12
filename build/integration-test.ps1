@@ -94,8 +94,9 @@ try {
     Run terminal $target --run "echo MARKER_42" --expect MARKER_42 | Out-Null
     Check 'the terminal renders what the shell prints' `
         $(if ($LASTEXITCODE -eq 0) { 'rendered' } else { 'missing' }) 'rendered'
-    Run terminal $target --resize 120x40 --run "mode con" --expect 120 | Out-Null
-    Check 'resize reaches the remote pty' $(if ($LASTEXITCODE -eq 0) { '120' } else { 'other' }) '120'
+    $resizeDump = (Run terminal $target --resize 120x40 --run "mode con" --expect 120) -join ' '
+    Check 'resize reaches the remote pty' `
+        $(if ($LASTEXITCODE -eq 0) { '120' } else { "other [$(($resizeDump -replace '\s+', ' ').Trim())]" }) '120'
 
     Write-Host "`nsftp:"
     $sandbox = Join-Path $work 'remote'
