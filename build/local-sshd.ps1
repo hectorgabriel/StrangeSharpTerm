@@ -55,21 +55,39 @@ function Restrict-ToOwner([string]$Path) {
 .SYNOPSIS
     Generate a key with a genuinely empty passphrase.
 .DESCRIPTION
-    Passing an empty argument to a native command is the one thing PowerShell
-    cannot be trusted to do: 5.1 drops it, and 7 only passes it through with
-    Standard argument passing. Either way ssh-keygen can end up encrypting the
-    key with a passphrase of two quote characters, and sshd then fails to
-    decrypt the host key it was just handed. cmd.exe quotes it the same way
-    everywhere, so the call goes through it.
-#>
-function New-UnencryptedKey([string]$Path) {
-    cmd.exe /c "ssh-keygen -t ed25519 -f `"$Path`" -N `"`" -q" | Out-Null
+    Passing an empty argument to a native command is the one thing no Windows
+    shell can be trusted with: PowerShell 5.1 drops it, PowerShell 7 needs
+    Standard argument passing, and cmd.exe rewrites quotes of its own. Either
+    way ssh-keygen can end up encrypting the key with a passphrase of two quote
+    characters, and sshd then cannot decrypt the host key it was handed.
 
-    # Reading the public half back fails on an encrypted key, which is the whole
-    # failure this function exists to prevent -- so it is checked, not assumed.
-    cmd.exe /c "ssh-keygen -y -f `"$Path`" -P `"`"" 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "ssh-keygen wrote an encrypted key to $Path; this shell mangled the empty passphrase."
+    So no shell is involved: .NET builds the argument vector directly, which
+    behaves the same in every edition. The result is verified rather than
+    assumed -- reading the public half back fails on an encrypted key.
+#>
+function Invoke-SshKeygen([string[]]$Arguments) {
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new('ssh-keygen')
+    foreach ($argument in $Arguments) { $startInfo.ArgumentList.Add($argument) }
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.StandardOutput.ReadToEnd() | Out-Null
+    $process.WaitForExit()
+    return @{ ExitCode = $process.ExitCode; Error = $stderr }
+}
+
+function New-UnencryptedKey([string]$Path) {
+    $generated = Invoke-SshKeygen @('-t', 'ed25519', '-f', $Path, '-N', '', '-q')
+    if ($generated.ExitCode -ne 0) {
+        throw "ssh-keygen could not write $Path`: $($generated.Error)"
+    }
+
+    $verified = Invoke-SshKeygen @('-y', '-f', $Path, '-P', '')
+    if ($verified.ExitCode -ne 0) {
+        throw "the key at $Path is encrypted, so this shell mangled the empty passphrase: $($verified.Error)"
     }
 }
 
