@@ -33,6 +33,25 @@ public sealed record TerminalLaunchRequest(string Target, string? KeyFile, bool 
 
 public static class TerminalLauncher
 {
+    /// <summary>
+    /// Opens a shell on a host from the inventory, with its folder inheritance
+    /// and credential applied.
+    ///
+    /// Unknown host keys are refused rather than accepted: the sheet that shows a
+    /// fingerprint and asks is still to come, and silently trusting a first
+    /// contact is the one thing that must not happen while it is missing.
+    /// </summary>
+    public static TerminalSession Connect(InventoryTree tree, Connection connection, IHostKeyPrompt? prompt = null)
+    {
+        var factory = new SshSessionFactory(
+            new PlatformSecretStore(),
+            prompt ?? new RefuseUnknownHostKeys(),
+            id => tree.Credentials.GetValueOrDefault(id));
+
+        var session = (SshNetSession)factory.Connect(tree.Resolve(connection.Id));
+        return new TerminalSession(SshTerminalChannel.Open(session));
+    }
+
     /// <summary>Opens a session on the host named by the request, ready to attach to a view.</summary>
     public static TerminalSession Connect(TerminalLaunchRequest request)
     {

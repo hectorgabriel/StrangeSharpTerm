@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using StrangeSharpTerm.App.Terminal;
+using StrangeSharpTerm.App.ViewModels;
+using StrangeSharpTerm.App.Views;
 using StrangeSharpTerm.Terminal;
 using StrangeSharpTerm.Transport;
 
@@ -19,11 +21,13 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // One host from the command line until the shell and its inventory
-            // arrive in M4. The window is the whole app for now, which is enough
-            // to run a terminal and watch it behave.
+            // --connect opens one host and nothing else, which is how a terminal
+            // is checked against a server without the inventory in the way. With
+            // no argument the app opens its own window.
             var request = TerminalLaunchRequest.Parse(desktop.Args ?? []);
-            desktop.MainWindow = request is null ? new MainWindow() : TerminalWindow(request);
+            desktop.MainWindow = request is null
+                ? new ShellWindow(new ShellViewModel(InventoryLoader.Load()))
+                : TerminalWindow(request);
         }
 
         base.OnFrameworkInitializationCompleted();
