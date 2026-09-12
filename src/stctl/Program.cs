@@ -194,8 +194,20 @@ terminal.SetAction(async (parsed, cancellationToken) =>
         // what it shows is the thing under test.
         var pump = pane.RunAsync(cancellationToken);
 
+        // Wait for the far end to say something first. A window-change request
+        // sent before the server has finished allocating its pty has nothing to
+        // act on, and is simply lost.
+        var ready = DateTime.UtcNow.AddSeconds(5);
+        while (pane.VisibleText.Trim().Length == 0 && DateTime.UtcNow < ready)
+            await Task.Delay(50, cancellationToken);
+
         if (size is { } wanted)
+        {
             pane.Resize(wanted.Columns, wanted.Rows);
+            // Give the far end a moment to redraw at the new size before typing
+            // into it, or the answer describes the old one.
+            await Task.Delay(500, cancellationToken);
+        }
         if (parsed.GetValue(runOption) is { } line)
             pane.Send(line + "\n");
 
