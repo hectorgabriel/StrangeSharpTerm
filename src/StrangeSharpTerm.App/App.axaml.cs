@@ -25,12 +25,20 @@ public partial class App : Application
             // is checked against a server without the inventory in the way. With
             // no argument the app opens its own window.
             var request = TerminalLaunchRequest.Parse(desktop.Args ?? []);
-            desktop.MainWindow = request is null
-                ? new ShellWindow(new ShellViewModel(InventoryLoader.Load()))
-                : TerminalWindow(request);
+            desktop.MainWindow = request is null ? Shell() : TerminalWindow(request);
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static Window Shell()
+    {
+        // The dialog service needs the window it will be modal to, and the window
+        // needs the view model that asks for dialogs, so the reference is late.
+        ShellWindow? window = null;
+        var model = new ShellViewModel(InventoryLoader.Load(), dialogs: new DialogService(() => window));
+        window = new ShellWindow(model);
+        return window;
     }
 
     private static Window TerminalWindow(TerminalLaunchRequest request)
