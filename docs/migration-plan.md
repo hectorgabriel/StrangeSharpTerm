@@ -332,16 +332,26 @@ authentication where the Swift app's rode the ControlMaster connection. It is
 cached per session to hold that to one, and it is the price of deleting 690 lines
 of hand-written SFTP v3.
 
-**M3 — Terminal.** The Windows keyboard check that gated this milestone is done:
-typing, AltGr characters, dead-key accents, arrows and history, Ctrl-C, Tab
-completion and resize all behave in `spikes/TerminalSpike` on a Windows desktop.
-That was the open question, and the answer makes this a straight port.
+**M3 — Terminal. Done.** The Windows keyboard check that gated this milestone
+came first: typing, AltGr characters, dead-key accents, arrows and history,
+Ctrl-C, Tab completion and resize all behave in `spikes/TerminalSpike` on a
+Windows desktop. That was the open question, and the answer made this a straight
+port.
 
-The `StrangeSharpTerm.Terminal` control: `ShellStream` ↔ XTerm.NET,
-resize via `window-change`, 16-colour theming, scrollback read-back, broadcast
-interception, title and exit handling. `spikes/TerminalSpike/SshPtyConnection.cs` is
-the starting point. Before building on it, run the spike on a Windows desktop: keyboard
-input (Ctrl/Alt sequences, AltGr, IME) is unverified there.
+`TerminalSession` binds an XTerm.NET engine to an SSH shell channel. Both the
+renderer and the session read the same stream through `TeeStream`, so what the
+assistant reads is what the user is looking at, and a headless driver can assert
+on it. Resize sends the `window-change` request; the palette carries the Swift
+themes' terminal colours unchanged; `TerminalRegistry` holds the broadcast group,
+where a group of one is not a broadcast and nothing echoes back to the pane that
+typed. `TerminalPaneView` attaches Iciclecreek's control through an
+`IPtyConnection` over the session, as `docs/adr/0002` said it would.
+
+Proven by the gate on both operating systems: a shell's output renders, and after
+a resize the remote pty agrees about the width. Two bugs surfaced there that
+macOS alone would have shipped — a `window-change` sent before the server had a
+pty to resize, and Enter sent as a line feed, which a Unix pty translates and
+Windows does not, so every command was typed and never run.
 
 **M4 — App shell.** Avalonia window, sidebar, host detail, tabs/panes/splits,
 `NativeMenuBar`, command palette, theme system. The `Theme` static and its
