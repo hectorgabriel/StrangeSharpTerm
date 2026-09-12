@@ -1,0 +1,92 @@
+<!--
+    Lucide 1.45.0, vendored. Regenerate with build/icons/generate.py; do not
+    hand-edit. Each icon is a 24x24 stroked path: Lucide has no filled
+    variants, so where SF Symbols used .fill to mean "active", colour says it.
+-->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- arrow.clockwise -->
+    <StreamGeometry x:Key="IconRefreshCw">M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8 M21 3v5h-5 M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16 M8 16H3v5</StreamGeometry>
+    <!-- arrow.left.arrow.right -->
+    <StreamGeometry x:Key="IconArrowLeftRight">M8 3 4 7l4 4 M4 7h16 M16,21 l4-4-4-4 M20 17H4</StreamGeometry>
+    <!-- arrow.right.to.line -->
+    <StreamGeometry x:Key="IconArrowRightToLine">M17 12H3 M11,18 l6-6-6-6 M21 5v14</StreamGeometry>
+    <!-- arrow.up -->
+    <StreamGeometry x:Key="IconArrowUp">M5,12 l7-7 7 7 M12 19V5</StreamGeometry>
+    <!-- bolt.fill -->
+    <StreamGeometry x:Key="IconZap">M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z</StreamGeometry>
+    <!-- checkmark.circle.fill -->
+    <StreamGeometry x:Key="IconCircleCheck">M2.0,12.0a10.0,10.0 0 1 0 20.0,0a10.0,10.0 0 1 0 -20.0,0z M16,9 l-5.5 5.5L8 12</StreamGeometry>
+    <!-- chevron.down -->
+    <StreamGeometry x:Key="IconChevronDown">M6,9 l6 6 6-6</StreamGeometry>
+    <!-- chevron.right -->
+    <StreamGeometry x:Key="IconChevronRight">M9,18 l6-6-6-6</StreamGeometry>
+    <!-- chevron.up -->
+    <StreamGeometry x:Key="IconChevronUp">M18,15 l-6-6-6 6</StreamGeometry>
+    <!-- chevron.up.chevron.down -->
+    <StreamGeometry x:Key="IconChevronsUpDown">M7,15 l5 5 5-5 M7,9 l5-5 5 5</StreamGeometry>
+    <!-- dot.radiowaves.left.and.right -->
+    <StreamGeometry x:Key="IconRadioTower">M4.9 16.1C1 12.2 1 5.8 4.9 1.9 M7.8 4.7a6.14 6.14 0 0 0-.8 7.5 M10.0,9.0a2.0,2.0 0 1 0 4.0,0a2.0,2.0 0 1 0 -4.0,0z M16.2 4.8c2 2 2.26 5.11.8 7.47 M19.1 1.9a9.96 9.96 0 0 1 0 14.1 M9.5 18h5 M8,22 l4-11 4 11</StreamGeometry>
+    <!-- ellipsis -->
+    <StreamGeometry x:Key="IconEllipsis">M11.0,12.0a1.0,1.0 0 1 0 2.0,0a1.0,1.0 0 1 0 -2.0,0z M18.0,12.0a1.0,1.0 0 1 0 2.0,0a1.0,1.0 0 1 0 -2.0,0z M4.0,12.0a1.0,1.0 0 1 0 2.0,0a1.0,1.0 0 1 0 -2.0,0z</StreamGeometry>
+    <!-- exclamationmark.octagon.fill -->
+    <StreamGeometry x:Key="IconOctagonAlert">M12 16h.01 M12 8v4 M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z</StreamGeometry>
+    <!-- exclamationmark.triangle.fill -->
+    <StreamGeometry x:Key="IconTriangleAlert">M21.73,18 l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3 M12 9v4 M12 17h.01</StreamGeometry>
+    <!-- folder -->
+    <StreamGeometry x:Key="IconFolder">M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z</StreamGeometry>
+    <!-- gearshape -->
+    <StreamGeometry x:Key="IconSettings">M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915 M9.0,12.0a3.0,3.0 0 1 0 6.0,0a3.0,3.0 0 1 0 -6.0,0z</StreamGeometry>
+    <!-- info.circle -->
+    <StreamGeometry x:Key="IconInfo">M2.0,12.0a10.0,10.0 0 1 0 20.0,0a10.0,10.0 0 1 0 -20.0,0z M12 16v-4 M12 8h.01</StreamGeometry>
+    <!-- key.fill -->
+    <StreamGeometry x:Key="IconKey">M2,21 l9.6-9.6 M7.5,15.5 l2.3 2.3a1 1 0 0 1 0 1.4l-2.1 2.1a1 1 0 0 1-1.4 0L4 19 M10.0,7.5a5.5,5.5 0 1 0 11.0,0a5.5,5.5 0 1 0 -11.0,0z</StreamGeometry>
+    <!-- lock.shield -->
+    <StreamGeometry x:Key="IconShieldCheck">M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z M9,12 l2 2 4-4</StreamGeometry>
+    <!-- magnifyingglass -->
+    <StreamGeometry x:Key="IconSearch">M21,21 l-4.34-4.34 M3.0,11.0a8.0,8.0 0 1 0 16.0,0a8.0,8.0 0 1 0 -16.0,0z</StreamGeometry>
+    <!-- minus.circle -->
+    <StreamGeometry x:Key="IconCircleMinus">M2.0,12.0a10.0,10.0 0 1 0 20.0,0a10.0,10.0 0 1 0 -20.0,0z M8 12h8</StreamGeometry>
+    <!-- plus -->
+    <StreamGeometry x:Key="IconPlus">M5 12h14 M12 5v14</StreamGeometry>
+    <!-- rectangle.split.1x2 -->
+    <StreamGeometry x:Key="IconRows2">M5.0,3.0h14.0a2.0,2.0 0 0 1 2.0,2.0v14.0a2.0,2.0 0 0 1 -2.0,2.0h-14.0a2.0,2.0 0 0 1 -2.0,-2.0v-14.0a2.0,2.0 0 0 1 2.0,-2.0z M3 12h18</StreamGeometry>
+    <!-- rectangle.split.2x1 -->
+    <StreamGeometry x:Key="IconColumns2">M5.0,3.0h14.0a2.0,2.0 0 0 1 2.0,2.0v14.0a2.0,2.0 0 0 1 -2.0,2.0h-14.0a2.0,2.0 0 0 1 -2.0,-2.0v-14.0a2.0,2.0 0 0 1 2.0,-2.0z M12 3v18</StreamGeometry>
+    <!-- server.rack -->
+    <StreamGeometry x:Key="IconServer">M4.0,2.0h16.0a2.0,2.0 0 0 1 2.0,2.0v4.0a2.0,2.0 0 0 1 -2.0,2.0h-16.0a2.0,2.0 0 0 1 -2.0,-2.0v-4.0a2.0,2.0 0 0 1 2.0,-2.0z M4.0,14.0h16.0a2.0,2.0 0 0 1 2.0,2.0v4.0a2.0,2.0 0 0 1 -2.0,2.0h-16.0a2.0,2.0 0 0 1 -2.0,-2.0v-4.0a2.0,2.0 0 0 1 2.0,-2.0z M6.0,6.0L6.01,6.0 M6.0,18.0L6.01,18.0</StreamGeometry>
+    <!-- slider.horizontal.3 -->
+    <StreamGeometry x:Key="IconSlidersHorizontal">M10 5H3 M12 19H3 M14 3v4 M16 17v4 M21 12h-9 M21 19h-5 M21 5h-7 M8 10v4 M8 12H3</StreamGeometry>
+    <!-- sparkles -->
+    <StreamGeometry x:Key="IconSparkles">M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z M20 2v4 M22 4h-4 M2.0,20.0a2.0,2.0 0 1 0 4.0,0a2.0,2.0 0 1 0 -4.0,0z</StreamGeometry>
+    <!-- square.stack.3d.up -->
+    <StreamGeometry x:Key="IconLayers">M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12 M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17</StreamGeometry>
+    <!-- stop.fill -->
+    <StreamGeometry x:Key="IconSquare">M5.0,3.0h14.0a2.0,2.0 0 0 1 2.0,2.0v14.0a2.0,2.0 0 0 1 -2.0,2.0h-14.0a2.0,2.0 0 0 1 -2.0,-2.0v-14.0a2.0,2.0 0 0 1 2.0,-2.0z</StreamGeometry>
+    <!-- text.append -->
+    <StreamGeometry x:Key="IconTextCursorInput">M12 20h-1a2 2 0 0 1-2-2 2 2 0 0 1-2 2H6 M13 8h7a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-7 M5 16H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h1 M6 4h1a2 2 0 0 1 2 2 2 2 0 0 1 2-2h1 M9 6v12</StreamGeometry>
+    <!-- trash -->
+    <StreamGeometry x:Key="IconTrash2">M10 11v6 M14 11v6 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M3 6h18 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2</StreamGeometry>
+    <!-- xmark -->
+    <StreamGeometry x:Key="IconX">M18 6 6 18 M6,6 l12 12</StreamGeometry>
+    <!-- xmark.circle / xmark.circle.fill -->
+    <StreamGeometry x:Key="IconCircleX">M2.0,12.0a10.0,10.0 0 1 0 20.0,0a10.0,10.0 0 1 0 -20.0,0z M15,9 l-6 6 M9,9 l6 6</StreamGeometry>
+    <!-- (terminal pane) -->
+    <StreamGeometry x:Key="IconSquareTerminal">M7,11 l2-2-2-2 M11 13h4 M5.0,3.0h14.0a2.0,2.0 0 0 1 2.0,2.0v14.0a2.0,2.0 0 0 1 -2.0,2.0h-14.0a2.0,2.0 0 0 1 -2.0,-2.0v-14.0a2.0,2.0 0 0 1 2.0,-2.0z</StreamGeometry>
+    <!-- (expanded folder) -->
+    <StreamGeometry x:Key="IconFolderOpen">M6,14 l1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2</StreamGeometry>
+    <!-- (file browser entry) -->
+    <StreamGeometry x:Key="IconFile">M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z M14 2v5a1 1 0 0 0 1 1h5</StreamGeometry>
+    <!-- (sftp upload) -->
+    <StreamGeometry x:Key="IconUpload">M12 3v12 M17,8 l-5-5-5 5 M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4</StreamGeometry>
+    <!-- (sftp download) -->
+    <StreamGeometry x:Key="IconDownload">M12 15V3 M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7,10 l5 5 5-5</StreamGeometry>
+    <!-- (run) -->
+    <StreamGeometry x:Key="IconPlay">M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z</StreamGeometry>
+    <!-- (connect) -->
+    <StreamGeometry x:Key="IconPlug">M12 22v-5 M15 8V2 M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z M9 8V2</StreamGeometry>
+    <!-- (disconnect) -->
+    <StreamGeometry x:Key="IconUnplug">M19,5 l3-3 M2,22 l3-3 M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z M7.5 13.5 10 11 M10.5 16.5 13 14 M12,6 l6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z</StreamGeometry>
+    <!-- (toggle sidebar) -->
+    <StreamGeometry x:Key="IconPanelLeft">M5.0,3.0h14.0a2.0,2.0 0 0 1 2.0,2.0v14.0a2.0,2.0 0 0 1 -2.0,2.0h-14.0a2.0,2.0 0 0 1 -2.0,-2.0v-14.0a2.0,2.0 0 0 1 2.0,-2.0z M9 3v18</StreamGeometry>
+</ResourceDictionary>
