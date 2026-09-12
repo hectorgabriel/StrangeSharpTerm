@@ -104,8 +104,81 @@
             <ContentControl Grid.Row="2" Margin="8" Content="{Binding PaneContent}" />
 
             <TextBlock Grid.Row="2" Margin="24" Opacity="0.5" TextWrapping="Wrap"
-                       IsVisible="{Binding PaneContent, Converter={x:Static ObjectConverters.IsNull}}"
-                       Text="Choose a host on the left to open a shell." />
+                       IsVisible="{Binding ShowsEmptyState}"
+                       Text="Choose a host on the left." />
+
+            <!-- With nothing open, the selected host explains itself: what a
+                 connection would actually use, inheritance included. -->
+            <ScrollViewer Grid.Row="2" Margin="24" Background="{DynamicResource ThemeBackgroundBrush}"
+                          IsVisible="{Binding ShowsDetail}">
+                <StackPanel Spacing="16" MaxWidth="520" HorizontalAlignment="Left">
+
+
+                    <StackPanel Spacing="16" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="{Binding Detail.Name}" FontSize="20" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Detail.UserAtHost}" Opacity="0.6" FontFamily="monospace" />
+                        </StackPanel>
+
+                        <ItemsControl ItemsSource="{Binding Detail.Tags}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <Border Background="#22808080" CornerRadius="8" Padding="8,2" Margin="0,0,6,0">
+                                        <TextBlock Text="{Binding}" FontSize="11" />
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Command="{Binding ConnectSelectedCommand}" Padding="12,6">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Path Classes="icon" Width="14" Height="14"
+                                          Data="{Binding Source=IconSquareTerminal, Converter={StaticResource Icon}}" />
+                                    <TextBlock Text="Open a shell" />
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding DeleteSelectedCommand}" Padding="12,6">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Path Classes="icon" Width="14" Height="14"
+                                          Data="{Binding Source=IconTrash2, Converter={StaticResource Icon}}" />
+                                    <TextBlock Text="Delete" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <ItemsControl ItemsSource="{Binding Detail.Fields}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:DetailField">
+                                    <Grid ColumnDefinitions="140,*" Margin="0,3">
+                                        <TextBlock Grid.Column="0" Text="{Binding Label}" Opacity="0.55" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap"
+                                                   Foreground="{Binding Emphasis, Converter={x:Static views:EmphasisBrush.Instance}}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <ItemsControl ItemsSource="{Binding Detail.Forwards}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ForwardSummary">
+                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,3">
+                                        <TextBlock Text="{Binding Flag}" Opacity="0.55" FontFamily="monospace" />
+                                        <TextBlock Text="{Binding Specification}" FontFamily="monospace" />
+                                        <TextBlock Text="needs root" FontSize="11" IsVisible="{Binding NeedsRoot}"
+                                                   Foreground="{x:Static views:EmphasisBrush.Warning}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
         </Grid>
     </Grid>
 </Window>
