@@ -86,6 +86,15 @@ public sealed class TerminalSession : IDisposable
     }
 
     /// <summary>
+    /// Announces input that something else has already written to the channel.
+    ///
+    /// A UI control writes the keystroke itself, through the stream it was
+    /// attached to; sending it again here would double every character. Broadcast
+    /// still has to hear about it, so this raises the event and writes nothing.
+    /// </summary>
+    public void ObserveInput(string text) => InputSent?.Invoke(this, Encoding.UTF8.GetBytes(text));
+
+    /// <summary>
     /// Sends without announcing it. This is how a broadcast reaches the other
     /// panes without each of them broadcasting in turn.
     /// </summary>

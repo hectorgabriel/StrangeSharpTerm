@@ -10,21 +10,24 @@ Swift/SwiftUI app. No Swift code carries over; the design does.
 
 ## Status
 
-**M2 — transport.** Connections are real. One authenticated session per host
-carries commands, shell channels, port forwards and SFTP; host keys are checked
-against `known_hosts` and accepted ones are written back to it, so trust is
-shared with `ssh` on the command line. Secrets live in the login keychain on
-macOS and Credential Manager on Windows. `stctl` drives all of it headlessly.
+**M3 — terminal.** There is a working terminal. An SSH shell channel drives an
+XTerm.NET engine, rendered by an Avalonia control; the server owns the pty, so
+there is no ConPTY and no openpty anywhere in the code, which is why the same
+terminal works on both platforms. Resizing the window reaches the remote pty,
+themes carry the Swift app's colours, broadcast types into several panes at
+once, and scrollback is readable — the thing the assistant will read in M6.
 
-The integration gate runs against a real sshd on loopback **on both macOS and
-Windows** in CI: three execs cost one authentication, a forward carries traffic
-and releases its port, 700 KiB round-trips through SFTP, a changed host key is
-refused even when asked to accept new keys, and an agent-held key authenticates —
-including over Windows's named pipe, which was the last open risk from M0.
+Run one against a host:
 
-M1 before it ported the model and store with their 84 tests, keeping the
-inventory file byte-identical to the Swift app's. See `docs/migration-plan.md`
-for the milestone list, the platform strategy, and the working rules.
+```sh
+dotnet run --project src/StrangeSharpTerm.App -- --connect user@host --theme Dracula
+```
+
+M2 before it brought connections, host-key trust shared with `ssh`, secrets in
+each platform's own store, and an integration gate that runs against a real sshd
+on macOS and Windows in CI. M1 ported the model and store, keeping the inventory
+file byte-identical to the Swift app's. See `docs/migration-plan.md` for the
+milestone list, the platform strategy, and the working rules.
 
 ## Why the rewrite
 
