@@ -209,7 +209,12 @@ terminal.SetAction(async (parsed, cancellationToken) =>
             await Task.Delay(500, cancellationToken);
         }
         if (parsed.GetValue(runOption) is { } line)
-            pane.Send(line + "\n");
+        {
+            // Carriage return, because that is what a terminal sends when a person
+            // presses Enter. A Unix pty translates a line feed for us; Windows
+            // does not, so a line feed there is typed and never run.
+            pane.Send(line + "\r");
+        }
 
         var expected = parsed.GetValue(expectOption);
         var deadline = DateTime.UtcNow.AddSeconds(parsed.GetValue(waitOption));
