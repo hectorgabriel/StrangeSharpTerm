@@ -170,11 +170,12 @@ What needs real design work:
 - **Menu bar**: `.commands` builds ~20 items including a `ForEach(1...9)` generating
   ⌘1–⌘9. Use Avalonia `NativeMenuBar` (native on macOS, in-window on Windows) with
   `ICommand.CanExecute` replacing each `.disabled(…)` binding.
-- **SF Symbols: 36 distinct glyphs across ~90 call sites, with no Avalonia equivalent.**
-  Pick one replacement set (Lucide or Phosphor, both MIT, both have full coverage) and
-  make the substitution a single reviewed pass early — several glyphs
-  (`server.rack`, `dot.radiowaves.left.and.right`, `text.append`) have no obvious twin
-  and want a design decision, not a default.
+- ~~**SF Symbols: 36 distinct glyphs across ~90 call sites, with no Avalonia equivalent.**~~
+  **Decided: Lucide** (ISC, not MIT as this once said), vendored as generated
+  Avalonia geometry rather than taken from a package built against Avalonia 11.
+  34 distinct symbols mapped in one pass, including the three with no obvious twin:
+  `server.rack` → server, `dot.radiowaves.left.and.right` → radio-tower,
+  `text.append` → text-cursor-input. See `docs/adr/0003-icons.md`.
 - **`.windowStyle(.hiddenTitleBar)` is load-bearing** — `RootView` and `SessionTabBar`
   hard-code a 26/28pt spacer for the traffic lights. Decide what this means on Windows;
   Avalonia's `ExtendClientAreaToDecorationsHint` is the macOS half, Windows needs its
