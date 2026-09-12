@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using StrangeSharpTerm.App.Terminal;
+using StrangeSharpTerm.App.Views;
 using StrangeSharpTerm.Model;
 using StrangeSharpTerm.Terminal;
 using StrangeSharpTerm.Transport;
@@ -26,15 +27,18 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly TerminalRegistry _terminals = new();
     private readonly Func<Connection, TerminalSession> _connect;
     private readonly Func<TerminalSession, TerminalPalette, Control> _view;
+    private readonly IDialogService _dialogs;
 
     /// <param name="connect">How a host becomes a session. Replaced in tests by something that needs no server.</param>
     /// <param name="view">How a session becomes something on screen. Likewise.</param>
     public ShellViewModel(
         InventoryViewModel inventory,
         Func<Connection, TerminalSession>? connect = null,
-        Func<TerminalSession, TerminalPalette, Control>? view = null)
+        Func<TerminalSession, TerminalPalette, Control>? view = null,
+        IDialogService? dialogs = null)
     {
         Inventory = inventory;
+        _dialogs = dialogs ?? new ScriptedDialogService();
         Workspace = new WorkspaceViewModel(_terminals);
         _connect = connect ?? (connection => TerminalLauncher.Connect(Inventory.Tree, connection));
         _view = view ?? ((session, palette) => new TerminalPaneView(session, palette, _terminals));
@@ -42,6 +46,15 @@ public sealed partial class ShellViewModel : ObservableObject
         // Focusing a pane moves the sidebar with it, and deleting a host closes
         // whatever it had open. Neither half knows about the other.
         Workspace.HostFocused += (_, host) => Inventory.Selection = host;
+        Inventory.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(InventoryViewModel.Selection) or nameof(InventoryViewModel.Tree))
+            {
+                OnPropertyChanged(nameof(Detail));
+                OnPropertyChanged(nameof(ShowsDetail));
+                OnPropertyChanged(nameof(ShowsEmptyState));
+            }
+        };
         Inventory.ConnectionRemoving += (_, host) => CloseEverythingFor(host);
         Workspace.PropertyChanged += (_, _) => RefreshTabs();
     }
@@ -56,25 +69,78 @@ public sealed partial class ShellViewModel : ObservableObject
     [ObservableProperty]
     public partial Control? PaneContent { get; private set; }
 
+    /// <summary>
+    /// Whether the right-hand side is showing the selected host rather than a
+    /// terminal: either nothing is open, or the selection is a different host
+    /// from the one the focused pane belongs to.
+    /// </summary>
+    public bool ShowsDetail =>
+        Detail is not null && (PaneContent is null || Workspace.ActivePane?.ConnectionId != Inventory.Selection);
+
+    /// <summary>
+    /// Nothing selected and nothing open. Not simply "no detail": a terminal is
+    /// showing whenever a pane is open, and an empty-state line drawn over it
+    /// reads as part of the shell's output.
+    /// </summary>
+    public bool ShowsEmptyState => PaneContent is null && !ShowsDetail;
+
     /// <summary>What went wrong with the last connection attempt, for the window to show.</summary>
     [ObservableProperty]
     public partial string? Failure { get; private set; }
 
-    /// <summary>A row was activated: a folder opens or shuts, a host connects.</summary>
+    /// <summary>
+    /// The selected host, resolved. Null when nothing is selected, or when the
+    /// selection names a host that has since been deleted.
+    /// </summary>
+    public HostDetailViewModel? Detail =>
+        Inventory.Selection is { } id && Inventory.Tree.Connections.ContainsKey(id)
+            ? new HostDetailViewModel(Inventory.Tree.Resolve(id))
+            : null;
+
+    /// <summary>Opens a shell on the selected host, for the button in the detail pane.</summary>
     [RelayCommand]
-    public async Task Activate(SidebarRow? row)
+    public async Task ConnectSelected()
+    {
+        if (Detail is { } detail)
+            await OpenTerminal(detail.Connection);
+    }
+
+    /// <summary>
+    /// Deletes the selected host, after asking. The confirmation names what goes
+    /// with it rather than merely asking twice.
+    /// </summary>
+    [RelayCommand]
+    public async Task DeleteSelected()
+    {
+        if (Detail is not { } detail)
+            return;
+
+        Inventory.ConfirmDelete(new PendingDeletion.Connection(detail.Connection.Id));
+        if (Inventory.PendingDeletionMessage is not { } message)
+            return;
+
+        if (await _dialogs.Confirm(message.Title, message.Detail, "Delete"))
+            Inventory.PerformPendingDeletion();
+        else
+            Inventory.Pending = null;
+    }
+
+    /// <summary>
+    /// A row was activated: a folder opens or shuts, a host is selected.
+    ///
+    /// Selecting does not connect. The detail pane says what a connection would
+    /// use and offers a button for it, so opening a shell stays something asked
+    /// for rather than something a stray click does to a production server.
+    /// </summary>
+    [RelayCommand]
+    public void Activate(SidebarRow? row)
     {
         if (row is null)
             return;
         if (row.IsFolder)
-        {
             Inventory.Toggle(row.Id);
-            return;
-        }
-
-        Inventory.Selection = row.Id;
-        if (Inventory.Tree.Connections.GetValueOrDefault(row.Id) is { } connection)
-            await OpenTerminal(connection);
+        else
+            Inventory.Selection = row.Id;
     }
 
     [RelayCommand]
@@ -152,6 +218,8 @@ public sealed partial class ShellViewModel : ObservableObject
 
         // Switching back to a tab has to hand the keyboard back too: the pane was
         // loaded long ago, so nothing else will.
+        OnPropertyChanged(nameof(ShowsDetail));
+        OnPropertyChanged(nameof(ShowsEmptyState));
         if (PaneContent is TerminalPaneView terminal)
             Dispatcher.UIThread.Post(terminal.FocusTerminal, DispatcherPriority.Input);
     }
