@@ -48,6 +48,8 @@ public sealed partial class InventoryViewModel : ObservableObject
     [ObservableProperty]
     public partial string Search { get; set; } = "";
 
+    partial void OnSearchChanged(string value) => OnPropertyChanged(nameof(Rows));
+
     /// <summary>Why the last save failed, for the UI to show without blocking the edit.</summary>
     [ObservableProperty]
     public partial string? StoreError { get; private set; }
@@ -66,6 +68,16 @@ public sealed partial class InventoryViewModel : ObservableObject
     /// <summary>Connections sitting outside any folder.</summary>
     public IReadOnlyList<Model.Connection> LooseConnections => Tree.Children(null).Connections;
 
+    /// <summary>
+    /// The same, narrowed by the search.
+    ///
+    /// The Swift sidebar filtered a folder's contents but not the hosts outside
+    /// one, so searching left them all on screen. Corrected here: a search is a
+    /// search.
+    /// </summary>
+    public IReadOnlyList<Model.Connection> VisibleLooseConnections =>
+        Search.Length == 0 ? LooseConnections : [.. LooseConnections.Where(Matches)];
+
     public IReadOnlyList<Model.Folder> RootFolders => Tree.Children(null).Folders;
 
     public bool IsExpanded(NodeId folder) => _expanded.Contains(folder);
@@ -74,7 +86,7 @@ public sealed partial class InventoryViewModel : ObservableObject
     {
         if (!_expanded.Remove(folder))
             _expanded.Add(folder);
-        OnPropertyChanged(nameof(IsExpanded));
+        OnPropertyChanged(nameof(Rows));
     }
 
     /// <summary>
@@ -254,6 +266,7 @@ public sealed partial class InventoryViewModel : ObservableObject
     private void Persist()
     {
         OnPropertyChanged(nameof(Tree));
+        OnPropertyChanged(nameof(Rows));
         if (_store is null)
             return;
         try
