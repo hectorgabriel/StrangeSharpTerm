@@ -9,7 +9,7 @@
         beneath it inherits.
     -->
     <StackPanel Spacing="10">
-        <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+        <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
               RowSpacing="8">
 
             <TextBlock Grid.Row="0" Grid.Column="0" Classes="muted" Text="Username" VerticalAlignment="Center" />
@@ -54,12 +54,18 @@
                       SelectedItem="{Binding TerminalThemeChoice, Mode=TwoWay}"
                       DisplayMemberBinding="{Binding Label}" />
 
-            <TextBlock Grid.Row="8" Grid.Column="0" Classes="muted" Text="Jump hosts" VerticalAlignment="Center" />
-            <TextBox Grid.Row="8" Grid.Column="1" Text="{Binding JumpHosts, Mode=TwoWay}"
+            <TextBlock Grid.Row="8" Grid.Column="0" Classes="muted" Text="Credential" VerticalAlignment="Center" />
+            <ComboBox Grid.Row="8" Grid.Column="1" HorizontalAlignment="Stretch"
+                      ItemsSource="{Binding CredentialChoices}"
+                      SelectedItem="{Binding CredentialChoice, Mode=TwoWay}"
+                      DisplayMemberBinding="{Binding Label}" />
+
+            <TextBlock Grid.Row="9" Grid.Column="0" Classes="muted" Text="Jump hosts" VerticalAlignment="Center" />
+            <TextBox Grid.Row="9" Grid.Column="1" Text="{Binding JumpHosts, Mode=TwoWay}"
                      Watermark="bastion, edge — nearest hop first" />
 
-            <TextBlock Grid.Row="9" Grid.Column="0" Classes="muted" Text="Known hosts" VerticalAlignment="Center" />
-            <TextBox Grid.Row="9" Grid.Column="1" Text="{Binding KnownHostsFile, Mode=TwoWay}"
+            <TextBlock Grid.Row="10" Grid.Column="0" Classes="muted" Text="Known hosts" VerticalAlignment="Center" />
+            <TextBox Grid.Row="10" Grid.Column="1" Text="{Binding KnownHostsFile, Mode=TwoWay}"
                      Watermark="~/.ssh/known_hosts" />
         </Grid>
 

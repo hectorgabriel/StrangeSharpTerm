@@ -31,6 +31,16 @@
         <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
     </Style>
 
+    <!-- A disabled control's own foreground never reaches its label, because the
+         style above sets it outright on every TextBlock: buttons in this app carry
+         a TextBlock rather than a string, so without this a disabled button looks
+         exactly like a live one. Found by looking at Edit… and Delete… in the
+         credential library with nothing selected. -->
+    <Style Selector=":disabled TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+        <Setter Property="Opacity" Value="0.6" />
+    </Style>
+
     <!-- A label, a hostname, a caption: said, and not shouted. -->
     <Style Selector="TextBlock.muted">
         <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />

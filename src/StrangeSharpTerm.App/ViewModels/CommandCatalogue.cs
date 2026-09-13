@@ -70,6 +70,9 @@ public static class CommandCatalogue
             new("host.edit", "Edit Host…", CommandGroup.Edit, shell.EditSelectedCommand,
                 Gesture: new KeyGesture(Key.E, command)),
             new("host.delete", "Delete Host…", CommandGroup.Edit, shell.DeleteSelectedCommand),
+            // No shortcut: the Swift app's table has none for the library, and
+            // it is opened rarely enough that the menu is the right place.
+            new("credentials", "Credentials…", CommandGroup.Edit, shell.ManageCredentialsCommand),
 
             new("session.open", "New Session", CommandGroup.Session, shell.ConnectSelectedCommand,
                 Gesture: new KeyGesture(Key.T, command)),

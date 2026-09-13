@@ -73,7 +73,8 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// <c>--demo-editor host|folder</c>: an editor on its own, over a fixture.
+    /// <c>--demo-editor host|folder|credential|credentials</c>: a dialog on its
+    /// own, over a fixture.
     ///
     /// The editors are reached through a flyout, and a flyout cannot be opened by
     /// the synthetic input the DevTools MCP sends — which would leave the two
@@ -105,11 +106,51 @@ public partial class App : Application
                 IdentityFiles = ["~/.ssh/id_ed25519"],
             },
         };
-        var tree = new Model.InventoryTree([folder], [host]);
+        var key = new Model.Credential
+        {
+            Name = "Ops key",
+            Username = "ops",
+            Method = Model.CredentialMethod.IdentityFile,
+            IdentityFile = "~/.ssh/id_ed25519",
+        };
+        var password = new Model.Credential
+        {
+            Name = "Legacy password",
+            Username = "admin",
+            Method = Model.CredentialMethod.Password,
+            SortIndex = 1,
+        };
+        var tree = new Model.InventoryTree(
+            [folder with { Settings = folder.Settings with { CredentialId = key.Id } }],
+            [host],
+            credentials: [key, password]);
 
-        return arguments[index + 1] == "folder"
-            ? new FolderEditor(FolderDraft.For(tree, folder))
-            : new HostEditor(HostDraft.For(tree, host));
+        // In memory, and never the real keychain: a fixture must not write to
+        // the login keychain of whoever is looking at it.
+        var secrets = new Security.InMemorySecretStore();
+        secrets.SetSecret(password.SecretAccount, "not a real password");
+
+        return arguments[index + 1] switch
+        {
+            "folder" => new FolderEditor(FolderDraft.For(tree, tree.Folders.Values.First())),
+            "credential" => new CredentialEditor(CredentialDraft.For(password, secrets)),
+            "credentials" => Library(tree, secrets),
+            _ => new HostEditor(HostDraft.For(tree, host)),
+        };
+    }
+
+    /// <summary>
+    /// The credential library over a fixture, with its own dialogs live, so Add,
+    /// Edit and Delete can be walked through without touching the real keychain.
+    /// The reference is late for the same reason it is in <see cref="Shell"/>:
+    /// the dialogs need the window they will be modal to.
+    /// </summary>
+    private static Window Library(Model.InventoryTree tree, Security.ISecretStore secrets)
+    {
+        CredentialsWindow? window = null;
+        var model = new CredentialsViewModel(
+            new InventoryViewModel(null, tree), secrets, new DialogService(() => window));
+        return window = new CredentialsWindow(model);
     }
 
     private static Window TerminalWindow(TerminalLaunchRequest request, AppTheme theme)

@@ -29,6 +29,12 @@ public interface IDialogService
     /// <inheritdoc cref="Edit(HostDraft)"/>
     Task<bool> Edit(FolderDraft draft);
 
+    /// <inheritdoc cref="Edit(HostDraft)"/>
+    Task<bool> Edit(CredentialDraft draft);
+
+    /// <summary>Puts the credential library in front of the user until they close it.</summary>
+    Task Manage(CredentialsViewModel credentials);
+
     /// <summary>Asks for files from this machine. Empty when the user picked none.</summary>
     Task<IReadOnlyList<string>> PickFiles(string title);
 }
@@ -65,6 +71,24 @@ public sealed class ScriptedDialogService(bool answer = false) : IDialogService
         return Task.FromResult(EditFolder?.Invoke(draft) ?? answer);
     }
 
+    /// <inheritdoc cref="EditHost"/>
+    public Func<CredentialDraft, bool>? EditCredential { get; set; }
+
+    /// <summary>The credential libraries that were opened, for a test to drive.</summary>
+    public List<CredentialsViewModel> Managed { get; } = [];
+
+    public Task<bool> Edit(CredentialDraft draft)
+    {
+        Edited.Add(draft);
+        return Task.FromResult(EditCredential?.Invoke(draft) ?? answer);
+    }
+
+    public Task Manage(CredentialsViewModel credentials)
+    {
+        Managed.Add(credentials);
+        return Task.CompletedTask;
+    }
+
     /// <summary>What the file picker would have returned. Nothing, unless a test says otherwise.</summary>
     public IReadOnlyList<string> Files { get; set; } = [];
 
@@ -80,6 +104,10 @@ public sealed class DialogService(Func<Window?> owner) : IDialogService
     public Task<bool> Edit(HostDraft draft) => Show(new HostEditor(draft));
 
     public Task<bool> Edit(FolderDraft draft) => Show(new FolderEditor(draft));
+
+    public Task<bool> Edit(CredentialDraft draft) => Show(new CredentialEditor(draft));
+
+    public Task Manage(CredentialsViewModel credentials) => Show(new CredentialsWindow(credentials));
 
     /// <summary>
     /// The platform's own file picker, through Avalonia's storage provider —

@@ -8,6 +8,7 @@ using StrangeSharpTerm.App.Terminal;
 using StrangeSharpTerm.App.Theming;
 using StrangeSharpTerm.App.Views;
 using StrangeSharpTerm.Model;
+using StrangeSharpTerm.Security;
 using StrangeSharpTerm.Terminal;
 using StrangeSharpTerm.Transport;
 
@@ -37,6 +38,7 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly Dictionary<NodeId, DashboardViewModel> _dashboards = [];
     private readonly Func<TerminalSession, TerminalPalette, Control> _view;
     private readonly IDialogService _dialogs;
+    private readonly Lazy<ISecretStore> _secrets;
     private readonly AppTheme _theme;
 
     /// <param name="sessions">
@@ -49,10 +51,17 @@ public sealed partial class ShellViewModel : ObservableObject
         IHostSessions? sessions = null,
         Func<TerminalSession, TerminalPalette, Control>? view = null,
         IDialogService? dialogs = null,
-        AppTheme? theme = null)
+        AppTheme? theme = null,
+        ISecretStore? secrets = null)
     {
         Inventory = inventory;
         _dialogs = dialogs ?? new ScriptedDialogService();
+        // Opened when the library is, not when the window is: reaching for the
+        // platform keychain costs a round trip and can refuse, and neither
+        // belongs in the constructor of the thing that draws the sidebar.
+        _secrets = secrets is { } given
+            ? new Lazy<ISecretStore>(given)
+            : new Lazy<ISecretStore>(() => new PlatformSecretStore());
         _theme = theme ?? new AppTheme();
         Workspace = new WorkspaceViewModel(_terminals);
         _sessions = sessions ?? new HostSessions(() => Inventory.Tree);
@@ -159,7 +168,13 @@ public sealed partial class ShellViewModel : ObservableObject
         if (!_dashboards.TryGetValue(id, out var dashboard))
             _dashboards[id] = dashboard = new DashboardViewModel(_sessions.Health(connection));
 
-        Detail = new HostDetailViewModel(Inventory.Tree.Resolve(id), dashboard);
+        var resolved = Inventory.Tree.Resolve(id);
+        Detail = new HostDetailViewModel(
+            resolved,
+            dashboard,
+            resolved.Settings.CredentialId is { } credential
+                ? Inventory.Tree.Credentials.GetValueOrDefault(credential)
+                : null);
     }
 
     /// <summary>
@@ -201,6 +216,14 @@ public sealed partial class ShellViewModel : ObservableObject
 
     /// <summary>Whether there is a pane to close, split or act on.</summary>
     public bool HasOpenPane => Workspace.ActivePaneId is not null;
+
+    /// <summary>
+    /// The credential library: a key or a password described once, pointed at
+    /// from any number of hosts.
+    /// </summary>
+    [RelayCommand]
+    public async Task ManageCredentials() =>
+        await _dialogs.Manage(new CredentialsViewModel(Inventory, _secrets.Value, _dialogs));
 
     /// <summary>Edits the selected host, for the button in the detail pane.</summary>
     [RelayCommand(CanExecute = nameof(HasSelectedHost))]

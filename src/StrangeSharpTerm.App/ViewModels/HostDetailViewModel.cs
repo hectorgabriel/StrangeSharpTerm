@@ -34,7 +34,15 @@ public sealed record ForwardSummary(string Flag, string Specification, string Na
 /// parts are decisions — what an unset port means, which values deserve a
 /// warning — and those are worth testing.
 /// </summary>
-public sealed class HostDetailViewModel(ResolvedConnection resolved, DashboardViewModel? dashboard = null)
+/// <param name="credential">
+/// The credential this host resolves to, if any. Passed by name rather than
+/// looked up here: this view model is given a resolved connection precisely so
+/// it does not need the tree.
+/// </param>
+public sealed class HostDetailViewModel(
+    ResolvedConnection resolved,
+    DashboardViewModel? dashboard = null,
+    Credential? credential = null)
 {
     /// <summary>
     /// What the server says about itself, once someone asks. Null in the tests
@@ -87,6 +95,12 @@ public sealed class HostDetailViewModel(ResolvedConnection resolved, DashboardVi
                 Settings.ForwardAgent ? FieldEmphasis.Warning : FieldEmphasis.None));
             fields.Add(new DetailField("Keys",
                 Settings.IdentityFiles.Count == 0 ? "From the agent" : string.Join(", ", Settings.IdentityFiles)));
+
+            // Which shared credential answered, when one did. Without this the
+            // username and keys above appear from nowhere: they are the
+            // credential's, and nothing else on this pane says so.
+            if (credential is { } shared)
+                fields.Add(new DetailField("Credential", $"{shared.Name} ({shared.Method.Label()})"));
 
             return fields;
         }

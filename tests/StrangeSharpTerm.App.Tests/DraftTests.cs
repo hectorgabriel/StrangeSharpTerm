@@ -55,8 +55,9 @@ public class DraftTests
     [Fact]
     public void SettingsTheFormDoesNotShowSurviveBeingEditedAround()
     {
-        // Port forwards, environment, the credential and the font size are real
-        // settings with no field in this editor. Rebuilding the record instead of
+        // Port forwards, environment and the font size are real settings with no
+        // field in this editor; the credential has one now, but this host points
+        // at an id the library does not hold. Rebuilding the record instead of
         // folding onto it would delete them, quietly, on any edit.
         var credential = NodeId.New();
         var forward = new PortForward
@@ -374,6 +375,50 @@ public class DraftTests
         draft.Name.ShouldBe("");
         draft.Parent.Id.ShouldBe(folder.Id);
         draft.Applied().SortIndex.ShouldBe(5);
+    }
+
+    [Fact]
+    public void AHostCanBePointedAtASharedCredential()
+    {
+        var credential = new Credential { Name = "Production key", Method = CredentialMethod.IdentityFile };
+        var host = Host();
+        var tree = new InventoryTree(connections: [host], credentials: [credential]);
+
+        var draft = HostDraft.For(tree, host);
+        draft.Settings.CredentialChoices.Select(choice => choice.Label).ShouldBe(["Inherited", "Production key"]);
+
+        draft.Settings.CredentialChoice = draft.Settings.CredentialChoices[1];
+
+        draft.Applied().Settings.CredentialId.ShouldBe(credential.Id);
+    }
+
+    [Fact]
+    public void ACredentialTheLibraryHasLostIsKeptRatherThanCleared()
+    {
+        // The id is in the file. A form that drops it because it cannot name it
+        // is a form that loses data on Save — and the host would silently start
+        // authenticating some other way.
+        var missing = NodeId.New();
+        var host = Host(settings: new ConnectionSettings { CredentialId = missing });
+        var tree = new InventoryTree(connections: [host]);
+
+        var draft = HostDraft.For(tree, host);
+
+        draft.Settings.CredentialChoice.Label.ShouldBe("A credential that is no longer here");
+        draft.Applied().Settings.CredentialId.ShouldBe(missing);
+    }
+
+    [Fact]
+    public void ChoosingInheritedClearsIt()
+    {
+        var credential = new Credential { Name = "Production key" };
+        var host = Host(settings: new ConnectionSettings { CredentialId = credential.Id });
+        var tree = new InventoryTree(connections: [host], credentials: [credential]);
+
+        var draft = HostDraft.For(tree, host);
+        draft.Settings.CredentialChoice = draft.Settings.CredentialChoices[0];
+
+        draft.Applied().Settings.CredentialId.ShouldBeNull();
     }
 
     [Fact]

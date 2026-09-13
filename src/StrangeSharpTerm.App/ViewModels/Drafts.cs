@@ -52,7 +52,7 @@ public sealed partial class HostDraft : ObservableObject
         Name = original.Name;
         Hostname = original.Hostname;
         Tags = string.Join(", ", original.Tags);
-        Settings = new SettingsDraft(original.Settings);
+        Settings = new SettingsDraft(original.Settings, [.. tree.Credentials.Values]);
         Folders = FolderChoice.Of(tree);
         Parent = Folders.FirstOrDefault(choice => choice.Id == original.ParentId) ?? FolderChoice.Root;
         Settings.PropertyChanged += (_, _) => Revalidate();
@@ -168,7 +168,7 @@ public sealed partial class FolderDraft : ObservableObject
         _original = original;
         IsNew = isNew;
         Name = original.Name;
-        Settings = new SettingsDraft(original.Settings);
+        Settings = new SettingsDraft(original.Settings, [.. tree.Credentials.Values]);
         // Its own subtree is not offered as a destination, and neither is it.
         Folders = FolderChoice.Of(tree, excluding: isNew ? null : original.Id);
         Parent = Folders.FirstOrDefault(choice => choice.Id == original.ParentId) ?? FolderChoice.Root;
