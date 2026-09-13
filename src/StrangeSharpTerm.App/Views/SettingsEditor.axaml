@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:StrangeSharpTerm.App.ViewModels"
+             x:Class="StrangeSharpTerm.App.Views.SettingsEditor"
+             x:DataType="vm:SettingsDraft">
+    <!--
+        The settings a folder and a host both carry. One control, used by both
+        editors, because they are the same fields: what a folder sets, everything
+        beneath it inherits.
+    -->
+    <StackPanel Spacing="10">
+        <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+              RowSpacing="8">
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Classes="muted" Text="Username" VerticalAlignment="Center" />
+            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Username, Mode=TwoWay}"
+                     Watermark="{Binding UsernameWatermark}" />
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Classes="muted" Text="Port" VerticalAlignment="Center" />
+            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Port, Mode=TwoWay}"
+                     Watermark="{Binding PortWatermark}" />
+
+            <TextBlock Grid.Row="2" Grid.Column="0" Classes="muted" Text="Connect timeout" VerticalAlignment="Center" />
+            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ConnectTimeout, Mode=TwoWay}"
+                     Watermark="15 seconds" />
+
+            <TextBlock Grid.Row="3" Grid.Column="0" Classes="muted" Text="Keep-alive" VerticalAlignment="Center" />
+            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding KeepAliveInterval, Mode=TwoWay}"
+                     Watermark="30 seconds" />
+
+            <TextBlock Grid.Row="4" Grid.Column="0" Classes="muted" Text="Host keys" VerticalAlignment="Center" />
+            <ComboBox Grid.Row="4" Grid.Column="1" HorizontalAlignment="Stretch"
+                      ItemsSource="{x:Static vm:SettingsDraft.Policies}"
+                      SelectedItem="{Binding HostKeyPolicyChoice, Mode=TwoWay}"
+                      DisplayMemberBinding="{Binding Label}" />
+
+            <TextBlock Grid.Row="5" Grid.Column="0" Classes="muted" Text="Agent forwarding" VerticalAlignment="Center" />
+            <ComboBox Grid.Row="5" Grid.Column="1" HorizontalAlignment="Stretch"
+                      ItemsSource="{x:Static vm:SettingsDraft.Tristates}"
+                      SelectedValueBinding="{Binding Value}"
+                      SelectedValue="{Binding ForwardAgent, Mode=TwoWay}"
+                      DisplayMemberBinding="{Binding Label}" />
+
+            <TextBlock Grid.Row="6" Grid.Column="0" Classes="muted" Text="Compression" VerticalAlignment="Center" />
+            <ComboBox Grid.Row="6" Grid.Column="1" HorizontalAlignment="Stretch"
+                      ItemsSource="{x:Static vm:SettingsDraft.Tristates}"
+                      SelectedValueBinding="{Binding Value}"
+                      SelectedValue="{Binding Compression, Mode=TwoWay}"
+                      DisplayMemberBinding="{Binding Label}" />
+
+            <TextBlock Grid.Row="7" Grid.Column="0" Classes="muted" Text="Terminal theme" VerticalAlignment="Center" />
+            <ComboBox Grid.Row="7" Grid.Column="1" HorizontalAlignment="Stretch"
+                      ItemsSource="{Binding ThemeChoices}"
+                      SelectedItem="{Binding TerminalThemeChoice, Mode=TwoWay}"
+                      DisplayMemberBinding="{Binding Label}" />
+
+            <TextBlock Grid.Row="8" Grid.Column="0" Classes="muted" Text="Jump hosts" VerticalAlignment="Center" />
+            <TextBox Grid.Row="8" Grid.Column="1" Text="{Binding JumpHosts, Mode=TwoWay}"
+                     Watermark="bastion, edge — nearest hop first" />
+
+            <TextBlock Grid.Row="9" Grid.Column="0" Classes="muted" Text="Known hosts" VerticalAlignment="Center" />
+            <TextBox Grid.Row="9" Grid.Column="1" Text="{Binding KnownHostsFile, Mode=TwoWay}"
+                     Watermark="~/.ssh/known_hosts" />
+        </Grid>
+
+        <TextBlock Classes="section" Text="KEYS" Margin="0,6,0,0" />
+        <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                   Text="One path per line. With none, the agent is asked." />
+        <TextBox Text="{Binding IdentityFiles, Mode=TwoWay}" AcceptsReturn="True" MinHeight="60"
+                 Watermark="~/.ssh/id_ed25519" />
+    </StackPanel>
+</UserControl>

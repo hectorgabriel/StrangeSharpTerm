@@ -12,6 +12,7 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceInclude Source="avares://StrangeSharpTerm/Icons/Icons.axaml" />
+                <ResourceInclude Source="avares://StrangeSharpTerm/Styles/Controls.axaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

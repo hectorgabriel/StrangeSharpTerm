@@ -12,26 +12,25 @@ means; this says only what is done, what is in flight, and what to do first.
 | **M1** model and store | `StrangeSharpTerm.Model` and `.Store` with their 84 tests. The inventory file is byte-identical to the Swift app's, checked against goldens the Swift code itself generates (`build/swift-parity`) |
 | **M2** transport | One authenticated session per host carrying commands, shells, forwards and SFTP; host key trust shared with `ssh`; secrets in each platform's own store; `stctl`; the integration gate running against a real sshd on macOS **and** Windows in CI |
 | **M3** terminal | `TerminalSession` binding an XTerm.NET engine to an SSH channel, the Avalonia control, broadcast, scrollback, and `stctl terminal` |
-| **M4** (part) | `InventoryViewModel`, `WorkspaceViewModel`, the Lucide icon set, the window (sidebar, tabs, a terminal in a pane, host detail), and the theme system |
+| **M4** (part) | `InventoryViewModel`, `WorkspaceViewModel`, the Lucide icon set, the window (sidebar, tabs, a terminal in a pane, host detail), the theme system, and the host and folder editors |
 
-Around 276 tests, all green on both operating systems.
+Around 310 tests, all green on both operating systems.
 
 ## In flight
 
 Check `gh pr list` first — a pull request may have landed since this was
-written. At the time of writing: nothing. The theme system was the last thing
-merged (PR #17).
+written. At the time of writing: **the host and folder editors** (branch
+`m4-editors`).
 
 ## What to do next, in order
 
-1. **Host and folder editors**, through `IDialogService`. The drafts
-   (`HostDraft`, `FolderDraft`) and their validation are in the Swift `App/`.
-2. **Splits in the window.** `WorkspaceViewModel` already models panes, axes and
+1. **Splits in the window.** `WorkspaceViewModel` already models panes, axes and
    a focused pane; the window shows one pane at a time.
-3. **Menu bar and command palette**, with the two Windows questions the plan
+2. **Menu bar and command palette**, with the two Windows questions the plan
    wants answered as ADRs: what the hidden title bar means there, and how ⌘1–⌘9
    map to Ctrl. The theme belongs in the menu once there is one; until then it is
-   a picker at the foot of the sidebar.
+   a picker at the foot of the sidebar, and adding a host is a flyout on the
+   sidebar header.
 
 ## Setting up a machine
 
@@ -56,7 +55,9 @@ merged (PR #17).
   name that must be a URI there and a plain string on macOS.
 - **UI work needs looking at, not only testing.** The Avalonia DevTools MCP
   attaches to a **Debug** build (`WithDeveloperTools()` is inside `#if DEBUG`)
-  and can click, type and screenshot. It has found something in every UI change
+  and can click, type and screenshot — but its synthetic clicks do **not** open a
+  flyout, which is why the editors are also reachable as
+  `--demo-editor host|folder`, a window of their own over a fixture. It has found something in every UI change
   so far — a terminal attached before its control was loaded, a focus that went
   to a templated wrapper rather than the view inside it, field values drawn with
   a null brush and so invisible. `STRANGESHARPTERM_TRACE=1` turns on Avalonia's

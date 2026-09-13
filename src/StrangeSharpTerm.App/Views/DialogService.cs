@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using StrangeSharpTerm.App.ViewModels;
 
 namespace StrangeSharpTerm.App.Views;
 
@@ -16,6 +17,16 @@ public interface IDialogService
 {
     /// <summary>Asks a question whose answer costs something. False when dismissed.</summary>
     Task<bool> Confirm(string title, string detail, string confirmLabel);
+
+    /// <summary>
+    /// Puts a host in front of the user to edit. True when they saved, and the
+    /// draft then holds what they typed; false when they did not, and the draft
+    /// is thrown away.
+    /// </summary>
+    Task<bool> Edit(HostDraft draft);
+
+    /// <inheritdoc cref="Edit(HostDraft)"/>
+    Task<bool> Edit(FolderDraft draft);
 }
 
 /// <summary>Answers without asking. For tests, and for a headless run.</summary>
@@ -23,15 +34,53 @@ public sealed class ScriptedDialogService(bool answer = false) : IDialogService
 {
     public List<(string Title, string Detail)> Asked { get; } = [];
 
+    /// <summary>Every draft that was put up for editing, in order.</summary>
+    public List<object> Edited { get; } = [];
+
+    /// <summary>Stands in for the typing: fills a draft in, and says whether Save was pressed.</summary>
+    public Func<HostDraft, bool>? EditHost { get; set; }
+
+    /// <inheritdoc cref="EditHost"/>
+    public Func<FolderDraft, bool>? EditFolder { get; set; }
+
     public Task<bool> Confirm(string title, string detail, string confirmLabel)
     {
         Asked.Add((title, detail));
         return Task.FromResult(answer);
     }
+
+    public Task<bool> Edit(HostDraft draft)
+    {
+        Edited.Add(draft);
+        return Task.FromResult(EditHost?.Invoke(draft) ?? answer);
+    }
+
+    public Task<bool> Edit(FolderDraft draft)
+    {
+        Edited.Add(draft);
+        return Task.FromResult(EditFolder?.Invoke(draft) ?? answer);
+    }
 }
 
 public sealed class DialogService(Func<Window?> owner) : IDialogService
 {
+    public Task<bool> Edit(HostDraft draft) => Show(new HostEditor(draft));
+
+    public Task<bool> Edit(FolderDraft draft) => Show(new FolderEditor(draft));
+
+    /// <summary>
+    /// Modal to the window that asked, where there is one. A dialog with no
+    /// owner still opens rather than throwing: the headless driver has no window
+    /// and must not crash for want of one.
+    /// </summary>
+    private async Task<bool> Show(Window dialog)
+    {
+        if (owner() is { } parent)
+            return await dialog.ShowDialog<bool>(parent);
+        dialog.Show();
+        return false;
+    }
+
     public async Task<bool> Confirm(string title, string detail, string confirmLabel)
     {
         var answered = new TaskCompletionSource<bool>();

@@ -115,6 +115,14 @@ Two smaller consequences:
   palette entry Fluent re-reads at runtime; the rest are read once at startup,
   which is why the chrome is painted from our own tokens rather than through
   Fluent's palette.
+- **Fluent's own controls are themed by redefining its resource keys**
+  (`ThemeTokens.Fluent`). A text box does not paint itself from its `Background`
+  property: its control theme binds each state to a key of Fluent's own, so a
+  field went black under the pointer whatever the control was styled with.
+  Styling the template part does not help either — a control theme's state
+  setters beat an application style, checked in Avalonia 12.1 rather than
+  assumed. Where a variant needs its own states, as the accent button does, the
+  way in is a `ControlTheme` based on Fluent's (`Styles/Controls.axaml`).
 
 ## A host that names a theme keeps it
 
