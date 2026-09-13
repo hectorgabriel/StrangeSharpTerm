@@ -19,7 +19,8 @@ Around 276 tests, all green on both operating systems.
 ## In flight
 
 Check `gh pr list` first — a pull request may have landed since this was
-written. At the time of writing: **the theme system** (branch `m4-theme`).
+written. At the time of writing: nothing. The theme system was the last thing
+merged (PR #17).
 
 ## What to do next, in order
 
