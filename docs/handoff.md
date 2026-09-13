@@ -1,7 +1,7 @@
 # Where things stand
 
 A snapshot for picking the work up on another machine, or after a gap. Written
-2026-09-12. `docs/migration-plan.md` is the authority on what each milestone
+2026-09-13. `docs/migration-plan.md` is the authority on what each milestone
 means; this says only what is done, what is in flight, and what to do first.
 
 ## Done, on `main`
@@ -12,20 +12,22 @@ means; this says only what is done, what is in flight, and what to do first.
 | **M1** model and store | `StrangeSharpTerm.Model` and `.Store` with their 84 tests. The inventory file is byte-identical to the Swift app's, checked against goldens the Swift code itself generates (`build/swift-parity`) |
 | **M2** transport | One authenticated session per host carrying commands, shells, forwards and SFTP; host key trust shared with `ssh`; secrets in each platform's own store; `stctl`; the integration gate running against a real sshd on macOS **and** Windows in CI |
 | **M3** terminal | `TerminalSession` binding an XTerm.NET engine to an SSH channel, the Avalonia control, broadcast, scrollback, and `stctl terminal` |
-| **M5** (part) | one authenticated session per host, at last: `HostSessions` over the M2 pool, which every pane goes through. The SFTP browser (`IRemoteFiles`, a pane, ⇧⌘B), tunnels (`ITunnels`, a pane that starts and stops a host's forwards and releases the ports), and the dashboard (`IServerHealth` over the M2 probe, in the detail pane, asked for rather than assumed) |
+| **M5** (part) | one authenticated session per host, at last: `HostSessions` over the M2 pool, which every pane goes through. The SFTP browser (`IRemoteFiles`, a pane, ⇧⌘B), tunnels (`ITunnels`, a pane that starts and stops a host's forwards and releases the ports), the dashboard (`IServerHealth` over the M2 probe, in the detail pane, asked for rather than assumed), and the credential library (a key or password described once, pointed at from any host or folder, with the secret in the platform store and never in the inventory) |
 | **M4** done | the window (sidebar, tabs, host detail, splits, broadcast), the theme system, the host and folder editors, the menu bar, the command palette, and the headless UI driver. `docs/adr/0004` and `0005` record the decisions |
 
-Around 426 tests, all green on both operating systems.
+Around 454 tests, all green on both operating systems.
 
 ## In flight
 
 Check `gh pr list` first — a pull request may have landed since this was
-written. At the time of writing: **the connection pool** (branch `m5-pool`).
+written. At the time of writing: **the credential library** (branch `m5-credentials`).
 
 ## What to do next, in order
 
-1. **The rest of M5**: credentials, snippets, and the settings sheet that should
-   hold the theme picker now at the foot of the sidebar. Three of the Swift
+1. **The rest of M5**: snippets, and the settings sheet that should hold the
+   theme picker now at the foot of the sidebar — and would be the natural home
+   for the credential library, which today is reached only from the menu and the
+   palette. Three of the Swift
    app's shortcuts still wait for them — `docs/adr/0005` lists which and why,
    including the one that cannot be translated to Windows as it stands (⌃⌘X).
 2. **What the panes do not do yet.** The browser has no rename and no
@@ -89,8 +91,11 @@ says. Three things it took to get right:
 - **UI work needs looking at, not only testing.** The Avalonia DevTools MCP
   attaches to a **Debug** build (`WithDeveloperTools()` is inside `#if DEBUG`)
   and can click, type and screenshot — but its synthetic clicks do **not** open a
-  flyout, which is why the editors are also reachable as
-  `--demo-editor host|folder`, a window of their own over a fixture. Splits found
+  flyout — nor send a modifier, so ⌘K is out of reach too. That is why the
+  dialogs are also reachable as `--demo-editor host|folder|credential|credentials`,
+  a window of their own over a fixture, and the palette as `--demo-palette
+  [--demo-query x]`. The credential fixture keeps its secrets in memory, so
+  looking at it never writes to the login keychain. Splits found
   the sharpest example yet: rebuilding the pane layout detached each terminal
   and re-attached it, which tears its connection down, and the two panes then
   read one stream and each drew half of it. Every test passed. Running `tty` in
@@ -107,8 +112,12 @@ says. Three things it took to get right:
   file browser open shows exactly two.
 - **`STRANGESHARPTERM_INVENTORY`** points the app at a throwaway inventory, which
   is how the window gets tested without touching a real one. `preferences.json`
-  is written beside it, so a test run's theme choice is throwaway too. `preferences.json`
   is written beside it, so a test run's theme choice is throwaway too.
+- **A global style beats an inherited state.** `TextBlock { Foreground }` in
+  `Styles/Chrome.axaml` applies to the label inside a button too, so a disabled
+  button's own foreground never reached it and every disabled button in the app
+  looked live. The fix is a `:disabled TextBlock` style; the lesson is that a
+  style on a bare type name reaches inside controls it was never meant for.
 - **Colours are measured, not chosen.** The Swift source is not on this machine,
   but `docs/reference/screenshots/` is, and `build/theme/sample.py` reads the
   palette back out of the pixels. See `docs/adr/0004`; two values in it are

@@ -44,7 +44,11 @@ public sealed record Choice(string Label, object? Value);
 public sealed partial class SettingsDraft : ObservableObject
 {
     /// <summary>Reads the settings a node already has into the form.</summary>
-    public SettingsDraft(ConnectionSettings? settings = null)
+    /// <param name="credentials">
+    /// The library, for the picker. Empty when a draft is built without an
+    /// inventory behind it, which is what most tests want.
+    /// </param>
+    public SettingsDraft(ConnectionSettings? settings = null, IReadOnlyList<Credential>? credentials = null)
     {
         var source = settings ?? ConnectionSettings.Empty;
         _original = source;
@@ -64,6 +68,26 @@ public sealed partial class SettingsDraft : ObservableObject
         TerminalThemeChoice = ThemeChoices.First(choice => Equals(choice.Value, source.TerminalTheme));
         IdentityFiles = Lines(source.IdentityFiles);
         JumpHosts = string.Join(", ", source.JumpHosts ?? []);
+
+        // Inherited, not "None": a credential set on a folder covers every host
+        // beneath it, so a host that names none takes its folder's rather than
+        // authenticating with nothing. And, as with the other pickers, the empty
+        // answer needs an entry of its own — a null selection draws blank.
+        List<Choice> library =
+        [
+            new Choice("Inherited", null),
+            .. (credentials ?? []).Select(credential => new Choice(credential.Name, credential.Id)),
+        ];
+
+        // A credential this library does not have still round-trips rather than
+        // being quietly cleared: the id is in the file, and a form that drops it
+        // because it cannot name it is a form that loses data on Save. The same
+        // rule as a terminal theme this version has never heard of.
+        if (source.CredentialId is { } named && !library.Any(choice => Equals(choice.Value, named)))
+            library.Add(new Choice("A credential that is no longer here", named));
+
+        CredentialChoices = library;
+        CredentialChoice = library.First(choice => Equals(choice.Value, source.CredentialId));
     }
 
     private readonly ConnectionSettings _original;
@@ -98,6 +122,16 @@ public sealed partial class SettingsDraft : ObservableObject
 
     [ObservableProperty]
     public partial string KnownHostsFile { get; set; }
+
+    /// <inheritdoc cref="HostKeyPolicyChoice"/>
+    [ObservableProperty]
+    public partial Choice CredentialChoice { get; set; }
+
+    /// <summary>The shared credential this node uses, or null for none of them.</summary>
+    public NodeId? CredentialId => CredentialChoice.Value as NodeId?;
+
+    /// <summary>What the picker offers: the library, plus none.</summary>
+    public IReadOnlyList<Choice> CredentialChoices { get; }
 
     /// <inheritdoc cref="HostKeyPolicyChoice"/>
     [ObservableProperty]
@@ -182,6 +216,7 @@ public sealed partial class SettingsDraft : ObservableObject
         Compression = Bool(Compression),
         ForwardAgent = Bool(ForwardAgent),
         HostKeyPolicy = HostKeyPolicy,
+        CredentialId = CredentialId,
         KnownHostsFile = Blank(KnownHostsFile),
         TerminalTheme = TerminalTheme,
         IdentityFiles = List(IdentityFiles, '\n'),

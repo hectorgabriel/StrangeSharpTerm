@@ -8,3 +8,7 @@ artifacts/
 publish/
 *.received.*
 Signing.local.props
+
+# Python bytecode, committed by accident with the theme sampler.
+__pycache__/
+*.pyc
