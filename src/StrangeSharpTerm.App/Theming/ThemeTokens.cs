@@ -134,6 +134,17 @@ public static class ThemeTokens
         ["ButtonForegroundPointerOver"] = palette.Text,
         ["ButtonForegroundPressed"] = palette.Text,
         ["ButtonForegroundDisabled"] = palette.Muted,
+
+        // A selected row in a list — the command palette's, for now. Fluent
+        // fills it with the accent at full strength, which leaves a muted
+        // shortcut unreadable on top of it; the selection tint is what the
+        // sidebar already uses to mean the same thing.
+        ["SystemControlHighlightListAccentLowBrush"] = palette.Selection,
+        ["SystemControlHighlightListAccentMediumBrush"] = palette.Selection,
+        ["SystemControlHighlightListAccentHighBrush"] = palette.Selection,
+        ["SystemControlHighlightListLowBrush"] = palette.Border,
+        ["SystemControlHighlightListMediumBrush"] = palette.Border,
+        ["SystemControlHighlightAltBaseHighBrush"] = palette.Text,
     };
 
     /// <summary>

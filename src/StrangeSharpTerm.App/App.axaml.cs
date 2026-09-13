@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using StrangeSharpTerm.App.Terminal;
 using StrangeSharpTerm.App.Theming;
 using StrangeSharpTerm.App.ViewModels;
@@ -38,13 +39,13 @@ public partial class App : Application
             var arguments = desktop.Args ?? [];
             var request = TerminalLaunchRequest.Parse(arguments);
             desktop.MainWindow =
-                Editor(arguments) ?? (request is null ? Shell(theme) : TerminalWindow(request, theme));
+                Editor(arguments) ?? (request is null ? Shell(theme, arguments) : TerminalWindow(request, theme));
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
-    private static Window Shell(AppTheme theme)
+    private static Window Shell(AppTheme theme, string[] arguments)
     {
         // The dialog service needs the window it will be modal to, and the window
         // needs the view model that asks for dialogs, so the reference is late.
@@ -52,6 +53,22 @@ public partial class App : Application
         var model = new ShellViewModel(
             InventoryLoader.Load(), dialogs: new DialogService(() => window), theme: theme);
         window = new ShellWindow(model);
+
+        // --demo-palette [--demo-query x], as the Swift app had them: the palette
+        // is opened with ⌘K and by nothing else, and a shortcut is the one thing
+        // the DevTools MCP cannot send. Posted rather than called, because the
+        // window builds its command list as it opens.
+        if (arguments.Contains("--demo-palette"))
+            Dispatcher.UIThread.Post(
+                () =>
+                {
+                    model.OpenPaletteCommand.Execute(null);
+                    var index = Array.IndexOf(arguments, "--demo-query");
+                    if (index >= 0 && index + 1 < arguments.Length)
+                        model.Palette.Query = arguments[index + 1];
+                },
+                DispatcherPriority.Background);
+
         return window;
     }
 
