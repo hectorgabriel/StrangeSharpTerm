@@ -244,8 +244,7 @@ public class TunnelTests
         };
         var shell = new ShellViewModel(
             new InventoryViewModel(null, new InventoryTree([folder], [host])),
-            tunnels: _ => new FakeTunnels(),
-            files: _ => throw new InvalidOperationException("tunnels do not need the files"));
+            new FakeSessions { OnTunnels = _ => new FakeTunnels() });
         shell.Inventory.Selection = host.Id;
 
         await shell.OpenTunnelsCommand.ExecuteAsync(null);

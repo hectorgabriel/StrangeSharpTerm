@@ -36,7 +36,7 @@ public class MenuAndPaletteTests
         var host = new Connection { Name = "web-01", Hostname = "web-01.example.com" };
         var model = new ShellViewModel(
             new InventoryViewModel(null, new InventoryTree(connections: [host])),
-            _ => new TerminalSession(new QuietChannel()),
+            new StrangeSharpTerm.App.Tests.FakeSessions { OnShell = _ => new TerminalSession(new QuietChannel()) },
             (_, _) => new Border());
         var window = new ShellWindow(model) { Width = 1100, Height = 700 };
         window.Show();

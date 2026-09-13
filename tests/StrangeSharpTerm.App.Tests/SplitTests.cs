@@ -32,7 +32,7 @@ public class SplitTests
         var opened = 0;
         var shell = new ShellViewModel(
             new InventoryViewModel(null, new InventoryTree(connections: [host])),
-            _ => new TerminalSession(new DeadChannel()),
+            new FakeSessions(),
             (_, _) => new Pane(++opened));
         return (shell, host);
     }

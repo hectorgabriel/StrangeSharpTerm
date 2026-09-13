@@ -38,7 +38,7 @@ public class EditingTests
         StrangeSharpTerm.Store.IInventoryPersistence? store = null) =>
         new(
             new InventoryViewModel(store, tree),
-            _ => new TerminalSession(new DeadChannel()),
+            new FakeSessions(),
             (_, _) => new Border(),
             dialogs);
 

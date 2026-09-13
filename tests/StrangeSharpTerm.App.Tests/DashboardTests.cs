@@ -212,7 +212,7 @@ public class DashboardTests
         var host = new Connection { Name = "db-01", Hostname = "db-01.example.com" };
         var shell = new ShellViewModel(
             new InventoryViewModel(null, new InventoryTree(connections: [host])),
-            health: _ => new FakeHealth { Answer = Busy });
+            new FakeSessions { OnHealth = _ => new FakeHealth { Answer = Busy } });
         shell.Inventory.Selection = host.Id;
         var dashboard = shell.Detail.ShouldNotBeNull().Dashboard;
 
@@ -229,7 +229,7 @@ public class DashboardTests
         var second = new Connection { Name = "web-01", Hostname = "web-01.example.com" };
         var shell = new ShellViewModel(
             new InventoryViewModel(null, new InventoryTree(connections: [first, second])),
-            health: _ => new FakeHealth());
+            new FakeSessions { OnHealth = _ => new FakeHealth() });
 
         shell.Inventory.Selection = first.Id;
         var one = shell.Detail!.Dashboard;
@@ -248,7 +248,7 @@ public class DashboardTests
         var health = new FakeHealth();
         var shell = new ShellViewModel(
             new InventoryViewModel(null, new InventoryTree(connections: [host])),
-            health: _ => health);
+            new FakeSessions { OnHealth = _ => health });
 
         shell.Inventory.Selection = host.Id;
 

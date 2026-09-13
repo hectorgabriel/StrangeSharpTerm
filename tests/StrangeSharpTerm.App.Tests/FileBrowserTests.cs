@@ -338,9 +338,8 @@ public class FileBrowserTests
         var host = new Model.Connection { Name = "web-01", Hostname = "web-01.example.com" };
         var shell = new ShellViewModel(
             new InventoryViewModel(null, new Model.InventoryTree(connections: [host])),
-            _ => new StrangeSharpTerm.Terminal.TerminalSession(new DeadChannel()),
-            (_, _) => new Avalonia.Controls.Border(),
-            files: _ => new FakeFiles());
+            new FakeSessions { OnFiles = _ => new FakeFiles() },
+            (_, _) => new Avalonia.Controls.Border());
         shell.Inventory.Selection = host.Id;
         await shell.ConnectSelectedCommand.ExecuteAsync(null);
 
@@ -357,7 +356,7 @@ public class FileBrowserTests
         var host = new Model.Connection { Name = "web-01", Hostname = "web-01.example.com" };
         var shell = new ShellViewModel(
             new InventoryViewModel(null, new Model.InventoryTree(connections: [host])),
-            files: _ => new FakeFiles());
+            new FakeSessions { OnFiles = _ => new FakeFiles() });
         shell.Inventory.Selection = host.Id;
 
         await shell.BrowseFilesCommand.ExecuteAsync(null);

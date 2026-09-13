@@ -13,6 +13,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The same double the other test project uses. One file rather than two
+         copies: what a host can be asked for is one interface. -->
+    <Compile Include="../StrangeSharpTerm.App.Tests/FakeSessions.cs" Link="FakeSessions.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../../src/StrangeSharpTerm.App/StrangeSharpTerm.App.csproj" />
   </ItemGroup>
 </Project>

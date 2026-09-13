@@ -106,7 +106,7 @@ public class FileBrowserPaneTests
             var host = new Model.Connection { Name = "web-01", Hostname = "web-01.example.com" };
             var model = new ShellViewModel(
                 new InventoryViewModel(null, new Model.InventoryTree(connections: [host])),
-                files: _ => new FakeFiles());
+                new StrangeSharpTerm.App.Tests.FakeSessions { OnFiles = _ => new FakeFiles() });
             var window = new ShellWindow(model) { Width = 1100, Height = 700 };
             window.Show();
             Settle(window);

@@ -39,7 +39,7 @@ public class DashboardCardTests
         var host = new Connection { Name = "db-01", Hostname = "db-01.example.com" };
         var model = new ShellViewModel(
             new InventoryViewModel(null, new InventoryTree(connections: [host])),
-            health: _ => health);
+            new StrangeSharpTerm.App.Tests.FakeSessions { OnHealth = _ => health });
         var window = new ShellWindow(model) { Width = 1100, Height = 700 };
         window.Show();
         model.Inventory.Selection = host.Id;
