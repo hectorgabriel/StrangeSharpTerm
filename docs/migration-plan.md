@@ -376,8 +376,17 @@ it is the one with no vendor keeping it current. `IAssistBackend` is still the
 only seam, and both providers are driven end to end against a stub returning a
 recorded stream.
 
-**M7 — MCP.** Wrap the official SDK, port the config and OAuth surface, port the 58
-tests. MCP settings and server editor UI.
+**M7 — MCP. Done.** `StrangeSharpTerm.Mcp` and its 81 tests: both transports over
+the official SDK, the namespacing, the grant rules, OAuth with a loopback
+redirect and token storage — then the Connected tools section, the server editor,
+`stctl mcp`, and the seam that puts these tools through the assistant's own gate.
+
+The same departure the plan met at M6, for the same reason and recorded as
+`docs/adr/0007`: the plan says "port the OAuth surface", and the SDK already has
+it — the discovery chain, PKCE, dynamic registration and silent refresh. What is
+ours is what those cannot decide: a loopback port bound before the browser opens
+rather than a claimable URL scheme, the rule that a renewal never opens a
+browser, where the tokens live, and how a bare `npx` is found.
 
 **M8 — Packaging.** See below. Parity review against the Swift app, then archive the
 Swift `StrangeTerm` repo (it keeps its name; see Repository).

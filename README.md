@@ -10,6 +10,33 @@ Swift/SwiftUI app. No Swift code carries over; the design does.
 
 ## Status
 
+**M7 — connected tools.** An assistant that can only reach the machine in front
+of it cannot answer "is this ours or the upstream's?" — that is usually in a
+dashboard, a tracker or somebody's runbook. **Settings → Connected tools**
+attaches [MCP](https://modelcontextprotocol.io) servers over either transport: a
+local process spoken to over its stdin and stdout, or streamable HTTP against a
+URL. A hosted server that wants a sign-in gets one — authorization code with
+PKCE, to a loopback port bound before the browser opens, never a custom URL
+scheme that any application on the machine could claim.
+
+Tools are namespaced by server (`grafana__query_range`) because two servers may
+each have a `search`, and a provider handed a duplicate name rejects the whole
+request. **The gate is the same gate**, with one difference: there is no
+`CommandPolicy` here and there cannot be, because `create_incident` with a JSON
+body is an opaque name written by the same server that would carry out the call.
+So every call stops, showing the server, the tool, where it goes and the exact
+arguments — in the bar itself, because a gate whose substance is one click away
+is a gate people approve without reading. **Always allow**, granted per tool by a
+person, is the only way onto the list; a tool the server calls destructive cannot
+get one at all. See `docs/adr/0007`.
+
+```sh
+# both transports, without a window
+dotnet run --project src/stctl -- mcp \
+    --server "Runbooks=npx -y @modelcontextprotocol/server-filesystem ~/runbooks" \
+    --call runbooks__read_text_file --arguments '{"path":"~/runbooks/db.md"}'
+```
+
 **M6 — the assistant.** A conversation scoped to one host, opened with ⌥⌘A and
 split beside the session it is about. Questions carry the name you gave the
 host, what `uname` reported, the metrics the dashboard's own probe collects when
@@ -114,7 +141,8 @@ src/StrangeSharpTerm.Transport/   SSH.NET connection pool, SFTP, probes
 src/StrangeSharpTerm.Terminal/    XTerm.NET engine bound to an SSH channel
 src/StrangeSharpTerm.Assist/      providers, the agent loop, the command gate,
                                   redaction, orchestration and run plans
-src/StrangeSharpTerm.Mcp/         MCP client
+src/StrangeSharpTerm.Mcp/         connected tool servers: transports, the
+                                  namespacing, the grant rules, OAuth storage
 src/StrangeSharpTerm.App/         Avalonia views and view models
 src/stctl/                        headless driver, used by the integration tests
 ```

@@ -67,6 +67,15 @@ public abstract record TranscriptEntry
 
         public bool IsDestructive { get; init; }
 
+        /// <summary>Where the call goes, for a connected tool. Null for a command, which goes to this host.</summary>
+        public string? Destination { get; init; }
+
+        /// <summary>The server's own claim that its tool only reads. Shown, never acted on.</summary>
+        public bool ReadOnlyClaim { get; init; }
+
+        /// <summary>Whether this row is a connected tool rather than a command on the host.</summary>
+        public bool IsTool => Destination is not null;
+
         public string Output { get; set; } = "";
 
         public int? ExitStatus { get; set; }

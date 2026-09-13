@@ -138,6 +138,100 @@
 
                 <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,14" />
 
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Classes="section" Text="CONNECTED TOOLS"
+                               VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Classes="row" Padding="10,3" Command="{Binding AddServerCommand}">
+                        <TextBlock Text="+  Add server" FontSize="12"
+                                   Foreground="{DynamicResource AccentBrush}" />
+                    </Button>
+                </Grid>
+
+                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" IsVisible="{Binding !HasServers}"
+                           Text="An assistant that can only reach the machine in front of it cannot answer &quot;is this ours or the upstream's?&quot; — that is usually in a dashboard, a tracker or somebody's runbook." />
+
+                <ItemsControl ItemsSource="{Binding Servers}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ServerRow">
+                            <Border Classes="chip" Padding="12,10" CornerRadius="6" Margin="0,0,0,6">
+                                <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                                    <!-- Connected or not, said by a dot before the name,
+                                         as the tunnels pane says it about a forward. -->
+                                    <Ellipse Grid.Row="0" Grid.Column="0" Width="8" Height="8"
+                                             Margin="0,0,10,0" VerticalAlignment="Center"
+                                             Fill="{DynamicResource MutedBrush}" IsVisible="{Binding !IsConnected}" />
+                                    <Ellipse Grid.Row="0" Grid.Column="0" Width="8" Height="8"
+                                             Margin="0,0,10,0" VerticalAlignment="Center"
+                                             Fill="{DynamicResource SuccessBrush}" IsVisible="{Binding IsConnected}" />
+
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Name}"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Classes="muted" FontSize="11"
+                                               Text="{Binding Summary}" />
+
+                                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="muted"
+                                               FontFamily="monospace" FontSize="11" TextWrapping="Wrap"
+                                               Margin="0,2,0,0" Text="{Binding Where}" />
+
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Classes="danger"
+                                               FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
+                                               Text="{Binding Failure}" IsVisible="{Binding HasFailed}" />
+
+                                    <!-- What has been granted, shown rather than hidden, and
+                                         takeable back. -->
+                                    <TextBlock Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Classes="warning"
+                                               FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0"
+                                               Text="{Binding Granted}" IsVisible="{Binding HasGrants}" />
+
+                                    <StackPanel Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2"
+                                                Orientation="Horizontal" Spacing="6" Margin="0,8,0,0">
+                                        <Button Padding="10,3"
+                                                Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).EditServerCommand}"
+                                                CommandParameter="{Binding}">
+                                            <TextBlock Text="Edit" FontSize="11" />
+                                        </Button>
+                                        <Button Padding="10,3" IsVisible="{Binding CanSignIn}"
+                                                Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).SignInCommand}"
+                                                CommandParameter="{Binding}">
+                                            <TextBlock Text="Sign in" FontSize="11" />
+                                        </Button>
+                                        <Button Padding="10,3" IsVisible="{Binding HasGrants}"
+                                                Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).RevokeGrantsCommand}"
+                                                CommandParameter="{Binding}">
+                                            <TextBlock Text="Ask me again" FontSize="11" />
+                                        </Button>
+                                        <Button Padding="10,3"
+                                                Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).RemoveServerCommand}"
+                                                CommandParameter="{Binding}">
+                                            <TextBlock Text="Remove" FontSize="11" />
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Classes="danger" FontSize="11" TextWrapping="Wrap" Text="{Binding ToolFailure}"
+                           IsVisible="{Binding ToolFailure, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+                <CheckBox IsChecked="{Binding OfferInPanes}" Margin="0,4,0,0">
+                    <TextBlock Text="Offer tools in assistant panes" FontSize="12" />
+                </CheckBox>
+                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Margin="24,-6,0,0"
+                           Text="Each call still stops for approval unless you have marked that tool as always allowed." />
+
+                <CheckBox IsChecked="{Binding OfferInRuns}">
+                    <TextBlock Text="Offer tools in orchestrated runs" FontSize="12" />
+                </CheckBox>
+                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Margin="24,-6,0,0"
+                           Text="Off by default. In a run every host gets the same tools pointed at the same place, so one instruction can become one write per host — and the approvals arrive as a queue." />
+
+                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+                           Text="{x:Static vm:SettingsViewModel.ToolsNote}" />
+
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,14" />
+
                 <TextBlock Classes="section" Text="LIBRARIES" />
                 <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
                            Text="Described once and pointed at from anywhere: a key or password a host authenticates with, and a command worth keeping." />

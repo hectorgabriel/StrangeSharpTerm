@@ -2,7 +2,10 @@ using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using StrangeSharpTerm.App.Theming;
+using StrangeSharpTerm.App.Views;
+using System.Collections.ObjectModel;
 using StrangeSharpTerm.Assist;
+using StrangeSharpTerm.Mcp;
 using StrangeSharpTerm.Security;
 
 namespace StrangeSharpTerm.App.ViewModels;
@@ -56,7 +59,38 @@ public sealed record ProviderChoice(AssistProvider Provider, bool IsChosen, bool
 }
 
 /// <summary>
-/// The settings sheet: appearance, the assistant, and the two libraries.
+/// One connected server as the sheet draws it: what it is, where it is, how many
+/// tools it has, and what it has been granted.
+/// </summary>
+public sealed record ServerRow(ServerStatus Status)
+{
+    public McpServerConfig Config => Status.Config;
+
+    public string Name => Config.Name;
+
+    public string Where => Config.Where;
+
+    public string Summary => Status.Summary;
+
+    public bool IsConnected => Status.IsConnected;
+
+    /// <summary>Why it will not connect. Null when it is fine, and null when nothing has tried.</summary>
+    public string? Failure => Status.Failure;
+
+    public bool HasFailed => Status.Failure is not null;
+
+    /// <summary>Shown rather than hidden: Settings says what has been granted and lets you take it back.</summary>
+    public string? Granted => Status.Granted;
+
+    public bool HasGrants => Granted is not null;
+
+    /// <summary>Only a hosted server has anything to sign in to.</summary>
+    public bool CanSignIn => Config.Transport == McpTransport.Http;
+}
+
+/// <summary>
+/// The settings sheet: appearance, the assistant, connected tools, and the two
+/// libraries.
 ///
 /// The Swift app's had three sections; connected tools is the one still to come,
 /// with M7. The assistant's section is where a choice about what leaves the
@@ -76,13 +110,20 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// credentials use.
     /// </param>
     /// <param name="save">Called whenever anything in the assistant section changes.</param>
+    /// <param name="tools">
+    /// The connected servers, or null when this sheet is not about any — a
+    /// fixture, or a window built before they were configured.
+    /// </param>
     public SettingsViewModel(
         AppTheme theme,
         Func<Task> credentials,
         Func<Task> snippets,
         AssistSettings? assist = null,
         ISecretStore? keys = null,
-        Action<AssistSettings>? save = null)
+        Action<AssistSettings>? save = null,
+        McpHub? tools = null,
+        IDialogService? dialogs = null,
+        ISecretStore? toolKeys = null)
     {
         _theme = theme;
         _credentials = credentials;
@@ -96,6 +137,174 @@ public sealed partial class SettingsViewModel : ObservableObject
         SendMetrics = Assistant.SendMetrics;
         SendTerminalTail = Assistant.SendTerminalTail;
         Providers = ProviderChoices();
+
+        _tools = tools;
+        _dialogs = dialogs ?? new ScriptedDialogService();
+        _toolKeys = toolKeys ?? new InMemorySecretStore();
+        OfferInPanes = ToolSettings.OfferInPanes;
+        OfferInRuns = ToolSettings.OfferInRuns;
+        RefreshServers();
+
+        if (_tools is { } hub)
+            hub.Changed += (_, _) => RefreshServers();
+    }
+
+    private readonly McpHub? _tools;
+    private readonly IDialogService _dialogs;
+    private readonly ISecretStore _toolKeys;
+
+    private McpSettings ToolSettings => _tools?.Settings ?? new McpSettings();
+
+    public ObservableCollection<ServerRow> Servers { get; } = [];
+
+    public bool HasServers => Servers.Count > 0;
+
+    /// <summary>
+    /// Offer tools in assistant panes. On: connecting a server is already the
+    /// deliberate act, and every call still asks.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool OfferInPanes { get; set; }
+
+    /// <summary>
+    /// Offer tools in orchestrated runs. Off: a fan-out points the same tools at
+    /// the same place from every host, so one instruction can become one write
+    /// per host, and the approvals arrive as a queue.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool OfferInRuns { get; set; }
+
+    public static string ToolsNote =>
+        "A local server runs on this machine as you, with your files. An HTTP server receives whatever "
+        + "its tools are given. Nothing a server says about its own tools lets one skip the approval "
+        + "gate — only you can.";
+
+    [ObservableProperty]
+    public partial string? ToolFailure { get; private set; }
+
+    partial void OnOfferInPanesChanged(bool value) => ApplyTools(ToolSettings with { OfferInPanes = value });
+
+    partial void OnOfferInRunsChanged(bool value) => ApplyTools(ToolSettings with { OfferInRuns = value });
+
+    [RelayCommand]
+    public async Task AddServer()
+    {
+        var draft = McpServerDraft.New(_toolKeys);
+        if (!await _dialogs.Edit(draft))
+            return;
+
+        var saved = draft.Applied();
+        draft.SaveSecret(saved);
+        ApplyTools(ToolSettings.Upsert(saved));
+        await Reconnect();
+    }
+
+    [RelayCommand]
+    public async Task EditServer(ServerRow? row)
+    {
+        if (row is null)
+            return;
+
+        var draft = McpServerDraft.For(row.Config, _toolKeys);
+        if (!await _dialogs.Edit(draft))
+            return;
+
+        var saved = draft.Applied();
+        draft.SaveSecret(saved);
+        ApplyTools(ToolSettings.Upsert(saved));
+        await Reconnect();
+    }
+
+    /// <summary>Removes a server, and its grants and its tokens with it.</summary>
+    [RelayCommand]
+    public async Task RemoveServer(ServerRow? row)
+    {
+        if (row is null)
+            return;
+        if (!await _dialogs.Confirm(
+            $"Remove {row.Name}?",
+            "Its tools stop being offered, and anything you allowed it to run without asking is forgotten.",
+            "Remove"))
+        {
+            return;
+        }
+
+        McpTokens.Forget(row.Config, _toolKeys);
+        ApplyTools(ToolSettings.Remove(row.Config));
+        await Reconnect();
+    }
+
+    /// <summary>Takes back every standing pass this server has.</summary>
+    [RelayCommand]
+    public void RevokeGrants(ServerRow? row)
+    {
+        if (row is null)
+            return;
+        ApplyTools(ToolSettings.Upsert(row.Config with { AlwaysAllowed = [] }));
+        RefreshServers();
+    }
+
+    /// <summary>
+    /// The visible login, which is the only place a browser is ever opened.
+    /// </summary>
+    [RelayCommand]
+    public async Task SignIn(ServerRow? row)
+    {
+        if (row is null)
+            return;
+
+        ToolFailure = null;
+        try
+        {
+            await McpSignIn.SignIn(row.Config, _toolKeys);
+            await Reconnect();
+        }
+        catch (Exception e)
+        {
+            ToolFailure = e is McpException ? e.Message : $"{row.Name} could not be signed in to. ({e.Message})";
+        }
+    }
+
+    private async Task Reconnect()
+    {
+        if (_tools is not { } hub)
+            return;
+
+        ToolFailure = null;
+        try
+        {
+            await hub.Connect();
+        }
+        catch (Exception e)
+        {
+            ToolFailure = e.Message;
+        }
+        RefreshServers();
+    }
+
+    private void ApplyTools(McpSettings settings)
+    {
+        _tools?.Use(settings);
+        RefreshServers();
+    }
+
+    private void RefreshServers()
+    {
+        Servers.Clear();
+        // A configured server with no status yet is still a row: it was
+        // configured, and a sheet that hid it until it connected would look like
+        // it had lost it.
+        var statuses = _tools?.Statuses ?? [];
+        foreach (var server in ToolSettings.Servers)
+        {
+            // No failure for one nothing has tried: Summary already says it is
+            // not connected, and a red line under a server that has simply not
+            // been attempted reads as a server that is broken.
+            var status = statuses.FirstOrDefault(known => known.Config.Id == server.Id)
+                ?? new ServerStatus(server, 0, Failure: null);
+            Servers.Add(new ServerRow(status with { Config = server }));
+        }
+        OnPropertyChanged(nameof(HasServers));
     }
 
     /// <summary>How the assistant is configured. Read back by whoever opened the sheet.</summary>

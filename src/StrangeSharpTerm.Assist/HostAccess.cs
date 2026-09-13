@@ -52,6 +52,16 @@ public sealed record PendingCommand(string Host, string Command, string Why, str
 public interface ICommandGate
 {
     Task<bool> Allow(PendingCommand command, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The same gate, for a call to a connected tool.
+    ///
+    /// It defaults to no. An implementation written before connected tools
+    /// existed cannot have an opinion about one, and the safe reading of no
+    /// opinion is that the call does not happen.
+    /// </summary>
+    Task<ToolApproval> Allow(PendingToolCall call, CancellationToken cancellationToken = default) =>
+        Task.FromResult(ToolApproval.No);
 }
 
 /// <summary>Answers every gate the same way. For tests, and for the flag that drives a real run without a person.</summary>
@@ -59,6 +69,11 @@ public sealed class StandingAnswer(bool answer) : ICommandGate
 {
     public Task<bool> Allow(PendingCommand command, CancellationToken cancellationToken = default) =>
         Task.FromResult(answer);
+
+    public Task<ToolApproval> Allow(PendingToolCall call, CancellationToken cancellationToken = default) =>
+        // Once, never Always: a standing pass is a thing a person grants, and
+        // a flag answering every gate yes must not quietly become one.
+        Task.FromResult(answer ? ToolApproval.Once : ToolApproval.No);
 }
 
 /// <summary>How many commands are left.</summary>

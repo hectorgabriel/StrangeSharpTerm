@@ -172,6 +172,11 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
                         // up after a minute would carry on reading the output of
                         // a command it had stopped waiting for.
                         CommandTimeout = AssistLimits.PlanCommandTimeout,
+                        // A worker in a run is told the connected tools are not
+                        // part of its machine and that writing is not its job:
+                        // findings go in the report, and the user decides once,
+                        // with the whole picture.
+                        ToolNote = AssistPrompts.ConnectedToolsInARun,
                     },
                     cancellationToken);
 

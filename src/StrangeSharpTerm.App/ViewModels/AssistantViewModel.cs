@@ -111,6 +111,7 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
         new(ReferenceEqualityComparer.Instance);
     private CancellationTokenSource? _asking;
     private TaskCompletionSource<bool>? _answering;
+    private TaskCompletionSource<ToolApproval>? _answeringTool;
 
     /// <param name="stage">
     /// How a command reaches the terminal. It <em>types</em> it and stops: no
@@ -182,6 +183,16 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
     /// <summary>The command a person is being asked about, or null.</summary>
     public AssistRow? Waiting => Rows.FirstOrDefault(row => row.IsWaiting);
 
+    /// <summary>
+    /// A connected tool's call, waiting on a person.
+    ///
+    /// Shown in the bar itself with the server, the tool, where it goes and the
+    /// exact arguments: a gate whose substance is one click away is a gate
+    /// people approve without reading.
+    /// </summary>
+    [ObservableProperty]
+    public partial PendingToolCall? WaitingTool { get; private set; }
+
     public bool CanAsk => !IsAsking && Question.Trim().Length > 0;
 
     partial void OnQuestionChanged(string value) => AskCommand.NotifyCanExecuteChanged();
@@ -243,14 +254,32 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
         // A pending approval has to be answered, or the loop waits on a
         // question nobody will now see.
         _answering?.TrySetResult(false);
+        _answeringTool?.TrySetResult(ToolApproval.No);
         _asking?.Cancel();
     }
 
     [RelayCommand]
-    public void Allow() => _answering?.TrySetResult(true);
+    public void Allow()
+    {
+        _answering?.TrySetResult(true);
+        _answeringTool?.TrySetResult(ToolApproval.Once);
+    }
 
     [RelayCommand]
-    public void Refuse() => _answering?.TrySetResult(false);
+    public void Refuse()
+    {
+        _answering?.TrySetResult(false);
+        _answeringTool?.TrySetResult(ToolApproval.No);
+    }
+
+    /// <summary>
+    /// Stops asking about this tool.
+    ///
+    /// The only way a standing pass is ever granted, which is why it is a
+    /// separate button and not a checkbox somebody leaves ticked.
+    /// </summary>
+    [RelayCommand]
+    public void AlwaysAllow() => _answeringTool?.TrySetResult(ToolApproval.Always);
 
     /// <summary>
     /// Types a suggested command into the terminal and stops.
@@ -280,9 +309,27 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
         return _answering.Task;
     }
 
+    /// <inheritdoc cref="Allow(PendingCommand, CancellationToken)"/>
+    public Task<ToolApproval> Allow(PendingToolCall call, CancellationToken cancellationToken = default)
+    {
+        var answering = new TaskCompletionSource<ToolApproval>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _answeringTool = answering;
+        Post(() => WaitingTool = call);
+        cancellationToken.Register(() => answering.TrySetResult(ToolApproval.No));
+
+        return answering.Task.ContinueWith(
+            answered =>
+            {
+                Post(() => WaitingTool = null);
+                return answered.Result;
+            },
+            TaskScheduler.Default);
+    }
+
     public void Dispose()
     {
         _answering?.TrySetResult(false);
+        _answeringTool?.TrySetResult(ToolApproval.No);
         _asking?.Cancel();
         _asking?.Dispose();
     }

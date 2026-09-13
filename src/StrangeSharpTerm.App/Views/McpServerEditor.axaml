@@ -1,0 +1,88 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:StrangeSharpTerm.App.ViewModels"
+        xmlns:views="clr-namespace:StrangeSharpTerm.App.Views"
+        x:Class="StrangeSharpTerm.App.Views.McpServerEditor"
+        x:DataType="vm:McpServerDraft"
+        Title="{Binding Title}"
+        Width="560" Height="430" MinWidth="460" MinHeight="380"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BackgroundBrush}"
+        Foreground="{DynamicResource TextBrush}">
+
+    <!--
+        A tool server. The transport is a pair of choices rather than a dropdown
+        because the two differ in what they expose, not merely in mechanism, and
+        the note under them says which is which.
+    -->
+    <Window.Resources>
+        <views:IconConverter x:Key="Icon" />
+    </Window.Resources>
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="20">
+        <TextBlock Grid.Row="0" Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16" />
+
+        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Spacing="10">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Name" />
+                    <TextBox Text="{Binding Name}" Watermark="Runbooks" />
+                    <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                               Text="Its tools are named after this, so two servers with the same tool stay apart." />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,6,0,0">
+                    <RadioButton GroupName="transport" IsChecked="{Binding IsLocal}">
+                        <TextBlock Text="Local process" />
+                    </RadioButton>
+                    <RadioButton GroupName="transport" IsChecked="{Binding IsHttp}">
+                        <TextBlock Text="HTTP" />
+                    </RadioButton>
+                </StackPanel>
+                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="{Binding TransportNote}" />
+
+                <StackPanel Spacing="4" IsVisible="{Binding IsLocal}">
+                    <TextBlock Text="Command" />
+                    <TextBox Text="{Binding CommandLine}" FontFamily="monospace"
+                             Watermark="npx -y @modelcontextprotocol/server-filesystem ~/runbooks" />
+                    <!-- Said before it is tried: an app launched from Finder
+                         inherits launchd's PATH, not a shell's. -->
+                    <TextBlock Classes="warning" FontSize="11" TextWrapping="Wrap"
+                               Text="{Binding CommandProblem}"
+                               IsVisible="{Binding CommandProblem, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                </StackPanel>
+
+                <StackPanel Spacing="4" IsVisible="{Binding IsHttp}">
+                    <TextBlock Text="Address" />
+                    <TextBox Text="{Binding Url}" FontFamily="monospace"
+                             Watermark="https://metrics.example.com/mcp" />
+
+                    <TextBlock Text="Bearer token" Margin="0,8,0,0" />
+                    <TextBox PasswordChar="•" Text="{Binding NewBearer}"
+                             Watermark="Paste one, or leave empty and sign in" />
+                    <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                               Text="A pasted token is used as it is. Without one, a server that asks for a sign-in gets one from Settings, in a browser." />
+                    <TextBlock Classes="muted" FontSize="11" Text="A token is already saved for this server."
+                               IsVisible="{Binding HasBearer}" />
+                    <TextBlock Classes="muted" FontSize="11" Text="Signed in."
+                               IsVisible="{Binding IsSignedIn}" />
+                </StackPanel>
+
+                <TextBlock Classes="danger" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+                           Text="{Binding Problem}"
+                           IsVisible="{Binding Problem, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Spacing="8" Margin="0,16,0,0">
+            <Button Padding="14,6" Click="Cancel">
+                <TextBlock Text="Cancel" />
+            </Button>
+            <Button Padding="14,6" Theme="{StaticResource PrimaryButton}" IsDefault="True"
+                    IsEnabled="{Binding CanSave}" Click="Save">
+                <TextBlock Text="Save" />
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>
