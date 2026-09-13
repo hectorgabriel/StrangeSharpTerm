@@ -1,0 +1,59 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:StrangeSharpTerm.App.ViewModels"
+        xmlns:views="clr-namespace:StrangeSharpTerm.App.Views"
+        x:Class="StrangeSharpTerm.App.Views.HostEditor"
+        x:DataType="vm:HostDraft"
+        Title="{Binding Title}"
+        Width="560" Height="700" MinWidth="480" MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BackgroundBrush}"
+        Foreground="{DynamicResource TextBrush}">
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto" Margin="20">
+        <TextBlock Grid.Row="0" Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,14" />
+
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="10" Margin="0,0,12,0">
+                <TextBlock Classes="section" Text="HOST" />
+
+                <Grid ColumnDefinitions="150,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Classes="muted" Text="Name" VerticalAlignment="Center" />
+                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="NameField"
+                             Text="{Binding Name, Mode=TwoWay}" Watermark="web-01" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Classes="muted" Text="Address" VerticalAlignment="Center" />
+                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Hostname, Mode=TwoWay}"
+                             Watermark="web-01.example.com" />
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Classes="muted" Text="Folder" VerticalAlignment="Center" />
+                    <ComboBox Grid.Row="2" Grid.Column="1" HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding Folders}"
+                              SelectedItem="{Binding Parent, Mode=TwoWay}"
+                              DisplayMemberBinding="{Binding Label}" />
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" Classes="muted" Text="Tags" VerticalAlignment="Center" />
+                    <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding Tags, Mode=TwoWay}"
+                             Watermark="production, database" />
+                </Grid>
+
+                <TextBlock Classes="section" Text="CONNECTION" Margin="0,6,0,0" />
+                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="{Binding InheritanceNote}" />
+
+                <views:SettingsEditor DataContext="{Binding Settings}" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Said on the way out rather than while typing: a form that scolds a
+             half-typed name is answering a question nobody asked yet. -->
+        <Border Grid.Row="2" Classes="banner" Margin="0,12,0,0" x:Name="Problems" IsVisible="False">
+            <TextBlock Text="{Binding ProblemSummary}" TextWrapping="Wrap" />
+        </Border>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right"
+                    Spacing="8" Margin="0,14,0,0">
+            <Button Content="Cancel" IsCancel="True" Padding="14,6" Click="Cancel" />
+            <Button Theme="{StaticResource PrimaryButton}" Content="Save" IsDefault="True" Padding="14,6" Click="Save" />
+        </StackPanel>
+    </Grid>
+</Window>

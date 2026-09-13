@@ -122,6 +122,97 @@ public sealed partial class ShellViewModel : ObservableObject
             ? new HostDetailViewModel(Inventory.Tree.Resolve(id))
             : null;
 
+    /// <summary>
+    /// Adds a host, in whichever folder the user is looking at.
+    ///
+    /// A new host lands where the eye already is: inside the selected folder, or
+    /// beside the selected host, or at the top level when nothing is selected.
+    /// Landing it at the top level regardless would be a small thing to fix by
+    /// hand every single time.
+    /// </summary>
+    [RelayCommand]
+    public async Task NewHost()
+    {
+        var parent = FolderInFocus();
+        var draft = HostDraft.New(Inventory.Tree, parent, Inventory.NextSortIndex(parent));
+        if (await _dialogs.Edit(draft))
+            Inventory.Upsert(draft.Applied());
+    }
+
+    /// <inheritdoc cref="NewHost"/>
+    [RelayCommand]
+    public async Task NewFolder()
+    {
+        var parent = FolderInFocus();
+        var draft = FolderDraft.New(Inventory.Tree, parent, Inventory.NextSortIndex(parent));
+        if (await _dialogs.Edit(draft))
+        {
+            var folder = draft.Applied();
+            Inventory.Upsert(folder);
+            Inventory.Selection = null;
+        }
+    }
+
+    /// <summary>Edits the selected host, for the button in the detail pane.</summary>
+    [RelayCommand]
+    public async Task EditSelected()
+    {
+        if (Detail is { } detail)
+            await Edit(detail.Connection.Id);
+    }
+
+    /// <summary>Edits whatever a row is: a host or a folder, from its own menu.</summary>
+    [RelayCommand]
+    public async Task EditRow(SidebarRow? row)
+    {
+        if (row is not null)
+            await Edit(row.Id);
+    }
+
+    /// <summary>Deletes whatever a row is, after asking. The question names what goes with it.</summary>
+    [RelayCommand]
+    public async Task DeleteRow(SidebarRow? row)
+    {
+        if (row is null)
+            return;
+
+        Inventory.ConfirmDelete(row.IsFolder
+            ? new PendingDeletion.Folder(row.Id)
+            : new PendingDeletion.Connection(row.Id));
+        await ConfirmPendingDeletion();
+    }
+
+    private async Task Edit(NodeId id)
+    {
+        if (Inventory.Tree.Connections.GetValueOrDefault(id) is { } connection)
+        {
+            var draft = HostDraft.For(Inventory.Tree, connection);
+            if (await _dialogs.Edit(draft))
+                Inventory.Upsert(draft.Applied());
+            return;
+        }
+
+        if (Inventory.Tree.Folders.GetValueOrDefault(id) is { } folder)
+        {
+            var draft = FolderDraft.For(Inventory.Tree, folder);
+            if (await _dialogs.Edit(draft))
+                Inventory.Upsert(draft.Applied());
+        }
+    }
+
+    /// <summary>
+    /// Where a new host or folder belongs: the selected folder, or the folder the
+    /// selected host is in, or nowhere in particular.
+    /// </summary>
+    private NodeId? FolderInFocus()
+    {
+        if (Inventory.Selection is not { } selected)
+            return null;
+        if (Inventory.Tree.Folders.ContainsKey(selected))
+            return selected;
+        return Inventory.Tree.Connections.GetValueOrDefault(selected)?.ParentId;
+    }
+
     /// <summary>Opens a shell on the selected host, for the button in the detail pane.</summary>
     [RelayCommand]
     public async Task ConnectSelected()
@@ -141,8 +232,18 @@ public sealed partial class ShellViewModel : ObservableObject
             return;
 
         Inventory.ConfirmDelete(new PendingDeletion.Connection(detail.Connection.Id));
+        await ConfirmPendingDeletion();
+    }
+
+    private async Task ConfirmPendingDeletion()
+    {
         if (Inventory.PendingDeletionMessage is not { } message)
+        {
+            // Nothing to describe means nothing to delete: the row named something
+            // that is no longer there.
+            Inventory.Pending = null;
             return;
+        }
 
         if (await _dialogs.Confirm(message.Title, message.Detail, "Delete"))
             Inventory.PerformPendingDeletion();

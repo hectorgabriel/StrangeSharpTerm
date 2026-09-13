@@ -36,8 +36,10 @@ public partial class App : Application
             // --connect opens one host and nothing else, which is how a terminal
             // is checked against a server without the inventory in the way. With
             // no argument the app opens its own window.
-            var request = TerminalLaunchRequest.Parse(desktop.Args ?? []);
-            desktop.MainWindow = request is null ? Shell(theme) : TerminalWindow(request, theme);
+            var arguments = desktop.Args ?? [];
+            var request = TerminalLaunchRequest.Parse(arguments);
+            desktop.MainWindow =
+                Editor(arguments) ?? (request is null ? Shell(theme) : TerminalWindow(request, theme));
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -52,6 +54,46 @@ public partial class App : Application
             InventoryLoader.Load(), dialogs: new DialogService(() => window), theme: theme);
         window = new ShellWindow(model);
         return window;
+    }
+
+    /// <summary>
+    /// <c>--demo-editor host|folder</c>: an editor on its own, over a fixture.
+    ///
+    /// The editors are reached through a flyout, and a flyout cannot be opened by
+    /// the synthetic input the DevTools MCP sends — which would leave the two
+    /// dialogs in this app as the only windows nobody can look at. This is the
+    /// same idea as the Swift app's <c>--demo-*</c> fixtures, which the migration
+    /// plan keeps for exactly this reason, and it is what the screenshot checks in
+    /// M4–M5 will drive.
+    /// </summary>
+    private static Window? Editor(string[] arguments)
+    {
+        var index = Array.IndexOf(arguments, "--demo-editor");
+        if (index < 0 || index + 1 >= arguments.Length)
+            return null;
+
+        var folder = new Model.Folder
+        {
+            Name = "Production",
+            Settings = new Model.ConnectionSettings { Username = "ops", Port = 2222, ForwardAgent = true },
+        };
+        var host = new Model.Connection
+        {
+            ParentId = folder.Id,
+            Name = "db-primary",
+            Hostname = "db-01.prod.example.com",
+            Tags = ["postgres", "primary"],
+            Settings = new Model.ConnectionSettings
+            {
+                HostKeyPolicy = Model.HostKeyPolicy.Strict,
+                IdentityFiles = ["~/.ssh/id_ed25519"],
+            },
+        };
+        var tree = new Model.InventoryTree([folder], [host]);
+
+        return arguments[index + 1] == "folder"
+            ? new FolderEditor(FolderDraft.For(tree, folder))
+            : new HostEditor(HostDraft.For(tree, host));
     }
 
     private static Window TerminalWindow(TerminalLaunchRequest request, AppTheme theme)

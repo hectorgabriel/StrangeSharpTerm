@@ -1,0 +1,28 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--
+        A control theme rather than a style, because Fluent's own control theme
+        sets each state on the template's parts and wins against an application
+        style. Extending the theme is the way in: the states below replace
+        Fluent's, and everything else it does is inherited.
+    -->
+    <ControlTheme x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+
+        <!-- The one action a pane or a dialog is for keeps its colour while it is
+             pointed at; only its label lifts. -->
+        <Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource OnAccentBrush}" />
+        </Style>
+
+        <Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource OnAccentBrush}" />
+        </Style>
+    </ControlTheme>
+</ResourceDictionary>

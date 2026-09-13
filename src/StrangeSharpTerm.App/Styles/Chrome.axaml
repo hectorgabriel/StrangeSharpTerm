@@ -36,6 +36,14 @@
         <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
     </Style>
 
+    <!-- A section header in a form: small, spaced, and quiet. -->
+    <Style Selector="TextBlock.section">
+        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="LetterSpacing" Value="1" />
+    </Style>
+
     <Style Selector="TextBlock.warning">
         <Setter Property="Foreground" Value="{DynamicResource WarningBrush}" />
     </Style>
@@ -44,10 +52,9 @@
         <Setter Property="Foreground" Value="{DynamicResource DangerBrush}" />
     </Style>
 
+    <!-- Colour comes from Fluent's own keys (see ThemeTokens.Fluent); what a
+         style can still set is what the theme leaves to the control. -->
     <Style Selector="TextBox">
-        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
-        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
         <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}" />
         <Setter Property="SelectionBrush" Value="{DynamicResource SelectionBrush}" />
         <Setter Property="SelectionForegroundBrush" Value="{DynamicResource TextBrush}" />
@@ -61,18 +68,9 @@
         <Setter Property="CornerRadius" Value="6" />
     </Style>
 
-    <Style Selector="Button.row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
-        <Setter Property="TextElement.Foreground" Value="{DynamicResource TextBrush}" />
-    </Style>
-
-    <Style Selector="Button.row:pressed /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
-        <Setter Property="TextElement.Foreground" Value="{DynamicResource TextBrush}" />
-    </Style>
-
-    <!-- The selected host stays marked while the pointer is elsewhere. -->
-    <Style Selector="Button.row.selected /template/ ContentPresenter#PART_ContentPresenter">
+    <!-- The selected host stays marked while the pointer is elsewhere. Set on
+         the control, not the template part: the part belongs to Fluent's theme. -->
+    <Style Selector="Button.row.selected">
         <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
     </Style>
 
@@ -86,35 +84,10 @@
         <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
     </Style>
 
-    <!-- An ordinary button: raised off the background, and not coloured. -->
-    <Style Selector="Button">
-        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
-        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-    </Style>
-
-    <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource BorderBrush}" />
-        <Setter Property="TextElement.Foreground" Value="{DynamicResource TextBrush}" />
-    </Style>
-
-    <!-- The one action a pane is for. Dark text, because an accent is not dark. -->
-    <Style Selector="Button.primary">
-        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
-        <Setter Property="Foreground" Value="{DynamicResource OnAccentBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
-    </Style>
-
-    <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
-        <Setter Property="TextElement.Foreground" Value="{DynamicResource OnAccentBrush}" />
-    </Style>
-
-    <Style Selector="ComboBox">
-        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
-        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-    </Style>
+    <!-- An ordinary button needs no style at all: Fluent's own keys are pointed
+         at this theme (ThemeTokens.Fluent). Setting Background here would also
+         outrank the primary button's control theme, which is how the accent one
+         came out grey. -->
 
     <!-- A chip: a tag, a count, a status. -->
     <Style Selector="Border.chip">

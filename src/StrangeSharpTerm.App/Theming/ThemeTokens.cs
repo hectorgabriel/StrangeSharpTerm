@@ -66,7 +66,75 @@ public static class ThemeTokens
             resources[$"{name}Color"] = colour;
             resources[$"{name}Brush"] = new SolidColorBrush(colour);
         }
+
+        foreach (var (key, value) in Fluent(palette))
+            resources[key] = new SolidColorBrush(ToColor(value));
     }
+
+    /// <summary>
+    /// Fluent's own keys, pointed at this palette.
+    ///
+    /// A text box or a combo box does not paint itself from its Background
+    /// property: its control theme binds each state to a resource of Fluent's
+    /// own, so a field went black under the pointer and stayed black while
+    /// focused however the control was styled. Styling the template part instead
+    /// does not work either — a control theme's state setters beat an
+    /// application style, checked in Avalonia 12.1 rather than assumed. What does
+    /// work is defining the key: application resources are found before the
+    /// theme's.
+    /// </summary>
+    public static IReadOnlyDictionary<string, uint> Fluent(AppPalette palette) => new Dictionary<string, uint>
+    {
+        ["TextControlBackground"] = palette.Surface,
+        ["TextControlBackgroundPointerOver"] = palette.Surface,
+        ["TextControlBackgroundFocused"] = palette.Surface,
+        ["TextControlBackgroundDisabled"] = palette.Background,
+        ["TextControlBorderBrush"] = palette.Border,
+        ["TextControlBorderBrushPointerOver"] = palette.Border,
+        ["TextControlBorderBrushFocused"] = palette.Accent,
+        ["TextControlBorderBrushDisabled"] = palette.Border,
+        ["TextControlForeground"] = palette.Text,
+        ["TextControlForegroundPointerOver"] = palette.Text,
+        ["TextControlForegroundFocused"] = palette.Text,
+        ["TextControlForegroundDisabled"] = palette.Muted,
+        ["TextControlPlaceholderForeground"] = palette.Muted,
+        ["TextControlPlaceholderForegroundPointerOver"] = palette.Muted,
+        ["TextControlPlaceholderForegroundFocused"] = palette.Muted,
+        ["TextControlPlaceholderForegroundDisabled"] = palette.Muted,
+
+        ["ComboBoxBackground"] = palette.Surface,
+        ["ComboBoxBackgroundPointerOver"] = palette.Border,
+        ["ComboBoxBackgroundPressed"] = palette.Border,
+        ["ComboBoxBackgroundDisabled"] = palette.Background,
+        ["ComboBoxBorderBrush"] = palette.Border,
+        ["ComboBoxBorderBrushPointerOver"] = palette.Border,
+        ["ComboBoxBorderBrushPressed"] = palette.Accent,
+        ["ComboBoxBorderBrushDisabled"] = palette.Border,
+        ["ComboBoxForeground"] = palette.Text,
+        ["ComboBoxForegroundPointerOver"] = palette.Text,
+        ["ComboBoxForegroundPressed"] = palette.Text,
+        ["ComboBoxForegroundDisabled"] = palette.Muted,
+        ["ComboBoxDropDownBackground"] = palette.Surface,
+        ["ComboBoxDropDownBorderBrush"] = palette.Border,
+        ["ComboBoxDropDownForeground"] = palette.Text,
+        ["ComboBoxItemForeground"] = palette.Text,
+        ["ComboBoxItemBackgroundPointerOver"] = palette.Border,
+        ["ComboBoxItemBackgroundSelected"] = palette.Selection,
+        ["ComboBoxItemBackgroundSelectedPointerOver"] = palette.Selection,
+
+        ["ButtonBackground"] = palette.Surface,
+        ["ButtonBackgroundPointerOver"] = palette.Border,
+        ["ButtonBackgroundPressed"] = palette.Selection,
+        ["ButtonBackgroundDisabled"] = palette.Background,
+        ["ButtonBorderBrush"] = palette.Border,
+        ["ButtonBorderBrushPointerOver"] = palette.Border,
+        ["ButtonBorderBrushPressed"] = palette.Border,
+        ["ButtonBorderBrushDisabled"] = palette.Border,
+        ["ButtonForeground"] = palette.Text,
+        ["ButtonForegroundPointerOver"] = palette.Text,
+        ["ButtonForegroundPressed"] = palette.Text,
+        ["ButtonForegroundDisabled"] = palette.Muted,
+    };
 
     /// <summary>
     /// The same, for a running application, plus the one colour Fluent keeps to

@@ -19,12 +19,25 @@
 
         <!-- What you have, and what you are looking for. -->
         <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*,Auto" Background="{DynamicResource SidebarBrush}">
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="14,12,10,8" Spacing="8">
-                <TextBlock Text="Hosts" FontWeight="SemiBold" VerticalAlignment="Center" />
-                <Border Classes="chip" VerticalAlignment="Center">
-                    <TextBlock Classes="muted" Text="{Binding Inventory.ConnectionCount}" FontSize="11" />
-                </Border>
-            </StackPanel>
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="14,12,10,8">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Hosts" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Border Classes="chip" VerticalAlignment="Center">
+                        <TextBlock Classes="muted" Text="{Binding Inventory.ConnectionCount}" FontSize="11" />
+                    </Border>
+                </StackPanel>
+
+                <Button Grid.Column="1" Classes="row" Padding="6" ToolTip.Tip="Add">
+                    <Button.Flyout>
+                        <MenuFlyout>
+                            <MenuItem Header="New host…" Command="{Binding NewHostCommand}" />
+                            <MenuItem Header="New folder…" Command="{Binding NewFolderCommand}" />
+                        </MenuFlyout>
+                    </Button.Flyout>
+                    <Path Classes="icon" Width="14" Height="14"
+                          Data="{Binding Source=IconPlus, Converter={StaticResource Icon}}" />
+                </Button>
+            </Grid>
 
             <TextBox Grid.Row="1" Margin="12,0,12,8" PlaceholderText="Search"
                      Text="{Binding Inventory.Search, Mode=TwoWay}" />
@@ -39,6 +52,16 @@
                                         Padding="6,4"
                                         Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).ActivateCommand}"
                                         CommandParameter="{Binding}">
+                                    <Button.ContextFlyout>
+                                        <MenuFlyout>
+                                            <MenuItem Header="Edit…"
+                                                      Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).EditRowCommand}"
+                                                      CommandParameter="{Binding}" />
+                                            <MenuItem Header="Delete…"
+                                                      Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).DeleteRowCommand}"
+                                                      CommandParameter="{Binding}" />
+                                        </MenuFlyout>
+                                    </Button.ContextFlyout>
                                     <StackPanel Orientation="Horizontal" Spacing="6" Margin="{Binding Indent}">
                                         <Path Classes="icon" Width="12" Height="12" Opacity="0.6"
                                               Data="{Binding ChevronKey, Converter={StaticResource Icon}}" />
@@ -155,11 +178,18 @@
                         </ItemsControl>
 
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Classes="primary" Command="{Binding ConnectSelectedCommand}" Padding="12,6">
+                            <Button Theme="{StaticResource PrimaryButton}" Command="{Binding ConnectSelectedCommand}" Padding="12,6">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <Path Classes="icon" Width="14" Height="14"
                                           Data="{Binding Source=IconSquareTerminal, Converter={StaticResource Icon}}" />
                                     <TextBlock Text="Open a shell" Foreground="{DynamicResource OnAccentBrush}" />
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding EditSelectedCommand}" Padding="12,6">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Path Classes="icon" Width="14" Height="14"
+                                          Data="{Binding Source=IconSlidersHorizontal, Converter={StaticResource Icon}}" />
+                                    <TextBlock Text="Edit" />
                                 </StackPanel>
                             </Button>
                             <Button Command="{Binding DeleteSelectedCommand}" Padding="12,6">
