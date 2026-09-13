@@ -11,6 +11,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using StrangeSharpTerm.Assist;
+using StrangeSharpTerm.Mcp;
 using StrangeSharpTerm.Model;
 using StrangeSharpTerm.Security;
 using StrangeSharpTerm.Terminal;
@@ -332,6 +333,103 @@ ask.SetAction(parsed => WithSession(parsed, session =>
 }));
 root.Add(ask);
 
+// ------------------------------------------------------------------- mcp
+//
+// Connected tool servers, driven without a window. Both transports have to be
+// exercised against real servers, and the failures worth finding -- a command
+// that is not on the path, a server that dies during startup, a tool reporting
+// its own failure -- are not ones a unit test stands in for.
+var serverOption = new Option<string[]>("--server")
+{
+    Description = "A server to connect, as Name=command args, or Name=https://host/mcp. Repeatable.",
+    Required = true,
+    AllowMultipleArgumentsPerToken = true,
+};
+var callOption = new Option<string?>("--call") { Description = "Call this tool, by its namespaced name." };
+var argumentsOption = new Option<string>("--arguments")
+{
+    Description = "The tool's arguments, as JSON.",
+    DefaultValueFactory = _ => "{}",
+};
+
+var mcp = new Command("mcp", "Connect tool servers and report what they offer.")
+{
+    serverOption, callOption, argumentsOption,
+};
+mcp.SetAction(parsed =>
+{
+    var settings = new McpSettings
+    {
+        Servers = [.. parsed.GetValue(serverOption)!.Select(ParseServer).OfType<McpServerConfig>()],
+    };
+    if (settings.Servers.Count == 0)
+    {
+        Console.Error.WriteLine("No server could be read. Use Name=command args, or Name=https://host/mcp.");
+        return 2;
+    }
+
+    var hub = new McpHub(settings);
+    hub.Connect().GetAwaiter().GetResult();
+
+    foreach (var status in hub.Statuses)
+    {
+        Console.WriteLine($"{status.Config.Name}: {status.Summary}{(status.Failure is { } why ? $" — {why}" : "")}");
+        foreach (var offered in hub.ToolsOf(status.Config))
+            Console.WriteLine($"  {offered.QualifiedName}");
+    }
+
+    var failed = hub.Statuses.Any(status => !status.IsConnected);
+
+    // --call bypasses the gate, which is why it is a flag and nothing the UI
+    // can reach.
+    if (parsed.GetValue(callOption) is { Length: > 0 } tool)
+    {
+        if (!hub.Owns(tool))
+        {
+            Console.Error.WriteLine($"No connected server offers {tool}.");
+            hub.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            return 2;
+        }
+
+        var reply = hub.Call(tool, parsed.GetValue(argumentsOption)!).GetAwaiter().GetResult();
+        Console.WriteLine();
+        Console.WriteLine(reply.Output);
+        failed |= reply.Failed;
+    }
+
+    hub.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    return failed ? 1 : 0;
+});
+root.Add(mcp);
+
+// --------------------------------------------------------- mcp sign-in
+var signIn = new Command("mcp-signin", "Walk a hosted server's OAuth chain and keep the result.")
+{
+    serverOption,
+};
+signIn.SetAction(parsed =>
+{
+    if (parsed.GetValue(serverOption)!.Select(ParseServer).OfType<McpServerConfig>().FirstOrDefault() is not { } server)
+    {
+        Console.Error.WriteLine("No server could be read.");
+        return 2;
+    }
+
+    try
+    {
+        McpSignIn.SignIn(server, openBrowser: url => Console.WriteLine($"Open this: {url}"))
+            .GetAwaiter().GetResult();
+        Console.WriteLine($"{server.Name}: signed in.");
+        return 0;
+    }
+    catch (Exception e)
+    {
+        Console.Error.WriteLine(e.Message);
+        return 1;
+    }
+});
+root.Add(signIn);
+
 return root.Parse(args).Invoke();
 
 /// <summary>COLSxROWS, as people write a terminal size.</summary>
@@ -367,6 +465,28 @@ static string ReadBanner(int port)
     {
         return $"<{e.GetType().Name}>";
     }
+}
+
+/// <summary><c>Name=command args</c>, or <c>Name=https://host/mcp</c>.</summary>
+static McpServerConfig? ParseServer(string specification)
+{
+    var equals = specification.IndexOf('=');
+    if (equals <= 0 || equals == specification.Length - 1)
+        return null;
+
+    var name = specification[..equals].Trim();
+    var rest = specification[(equals + 1)..].Trim();
+
+    if (rest.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+        || rest.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+    {
+        return new McpServerConfig { Name = name, Transport = McpTransport.Http, Url = rest };
+    }
+
+    var words = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+    return words.Length == 0
+        ? null
+        : new McpServerConfig { Name = name, Command = words[0], Arguments = [.. words[1..]] };
 }
 
 /// <summary>

@@ -9,6 +9,7 @@ using StrangeSharpTerm.App.Terminal;
 using StrangeSharpTerm.App.Theming;
 using StrangeSharpTerm.App.Views;
 using StrangeSharpTerm.Assist;
+using StrangeSharpTerm.Mcp;
 using StrangeSharpTerm.Model;
 using StrangeSharpTerm.Security;
 using StrangeSharpTerm.Terminal;
@@ -44,6 +45,7 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly AppTheme _theme;
     private readonly Func<AssistSettings, IAssistBackend?> _backends;
     private readonly string? _preferencesPath;
+    private McpHub? _tools;
 
     /// <param name="sessions">
     /// Everything a host can be asked for, over one connection to it. Replaced
@@ -59,7 +61,8 @@ public sealed partial class ShellViewModel : ObservableObject
         ISecretStore? secrets = null,
         AssistSettings? assist = null,
         Func<AssistSettings, IAssistBackend?>? backends = null,
-        string? preferencesPath = null)
+        string? preferencesPath = null,
+        McpHub? tools = null)
     {
         Inventory = inventory;
         _dialogs = dialogs ?? new ScriptedDialogService();
@@ -76,6 +79,7 @@ public sealed partial class ShellViewModel : ObservableObject
         AssistantSettings = assist ?? (preferencesPath is { } path ? AssistPreferences.Load(path) : new AssistSettings());
         // Substituted in tests, and the only place a provider is built.
         _backends = backends ?? (settings => AssistBackends.For(settings, _secrets.Value));
+        _tools = tools;
         Workspace = new WorkspaceViewModel(_terminals);
         _sessions = sessions ?? new HostSessions(() => Inventory.Tree);
         _view = view ?? ((session, palette) => new TerminalPaneView(session, palette, _terminals));
@@ -104,6 +108,52 @@ public sealed partial class ShellViewModel : ObservableObject
     public InventoryViewModel Inventory { get; }
 
     public WorkspaceViewModel Workspace { get; }
+
+    /// <summary>
+    /// The connected tool servers, or null when none are configured.
+    ///
+    /// Built once and shared by every pane: a server launched per pane would be
+    /// a process per pane, and an HTTP one would be a sign-in per pane.
+    /// </summary>
+    public McpHub? Tools => _tools;
+
+    /// <summary>
+    /// Connects the configured tool servers, in the background.
+    ///
+    /// Never throws and never blocks the window: a server that will not start is
+    /// a row in Settings that says so, and the app is entirely usable without
+    /// any of them.
+    /// </summary>
+    public async Task ConnectTools()
+    {
+        if (_preferencesPath is not { } path)
+            return;
+
+        var settings = McpPreferences.Load(path);
+        if (settings.Usable.Count == 0)
+            return;
+
+        _tools ??= new McpHub(settings, saved => McpPreferences.Save(path, saved), _assistKeys.Value);
+        try
+        {
+            await _tools.Connect();
+        }
+        catch (Exception e)
+        {
+            System.Diagnostics.Trace.WriteLine($"connecting tool servers failed: {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// What a pane is given. Null when there are none, or when the switch for
+    /// this kind of pane is off.
+    /// </summary>
+    private IExternalTools? ToolsFor(bool inARun)
+    {
+        if (_tools is not { } hub || hub.Offered.Count == 0)
+            return null;
+        return inARun ? hub.Settings.OfferInRuns ? hub : null : hub.Settings.OfferInPanes ? hub : null;
+    }
 
     /// <summary>
     /// How the assistant is configured, for every pane in this window.
@@ -254,7 +304,15 @@ public sealed partial class ShellViewModel : ObservableObject
                 AssistantSettings = assist;
                 if (_preferencesPath is { } path)
                     AssistPreferences.Save(path, assist);
-            });
+            },
+            // Built on demand, so a window with no servers configured never
+            // constructs a hub -- and so the sheet is the place a first one can
+            // be added.
+            _tools ??= _preferencesPath is { } where
+                ? new McpHub(McpPreferences.Load(where), saved => McpPreferences.Save(where, saved), _assistKeys.Value)
+                : null,
+            _dialogs,
+            _assistKeys.Value);
 
         await _dialogs.Manage(settings);
     }
@@ -742,7 +800,9 @@ public sealed partial class ShellViewModel : ObservableObject
                     // per host would be worse than one that says which it left out.
                     IsConnected = _sessions.IsOpen(connection),
                 }),
-            alias => Connected(alias) is { } target ? Agent(target, Focused(target.Id))(() => model!) : null);
+            alias => Connected(alias) is { } target
+                ? Agent(target, Focused(target.Id), inARun: true)(() => model!)
+                : null);
 
         Workspace.Open(pane, splitting: null);
         _views[pane.Id] = _orchestratorView(model);
@@ -758,7 +818,7 @@ public sealed partial class ShellViewModel : ObservableObject
     /// The gate is passed in late because a pane is its own gate and cannot be
     /// built before the agent it holds.
     /// </summary>
-    private Func<Func<ICommandGate>, HostAgent> Agent(Connection connection, NodeId? terminal) =>
+    private Func<Func<ICommandGate>, HostAgent> Agent(Connection connection, NodeId? terminal, bool inARun = false) =>
         gate =>
         {
             var access = new SshHostAccess(
@@ -772,7 +832,8 @@ public sealed partial class ShellViewModel : ObservableObject
                     ?? throw new AssistException(AssistBackends.NoKey(AssistantSettings)),
                 access,
                 AssistantSettings,
-                new Deferred(gate));
+                new Deferred(gate),
+                ToolsFor(inARun));
         };
 
     /// <summary>A host by the name the inventory gives it, and only if it is connected.</summary>
@@ -798,6 +859,14 @@ public sealed partial class ShellViewModel : ObservableObject
     {
         public Task<bool> Allow(PendingCommand command, CancellationToken cancellationToken = default) =>
             gate().Allow(command, cancellationToken);
+
+        /// <summary>
+        /// Forwarded too. A gate that passed on only the command half would let
+        /// the interface's default answer -- no -- silently refuse every
+        /// connected tool call, which looks exactly like a person refusing.
+        /// </summary>
+        public Task<ToolApproval> Allow(PendingToolCall call, CancellationToken cancellationToken = default) =>
+            gate().Allow(call, cancellationToken);
     }
 
     /// <summary>Opens a shell on a host, in its own tab.</summary>

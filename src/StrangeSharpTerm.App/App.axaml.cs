@@ -62,6 +62,11 @@ public partial class App : Application
             preferencesPath: Preferences.DefaultPath());
         window = new ShellWindow(model);
 
+        // The tool servers connect in the background once the window is up. A
+        // server that will not start is a row in Settings that says so, and the
+        // app is entirely usable without any of them -- so nothing here waits.
+        Dispatcher.UIThread.Post(async () => await model.ConnectTools(), DispatcherPriority.Background);
+
         // --demo-palette [--demo-query x] [--demo-connect host], as the Swift app
         // had the first two: the palette is opened with ⌘K and by nothing else,
         // and a shortcut is the one thing the DevTools MCP cannot send. Posted
@@ -124,7 +129,7 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// <c>--demo-editor host|folder|credential|credentials|snippet|snippets|run|settings</c>:
+    /// <c>--demo-editor host|folder|credential|credentials|snippet|snippets|run|settings|server|server-local</c>:
     /// a dialog on its own, over a fixture.
     ///
     /// The editors are reached through a flyout, and a flyout cannot be opened by
@@ -209,11 +214,31 @@ public partial class App : Application
             // fixture, which is the point of looking at it. Its API keys are in
             // memory too, so looking at the assistant section never writes to
             // the login keychain.
+            // A hosted server, so the address, the token field and the sign-in
+            // note are the ones being looked at.
+            "server" => new McpServerEditor(McpServerDraft.For(
+                new Mcp.McpServerConfig
+                {
+                    Name = "Grafana",
+                    Transport = Mcp.McpTransport.Http,
+                    Url = "https://metrics.example.com/mcp",
+                },
+                new Security.InMemorySecretStore())),
+            "server-local" => new McpServerEditor(McpServerDraft.For(
+                new Mcp.McpServerConfig
+                {
+                    Name = "Runbooks",
+                    Command = "npx",
+                    Arguments = ["-y", "@modelcontextprotocol/server-filesystem", "~/runbooks"],
+                },
+                new Security.InMemorySecretStore())),
             "settings" => new SettingsWindow(new SettingsViewModel(
                 new Theming.AppTheme(),
                 () => Task.CompletedTask,
                 () => Task.CompletedTask,
-                keys: Rehearsal.Keys())),
+                keys: Rehearsal.Keys(),
+                tools: Rehearsal.Servers(),
+                toolKeys: new Security.InMemorySecretStore())),
             _ => new HostEditor(HostDraft.For(tree, host)),
         };
     }

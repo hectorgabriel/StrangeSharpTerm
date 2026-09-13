@@ -110,6 +110,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     private readonly IAssistBackend _backend;
     private CancellationTokenSource? _running;
     private TaskCompletionSource<bool>? _answering;
+    private TaskCompletionSource<ToolApproval>? _answeringTool;
 
     public OrchestratorViewModel(IAssistBackend backend, IEnumerable<TargetRow> targets, Func<string, HostAgent?> agentFor)
     {
@@ -172,6 +173,10 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// <summary>A command waiting on a person, captioned with its host.</summary>
     [ObservableProperty]
     public partial PendingCommand? Waiting { get; private set; }
+
+    /// <summary>A connected tool's call, waiting on a person, captioned with the host that asked.</summary>
+    [ObservableProperty]
+    public partial PendingToolCall? WaitingTool { get; private set; }
 
     [ObservableProperty]
     public partial string Progress { get; private set; } = "";
@@ -364,14 +369,27 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     public void Stop()
     {
         _answering?.TrySetResult(false);
+        _answeringTool?.TrySetResult(ToolApproval.No);
         _running?.Cancel();
     }
 
     [RelayCommand]
-    public void Allow() => _answering?.TrySetResult(true);
+    public void Allow()
+    {
+        _answering?.TrySetResult(true);
+        _answeringTool?.TrySetResult(ToolApproval.Once);
+    }
 
     [RelayCommand]
-    public void Refuse() => _answering?.TrySetResult(false);
+    public void Refuse()
+    {
+        _answering?.TrySetResult(false);
+        _answeringTool?.TrySetResult(ToolApproval.No);
+    }
+
+    /// <inheritdoc cref="AssistantViewModel.AlwaysAllow"/>
+    [RelayCommand]
+    public void AlwaysAllow() => _answeringTool?.TrySetResult(ToolApproval.Always);
 
     /// <summary>
     /// The gate, per host and saying which one.
@@ -394,9 +412,27 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             TaskScheduler.Default);
     }
 
+    /// <inheritdoc cref="Allow(PendingCommand, CancellationToken)"/>
+    public Task<ToolApproval> Allow(PendingToolCall call, CancellationToken cancellationToken = default)
+    {
+        var answering = new TaskCompletionSource<ToolApproval>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _answeringTool = answering;
+        Post(() => WaitingTool = call);
+        cancellationToken.Register(() => answering.TrySetResult(ToolApproval.No));
+
+        return answering.Task.ContinueWith(
+            answered =>
+            {
+                Post(() => WaitingTool = null);
+                return answered.Result;
+            },
+            TaskScheduler.Default);
+    }
+
     public void Dispose()
     {
         _answering?.TrySetResult(false);
+        _answeringTool?.TrySetResult(ToolApproval.No);
         _running?.Cancel();
         _running?.Dispose();
     }

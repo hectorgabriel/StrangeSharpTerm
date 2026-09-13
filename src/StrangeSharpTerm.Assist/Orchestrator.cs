@@ -96,6 +96,11 @@ public sealed class Orchestrator(IAssistBackend collator)
                         // Both budgets: this host's twelve and what is left of
                         // the run's sixty, whichever runs out first.
                         Budget = new SharedBudget(runBudget, new CommandBudget(AssistLimits.CommandBudget)),
+                        // A worker in a run is told the connected tools are not
+                        // part of its machine and that writing is not its job:
+                        // findings go in the report, and the user decides once,
+                        // with the whole picture.
+                        ToolNote = AssistPrompts.ConnectedToolsInARun,
                     },
                     cancellationToken);
 

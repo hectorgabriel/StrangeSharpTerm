@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using StrangeSharpTerm.App.ViewModels;
 using StrangeSharpTerm.App.Views;
 using StrangeSharpTerm.Assist;
+using StrangeSharpTerm.Mcp;
 using StrangeSharpTerm.Security;
 using StrangeSharpTerm.Transport;
 
@@ -40,6 +41,31 @@ internal static class Rehearsal
         var keys = new InMemorySecretStore();
         keys.SetSecret(AssistProvider.Claude.KeyAccount, "not-a-real-key");
         return keys;
+    }
+
+    /// <summary>
+    /// Two connected servers, over a fixture, connected to nothing.
+    ///
+    /// The settings section only has anything in it after a person has attached
+    /// a server, which is the state nobody would otherwise screenshot.
+    /// </summary>
+    internal static McpHub Servers()
+    {
+        var grafana = new McpServerConfig
+        {
+            Name = "Grafana",
+            Transport = McpTransport.Http,
+            Url = "https://metrics.example.com/mcp",
+            AlwaysAllowed = ["query_range"],
+        };
+        var runbooks = new McpServerConfig
+        {
+            Name = "Runbooks",
+            Command = "npx",
+            Arguments = ["-y", "@modelcontextprotocol/server-filesystem", "~/runbooks"],
+        };
+
+        return new McpHub(new McpSettings { Servers = [grafana, runbooks] });
     }
 
     /// <summary>The assistant beside a terminal, showing the commands it ran.</summary>
@@ -191,5 +217,13 @@ internal static class Rehearsal
     {
         public Task<bool> Allow(PendingCommand command, CancellationToken cancellationToken = default) =>
             gate().Allow(command, cancellationToken);
+
+        /// <summary>
+        /// Forwarded too. A gate that passed on only the command half would let
+        /// the interface's default answer -- no -- silently refuse every
+        /// connected tool call, which looks exactly like a person refusing.
+        /// </summary>
+        public Task<ToolApproval> Allow(PendingToolCall call, CancellationToken cancellationToken = default) =>
+            gate().Allow(call, cancellationToken);
     }
 }

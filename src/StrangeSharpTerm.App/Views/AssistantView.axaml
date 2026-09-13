@@ -18,7 +18,7 @@
         <views:IconConverter x:Key="Icon" />
     </UserControl.Resources>
 
-    <Grid RowDefinitions="Auto,*,Auto,Auto" Background="{DynamicResource BackgroundBrush}">
+    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto" Background="{DynamicResource BackgroundBrush}">
 
         <!-- Who is answering, named here because it decides where this
              conversation's terminal output is being sent. -->
@@ -149,7 +149,54 @@
 
         <!-- What gets sent. The preview is the request itself, not a description
              of it, so it cannot drift from what is actually carried. -->
-        <Expander Grid.Row="2" Margin="12,0,12,6" Padding="0" IsExpanded="False"
+        <!-- A connected tool's call, waiting on a person. The server, the tool,
+             where it goes and the exact arguments are all here rather than
+             behind a disclosure: a gate whose substance is one click away is a
+             gate people approve without reading. -->
+        <Border Grid.Row="2" Classes="banner" Margin="12,0,12,8" Padding="12,10"
+                DataContext="{Binding WaitingTool}"
+                IsVisible="{Binding $self.DataContext, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <Grid ColumnDefinitions="*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                  x:DataType="assist:PendingToolCall">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding Server}" FontWeight="SemiBold" FontSize="12" />
+                    <TextBlock Text="{Binding Tool}" FontFamily="monospace" FontSize="12" />
+                    <!-- The server's own claim. Shown, and never acted on. -->
+                    <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center"
+                               Text="the server calls this read-only" IsVisible="{Binding ReadOnlyClaim}" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="1" Classes="muted" FontSize="11" Margin="0,2,0,0"
+                           Text="{Binding Destination, StringFormat='Its arguments go to {0}'}" />
+
+                <Border Grid.Row="2" Margin="0,6,0,0" Padding="8" CornerRadius="4"
+                        Background="{DynamicResource BackgroundBrush}">
+                    <ScrollViewer MaxHeight="160">
+                        <TextBlock FontFamily="monospace" FontSize="11" TextWrapping="Wrap"
+                                   Text="{Binding Arguments}" />
+                    </ScrollViewer>
+                </Border>
+
+                <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                    <Button Padding="12,4"
+                            Command="{Binding $parent[UserControl].((vm:AssistantViewModel)DataContext).AllowCommand}">
+                        <TextBlock Text="Run it" FontSize="12" />
+                    </Button>
+                    <Button Padding="12,4"
+                            Command="{Binding $parent[UserControl].((vm:AssistantViewModel)DataContext).RefuseCommand}">
+                        <TextBlock Text="No" FontSize="12" />
+                    </Button>
+                    <!-- The only way a standing pass is ever granted, and never
+                         offered for a tool the server calls destructive. -->
+                    <Button Padding="12,4" IsVisible="{Binding MayBeGranted}"
+                            Command="{Binding $parent[UserControl].((vm:AssistantViewModel)DataContext).AlwaysAllowCommand}">
+                        <TextBlock Text="Always allow" FontSize="12" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Expander Grid.Row="3" Margin="12,0,12,6" Padding="0" IsExpanded="False"
                   HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
             <Expander.Header>
                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -163,7 +210,7 @@
             </ScrollViewer>
         </Expander>
 
-        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="12,0,12,12">
+        <Grid Grid.Row="4" ColumnDefinitions="*,Auto" Margin="12,0,12,12">
             <TextBox Grid.Column="0" Watermark="Ask about this host…" AcceptsReturn="False"
                      Text="{Binding Question}" KeyDown="Send" />
             <Button Grid.Column="1" Margin="8,0,0,0" Padding="12,6"

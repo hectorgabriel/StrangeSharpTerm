@@ -4,6 +4,11 @@
     <PackageReference Include="ModelContextProtocol.Core" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The name sanitiser is pinned by tests without being public API. -->
+    <InternalsVisibleTo Include="StrangeSharpTerm.Mcp.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../StrangeSharpTerm.Assist/StrangeSharpTerm.Assist.csproj" />
   </ItemGroup>
 </Project>

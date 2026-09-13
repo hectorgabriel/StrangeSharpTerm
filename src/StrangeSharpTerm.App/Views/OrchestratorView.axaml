@@ -22,7 +22,7 @@
         <views:IconConverter x:Key="Icon" />
     </UserControl.Resources>
 
-    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto,Auto" Background="{DynamicResource BackgroundBrush}">
+    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto" Background="{DynamicResource BackgroundBrush}">
 
         <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="12,10,10,8">
             <Path Grid.Column="0" Classes="icon" Width="14" Height="14" Margin="0,0,8,0"
@@ -186,7 +186,54 @@
         </Border>
 
         <!-- Which hosts. Disconnected ones stay tickable and are reported as not asked. -->
-        <Expander Grid.Row="3" Margin="12,0,12,6" Padding="0"
+        <!-- A connected tool's call, waiting on a person. The server, the tool,
+             where it goes and the exact arguments are all here rather than
+             behind a disclosure: a gate whose substance is one click away is a
+             gate people approve without reading. -->
+        <Border Grid.Row="3" Classes="banner" Margin="12,0,12,8" Padding="12,10"
+                DataContext="{Binding WaitingTool}"
+                IsVisible="{Binding $self.DataContext, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <Grid ColumnDefinitions="*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                  x:DataType="assist:PendingToolCall">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{Binding Server}" FontWeight="SemiBold" FontSize="12" />
+                    <TextBlock Text="{Binding Tool}" FontFamily="monospace" FontSize="12" />
+                    <!-- The server's own claim. Shown, and never acted on. -->
+                    <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center"
+                               Text="the server calls this read-only" IsVisible="{Binding ReadOnlyClaim}" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="1" Classes="muted" FontSize="11" Margin="0,2,0,0"
+                           Text="{Binding Destination, StringFormat='Its arguments go to {0}'}" />
+
+                <Border Grid.Row="2" Margin="0,6,0,0" Padding="8" CornerRadius="4"
+                        Background="{DynamicResource BackgroundBrush}">
+                    <ScrollViewer MaxHeight="160">
+                        <TextBlock FontFamily="monospace" FontSize="11" TextWrapping="Wrap"
+                                   Text="{Binding Arguments}" />
+                    </ScrollViewer>
+                </Border>
+
+                <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                    <Button Padding="12,4"
+                            Command="{Binding $parent[UserControl].((vm:OrchestratorViewModel)DataContext).AllowCommand}">
+                        <TextBlock Text="Run it" FontSize="12" />
+                    </Button>
+                    <Button Padding="12,4"
+                            Command="{Binding $parent[UserControl].((vm:OrchestratorViewModel)DataContext).RefuseCommand}">
+                        <TextBlock Text="No" FontSize="12" />
+                    </Button>
+                    <!-- The only way a standing pass is ever granted, and never
+                         offered for a tool the server calls destructive. -->
+                    <Button Padding="12,4" IsVisible="{Binding MayBeGranted}"
+                            Command="{Binding $parent[UserControl].((vm:OrchestratorViewModel)DataContext).AlwaysAllowCommand}">
+                        <TextBlock Text="Always allow" FontSize="12" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Expander Grid.Row="4" Margin="12,0,12,6" Padding="0"
                   HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
             <Expander.Header>
                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -216,7 +263,7 @@
             </ItemsControl>
         </Expander>
 
-        <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8" Margin="12,0,12,6">
+        <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="8" Margin="12,0,12,6">
             <!-- Which mode is in use is said by the button, not only by the note
                  beside it: the two do very different things to a fleet. -->
             <Button Classes="row" Classes.selected="{Binding IsAsking}" Padding="10,3"
@@ -235,7 +282,7 @@
             </CheckBox>
         </StackPanel>
 
-        <Grid Grid.Row="5" ColumnDefinitions="*,Auto,Auto,Auto" Margin="12,0,12,12">
+        <Grid Grid.Row="6" ColumnDefinitions="*,Auto,Auto,Auto" Margin="12,0,12,12">
             <TextBox Grid.Column="0" AcceptsReturn="False" Text="{Binding Instruction}"
                      Watermark="Ask every selected host…" IsVisible="{Binding IsAsking}" />
             <TextBox Grid.Column="0" AcceptsReturn="False" Text="{Binding Instruction}"

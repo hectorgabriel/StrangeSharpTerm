@@ -35,6 +35,9 @@ public interface IDialogService
     /// <inheritdoc cref="Edit(HostDraft)"/>
     Task<bool> Edit(SnippetDraft draft);
 
+    /// <inheritdoc cref="Edit(HostDraft)"/>
+    Task<bool> Edit(McpServerDraft draft);
+
     /// <summary>Puts the credential library in front of the user until they close it.</summary>
     Task Manage(CredentialsViewModel credentials);
 
@@ -122,6 +125,15 @@ public sealed class ScriptedDialogService(bool answer = false) : IDialogService
         return Task.FromResult(EditSnippet?.Invoke(draft) ?? answer);
     }
 
+    public Task<bool> Edit(McpServerDraft draft)
+    {
+        Edited.Add(draft);
+        return Task.FromResult(EditServer?.Invoke(draft) ?? answer);
+    }
+
+    /// <inheritdoc cref="EditHost"/>
+    public Func<McpServerDraft, bool>? EditServer { get; set; }
+
     public Task Manage(SnippetsViewModel snippets)
     {
         ManagedSnippets.Add(snippets);
@@ -164,6 +176,8 @@ public sealed class DialogService(Func<Window?> owner) : IDialogService
     public Task Manage(CredentialsViewModel credentials) => Show(new CredentialsWindow(credentials));
 
     public Task<bool> Edit(SnippetDraft draft) => Show(new SnippetEditor(draft));
+
+    public Task<bool> Edit(McpServerDraft draft) => Show(new McpServerEditor(draft));
 
     public Task Manage(SnippetsViewModel snippets) => Show(new SnippetsWindow(snippets));
 

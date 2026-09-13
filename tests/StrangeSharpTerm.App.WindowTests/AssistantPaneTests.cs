@@ -312,6 +312,116 @@ public class AssistantPaneTests
         });
     }
 
+    [Fact]
+    public void AToolCallShowsWhatItIsBeforeAnyoneApprovesIt()
+    {
+        Headless.Run(() =>
+        {
+            var tools = new OneTool();
+            var settings = new AssistSettings();
+            AssistantViewModel? model = null;
+            model = new AssistantViewModel(
+                new HostAgent(
+                    new Canned(
+                        Canned.CallsTool("grafana__query_range", """{"query":"up","range":"1h"}"""),
+                        Canned.Says("It is up.")),
+                    new Quiet("web-01"),
+                    settings,
+                    new Late(() => model!),
+                    tools),
+                settings,
+                _ => { });
+
+            var window = Show(new AssistantView(model));
+            model.MayRunCommands = true;
+            model.Question = "is it up?";
+            var asking = model.AskCommand.ExecuteAsync(null);
+
+            Pump(() => model.WaitingTool is not null);
+            Settle(window);
+
+            // The server, the tool, where it goes and the exact arguments are
+            // all on screen: a gate whose substance is one click away is a gate
+            // people approve without reading.
+            var shown = In<TextBlock>(window).Select(block => block.Text).ToArray();
+            shown.ShouldContain("Grafana");
+            shown.ShouldContain("query_range");
+            shown.ShouldContain("Its arguments go to metrics.example.com");
+            shown.OfType<string>().ShouldContain(text => text.Contains("\"query\": \"up\"", StringComparison.Ordinal));
+            shown.ShouldContain("Always allow");
+
+            model.RefuseCommand.Execute(null);
+            Headless.Finish(asking);
+            Settle(window);
+
+            tools.Called.ShouldBeEmpty();
+        });
+    }
+
+    [Fact]
+    public void ADestructiveToolIsNeverOfferedAStandingPass()
+    {
+        Headless.Run(() =>
+        {
+            var tools = new OneTool { Destructive = true };
+            var settings = new AssistSettings();
+            AssistantViewModel? model = null;
+            model = new AssistantViewModel(
+                new HostAgent(
+                    new Canned(Canned.CallsTool("grafana__query_range", "{}"), Canned.Says("Done.")),
+                    new Quiet("web-01"),
+                    settings,
+                    new Late(() => model!),
+                    tools),
+                settings,
+                _ => { });
+
+            var window = Show(new AssistantView(model));
+            model.MayRunCommands = true;
+            model.Question = "delete it";
+            var asking = model.AskCommand.ExecuteAsync(null);
+
+            Pump(() => model.WaitingTool is not null);
+            Settle(window);
+
+            // A tool the server itself calls destructive cannot be given a
+            // standing pass, so the bar must not offer one.
+            In<TextBlock>(window).Select(block => block.Text).ShouldNotContain("Always allow");
+
+            model.RefuseCommand.Execute(null);
+            Headless.Finish(asking);
+        });
+    }
+
+    /// <summary>One connected tool, reaching no server.</summary>
+    private sealed class OneTool : IExternalTools
+    {
+        internal bool Destructive { get; init; }
+
+        internal List<string> Called { get; } = [];
+
+        public IReadOnlyList<AssistTool> Offered =>
+            [new AssistTool("grafana__query_range", "Query a range.", "{}")];
+
+        public bool Owns(string qualifiedName) => qualifiedName == "grafana__query_range";
+
+        public PendingToolCall Describe(string host, string qualifiedName, string argumentsJson) =>
+            new(host, "Grafana", "query_range", "metrics.example.com",
+                StrangeSharpTerm.Mcp.McpHub.Pretty(argumentsJson), ReadOnlyClaim: false, MayBeGranted: !Destructive);
+
+        public bool MayRunUnattended(string qualifiedName) => false;
+
+        public void Grant(string qualifiedName)
+        {
+        }
+
+        public Task<ToolReply> Call(string qualifiedName, string argumentsJson, CancellationToken cancellationToken = default)
+        {
+            Called.Add(qualifiedName);
+            return Task.FromResult(new ToolReply("up"));
+        }
+    }
+
     private static AssistantViewModel Pane(
         IHostAccess host,
         IReadOnlyList<AssistEvent> first,
@@ -362,6 +472,9 @@ public class AssistantPaneTests
     {
         public Task<bool> Allow(PendingCommand command, CancellationToken cancellationToken = default) =>
             gate().Allow(command, cancellationToken);
+
+        public Task<ToolApproval> Allow(PendingToolCall call, CancellationToken cancellationToken = default) =>
+            gate().Allow(call, cancellationToken);
     }
 
     private sealed class Quiet(string alias) : IHostAccess
@@ -389,6 +502,12 @@ public class AssistantPaneTests
 
         internal static IReadOnlyList<AssistEvent> Says(string text) =>
             [new AssistEvent.Say(text), new AssistEvent.Finished(AssistStop.EndTurn)];
+
+        internal static IReadOnlyList<AssistEvent> CallsTool(string tool, string arguments) =>
+        [
+            new AssistEvent.Call(new AssistToolCall("t1", tool, arguments)),
+            new AssistEvent.Finished(AssistStop.ToolUse),
+        ];
 
         internal static IReadOnlyList<AssistEvent> Runs(string command, string why) =>
         [
