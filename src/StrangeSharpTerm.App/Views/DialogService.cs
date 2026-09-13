@@ -32,8 +32,20 @@ public interface IDialogService
     /// <inheritdoc cref="Edit(HostDraft)"/>
     Task<bool> Edit(CredentialDraft draft);
 
+    /// <inheritdoc cref="Edit(HostDraft)"/>
+    Task<bool> Edit(SnippetDraft draft);
+
     /// <summary>Puts the credential library in front of the user until they close it.</summary>
     Task Manage(CredentialsViewModel credentials);
+
+    /// <inheritdoc cref="Manage(CredentialsViewModel)"/>
+    Task Manage(SnippetsViewModel snippets);
+
+    /// <summary>
+    /// Asks for a snippet's placeholders before it runs. False when the user
+    /// backed out, which must leave nothing typed into the shell.
+    /// </summary>
+    Task<bool> Fill(SnippetRunViewModel snippet);
 
     /// <summary>Asks for files from this machine. Empty when the user picked none.</summary>
     Task<IReadOnlyList<string>> PickFiles(string title);
@@ -89,6 +101,36 @@ public sealed class ScriptedDialogService(bool answer = false) : IDialogService
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc cref="EditHost"/>
+    public Func<SnippetDraft, bool>? EditSnippet { get; set; }
+
+    /// <summary>The snippet libraries that were opened, for a test to drive.</summary>
+    public List<SnippetsViewModel> ManagedSnippets { get; } = [];
+
+    /// <summary>Stands in for filling the placeholders in, and says whether Run was pressed.</summary>
+    public Func<SnippetRunViewModel, bool>? FillSnippet { get; set; }
+
+    /// <summary>Every snippet that was put up to be filled in, in order.</summary>
+    public List<SnippetRunViewModel> Filled { get; } = [];
+
+    public Task<bool> Edit(SnippetDraft draft)
+    {
+        Edited.Add(draft);
+        return Task.FromResult(EditSnippet?.Invoke(draft) ?? answer);
+    }
+
+    public Task Manage(SnippetsViewModel snippets)
+    {
+        ManagedSnippets.Add(snippets);
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> Fill(SnippetRunViewModel snippet)
+    {
+        Filled.Add(snippet);
+        return Task.FromResult(FillSnippet?.Invoke(snippet) ?? answer);
+    }
+
     /// <summary>What the file picker would have returned. Nothing, unless a test says otherwise.</summary>
     public IReadOnlyList<string> Files { get; set; } = [];
 
@@ -108,6 +150,12 @@ public sealed class DialogService(Func<Window?> owner) : IDialogService
     public Task<bool> Edit(CredentialDraft draft) => Show(new CredentialEditor(draft));
 
     public Task Manage(CredentialsViewModel credentials) => Show(new CredentialsWindow(credentials));
+
+    public Task<bool> Edit(SnippetDraft draft) => Show(new SnippetEditor(draft));
+
+    public Task Manage(SnippetsViewModel snippets) => Show(new SnippetsWindow(snippets));
+
+    public Task<bool> Fill(SnippetRunViewModel snippet) => Show(new SnippetRunDialog(snippet));
 
     /// <summary>
     /// The platform's own file picker, through Avalonia's storage provider —

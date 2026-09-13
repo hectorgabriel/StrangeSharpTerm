@@ -54,27 +54,46 @@ public partial class App : Application
             InventoryLoader.Load(), dialogs: new DialogService(() => window), theme: theme);
         window = new ShellWindow(model);
 
-        // --demo-palette [--demo-query x], as the Swift app had them: the palette
-        // is opened with ⌘K and by nothing else, and a shortcut is the one thing
-        // the DevTools MCP cannot send. Posted rather than called, because the
-        // window builds its command list as it opens.
+        // --demo-palette [--demo-query x] [--demo-connect host], as the Swift app
+        // had the first two: the palette is opened with ⌘K and by nothing else,
+        // and a shortcut is the one thing the DevTools MCP cannot send. Posted
+        // rather than called, because the window builds its command list as it
+        // opens.
+        //
+        // --demo-connect opens a shell on a host first. Half of what the palette
+        // offers needs one — a snippet has nowhere to be typed without it — so
+        // without this the snippets could not be looked at at all.
         if (arguments.Contains("--demo-palette"))
             Dispatcher.UIThread.Post(
-                () =>
+                async () =>
                 {
+                    if (Argument(arguments, "--demo-connect") is { } host
+                        && model.Inventory.Tree.Connections.Values
+                            .FirstOrDefault(connection => connection.Name == host) is { } target)
+                    {
+                        model.Inventory.Selection = target.Id;
+                        await model.OpenTerminal(target);
+                    }
+
                     model.OpenPaletteCommand.Execute(null);
-                    var index = Array.IndexOf(arguments, "--demo-query");
-                    if (index >= 0 && index + 1 < arguments.Length)
-                        model.Palette.Query = arguments[index + 1];
+                    if (Argument(arguments, "--demo-query") is { } query)
+                        model.Palette.Query = query;
                 },
                 DispatcherPriority.Background);
 
         return window;
     }
 
+    /// <summary>The value after a flag, or null when it is absent or last.</summary>
+    private static string? Argument(string[] arguments, string flag)
+    {
+        var index = Array.IndexOf(arguments, flag);
+        return index >= 0 && index + 1 < arguments.Length ? arguments[index + 1] : null;
+    }
+
     /// <summary>
-    /// <c>--demo-editor host|folder|credential|credentials</c>: a dialog on its
-    /// own, over a fixture.
+    /// <c>--demo-editor host|folder|credential|credentials|snippet|snippets|run</c>:
+    /// a dialog on its own, over a fixture.
     ///
     /// The editors are reached through a flyout, and a flyout cannot be opened by
     /// the synthetic input the DevTools MCP sends — which would leave the two
@@ -130,11 +149,30 @@ public partial class App : Application
         var secrets = new Security.InMemorySecretStore();
         secrets.SetSecret(password.SecretAccount, "not a real password");
 
+        var snippet = new Model.Snippet
+        {
+            Name = "Tail the app log",
+            Command = "tail -f /var/log/{{service}}.log",
+            Tags = ["logs"],
+        };
+        tree.Upsert(snippet);
+        tree.Upsert(new Model.Snippet
+        {
+            Name = "Restart the app",
+            Command = "sudo systemctl restart app",
+            FolderId = tree.Folders.Values.First().Id,
+            SortIndex = 1,
+        });
+
         return arguments[index + 1] switch
         {
             "folder" => new FolderEditor(FolderDraft.For(tree, tree.Folders.Values.First())),
             "credential" => new CredentialEditor(CredentialDraft.For(password, secrets)),
             "credentials" => Library(tree, secrets),
+            "snippet" => new SnippetEditor(SnippetDraft.For(tree, snippet)),
+            "snippets" => Snippets(tree),
+            // Two panes, so the broadcast warning is the one being looked at.
+            "run" => new SnippetRunDialog(new SnippetRunViewModel(snippet, "web-01", paneCount: 2)),
             _ => new HostEditor(HostDraft.For(tree, host)),
         };
     }
@@ -151,6 +189,14 @@ public partial class App : Application
         var model = new CredentialsViewModel(
             new InventoryViewModel(null, tree), secrets, new DialogService(() => window));
         return window = new CredentialsWindow(model);
+    }
+
+    /// <inheritdoc cref="Library"/>
+    private static Window Snippets(Model.InventoryTree tree)
+    {
+        SnippetsWindow? window = null;
+        var model = new SnippetsViewModel(new InventoryViewModel(null, tree), new DialogService(() => window));
+        return window = new SnippetsWindow(model);
     }
 
     private static Window TerminalWindow(TerminalLaunchRequest request, AppTheme theme)

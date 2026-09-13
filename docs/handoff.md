@@ -12,22 +12,21 @@ means; this says only what is done, what is in flight, and what to do first.
 | **M1** model and store | `StrangeSharpTerm.Model` and `.Store` with their 84 tests. The inventory file is byte-identical to the Swift app's, checked against goldens the Swift code itself generates (`build/swift-parity`) |
 | **M2** transport | One authenticated session per host carrying commands, shells, forwards and SFTP; host key trust shared with `ssh`; secrets in each platform's own store; `stctl`; the integration gate running against a real sshd on macOS **and** Windows in CI |
 | **M3** terminal | `TerminalSession` binding an XTerm.NET engine to an SSH channel, the Avalonia control, broadcast, scrollback, and `stctl terminal` |
-| **M5** (part) | one authenticated session per host, at last: `HostSessions` over the M2 pool, which every pane goes through. The SFTP browser (`IRemoteFiles`, a pane, ⇧⌘B), tunnels (`ITunnels`, a pane that starts and stops a host's forwards and releases the ports), the dashboard (`IServerHealth` over the M2 probe, in the detail pane, asked for rather than assumed), and the credential library (a key or password described once, pointed at from any host or folder, with the secret in the platform store and never in the inventory) |
+| **M5** (part) | one authenticated session per host, at last: `HostSessions` over the M2 pool, which every pane goes through. The SFTP browser (`IRemoteFiles`, a pane, ⇧⌘B), tunnels (`ITunnels`, a pane that starts and stops a host's forwards and releases the ports), the dashboard (`IServerHealth` over the M2 probe, in the detail pane, asked for rather than assumed), the credential library (a key or password described once, pointed at from any host or folder, with the secret in the platform store and never in the inventory), and snippets (saved commands, scoped to a folder or offered everywhere, run from the palette into the focused shell) |
 | **M4** done | the window (sidebar, tabs, host detail, splits, broadcast), the theme system, the host and folder editors, the menu bar, the command palette, and the headless UI driver. `docs/adr/0004` and `0005` record the decisions |
 
-Around 454 tests, all green on both operating systems.
+Around 484 tests, all green on both operating systems.
 
 ## In flight
 
 Check `gh pr list` first — a pull request may have landed since this was
-written. At the time of writing: **the credential library** (branch `m5-credentials`).
+written. At the time of writing: **snippets** (branch `m5-snippets`).
 
 ## What to do next, in order
 
-1. **The rest of M5**: snippets, and the settings sheet that should hold the
-   theme picker now at the foot of the sidebar — and would be the natural home
-   for the credential library, which today is reached only from the menu and the
-   palette. Three of the Swift
+1. **The last of M5**: the settings sheet. It should hold the theme picker now
+   at the foot of the sidebar, and is the natural home for the credential and
+   snippet libraries, which today are reached only from the menu and the palette. Three of the Swift
    app's shortcuts still wait for them — `docs/adr/0005` lists which and why,
    including the one that cannot be translated to Windows as it stands (⌃⌘X).
 2. **What the panes do not do yet.** The browser has no rename and no
@@ -92,10 +91,13 @@ says. Three things it took to get right:
   attaches to a **Debug** build (`WithDeveloperTools()` is inside `#if DEBUG`)
   and can click, type and screenshot — but its synthetic clicks do **not** open a
   flyout — nor send a modifier, so ⌘K is out of reach too. That is why the
-  dialogs are also reachable as `--demo-editor host|folder|credential|credentials`,
-  a window of their own over a fixture, and the palette as `--demo-palette
-  [--demo-query x]`. The credential fixture keeps its secrets in memory, so
-  looking at it never writes to the login keychain. Splits found
+  dialogs are also reachable as
+  `--demo-editor host|folder|credential|credentials|snippet|snippets|run`, a
+  window of their own over a fixture, and the palette as `--demo-palette
+  [--demo-query x] [--demo-connect host]`. `--demo-connect` opens a shell before
+  the palette, because half of what the palette offers needs one — a snippet has
+  nowhere to be typed without it. The credential fixture keeps its secrets in
+  memory, so looking at it never writes to the login keychain. Splits found
   the sharpest example yet: rebuilding the pane layout detached each terminal
   and re-attached it, which tears its connection down, and the two panes then
   read one stream and each drew half of it. Every test passed. Running `tty` in
@@ -113,6 +115,12 @@ says. Three things it took to get right:
 - **`STRANGESHARPTERM_INVENTORY`** points the app at a throwaway inventory, which
   is how the window gets tested without touching a real one. `preferences.json`
   is written beside it, so a test run's theme choice is throwaway too.
+- **A view is the wrong place to register anything.** Terminal sessions joined
+  the `TerminalRegistry` in `TerminalPaneView`'s constructor, so the registry only
+  knew about a session if its real control happened to be built — which made
+  "which shell has the focus" unanswerable from a view model, and silently false
+  in any test that substitutes the pane view. The shell opens the session, so the
+  shell registers it.
 - **A global style beats an inherited state.** `TextBlock { Foreground }` in
   `Styles/Chrome.axaml` applies to the label inside a button too, so a disabled
   button's own foreground never reached it and every disabled button in the app

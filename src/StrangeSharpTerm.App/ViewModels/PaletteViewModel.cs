@@ -16,7 +16,12 @@ namespace StrangeSharpTerm.App.ViewModels;
 /// close a pane when none is open — is left out rather than shown greyed, because
 /// a palette is a list of answers to "what can I do", not a menu.
 /// </summary>
-public sealed partial class PaletteViewModel(IReadOnlyList<AppCommand> commands) : ObservableObject
+/// <param name="commands">
+/// Asked each time the list is rebuilt, not captured once: the snippets among
+/// them depend on which host is selected and on a library that can be edited
+/// while the window is open.
+/// </param>
+public sealed partial class PaletteViewModel(Func<IReadOnlyList<AppCommand>> commands) : ObservableObject
 {
     [ObservableProperty]
     public partial bool IsOpen { get; private set; }
@@ -63,7 +68,7 @@ public sealed partial class PaletteViewModel(IReadOnlyList<AppCommand> commands)
 
     private void Refresh()
     {
-        var offered = CommandCatalogue.ForPalette(commands).Where(command => command.CanRun);
+        var offered = CommandCatalogue.ForPalette(commands()).Where(command => command.CanRun);
 
         Matches.Clear();
         foreach (var command in FuzzyMatch.Rank(offered, Query, command => command.Title))
