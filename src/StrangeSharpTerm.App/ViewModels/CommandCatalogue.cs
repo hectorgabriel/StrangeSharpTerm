@@ -67,6 +67,12 @@ public static class CommandCatalogue
                 Gesture: new KeyGesture(Key.N, command)),
             new("folder.new", "New Folder…", CommandGroup.File, shell.NewFolderCommand,
                 Gesture: new KeyGesture(Key.N, command | KeyModifiers.Shift)),
+            // ⌘, — the one shortcut here that is not a port. Every macOS app
+            // opens its settings with it, the Swift app got it for free from
+            // SwiftUI's Settings scene, and Ctrl+, is the same habit on Windows.
+            new("settings", "Settings…", CommandGroup.File, shell.OpenSettingsCommand,
+                Gesture: new KeyGesture(Key.OemComma, command)),
+
             new("host.edit", "Edit Host…", CommandGroup.Edit, shell.EditSelectedCommand,
                 Gesture: new KeyGesture(Key.E, command)),
             new("host.delete", "Delete Host…", CommandGroup.Edit, shell.DeleteSelectedCommand),

@@ -85,6 +85,19 @@
     </Style>
 
     <!-- A tab: the focused one is lit the way the selected host is. -->
+    <!-- A card that is also a choice: the whole thing is the target, and its
+         outline says which one is chosen. Its border comes from the item, so the
+         theme it is about paints it rather than the theme in use. -->
+    <Style Selector="Button.card">
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+
+    <Style Selector="Button.card:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource BorderBrush}" />
+    </Style>
+
     <Style Selector="Border.tab">
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="CornerRadius" Value="6" />

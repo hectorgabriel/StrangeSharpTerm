@@ -41,6 +41,9 @@ public interface IDialogService
     /// <inheritdoc cref="Manage(CredentialsViewModel)"/>
     Task Manage(SnippetsViewModel snippets);
 
+    /// <summary>Puts the settings sheet in front of the user until they close it.</summary>
+    Task Manage(SettingsViewModel settings);
+
     /// <summary>
     /// Asks for a snippet's placeholders before it runs. False when the user
     /// backed out, which must leave nothing typed into the shell.
@@ -125,6 +128,15 @@ public sealed class ScriptedDialogService(bool answer = false) : IDialogService
         return Task.CompletedTask;
     }
 
+    /// <summary>The settings sheets that were opened, for a test to drive.</summary>
+    public List<SettingsViewModel> Settings { get; } = [];
+
+    public Task Manage(SettingsViewModel settings)
+    {
+        Settings.Add(settings);
+        return Task.CompletedTask;
+    }
+
     public Task<bool> Fill(SnippetRunViewModel snippet)
     {
         Filled.Add(snippet);
@@ -154,6 +166,8 @@ public sealed class DialogService(Func<Window?> owner) : IDialogService
     public Task<bool> Edit(SnippetDraft draft) => Show(new SnippetEditor(draft));
 
     public Task Manage(SnippetsViewModel snippets) => Show(new SnippetsWindow(snippets));
+
+    public Task Manage(SettingsViewModel settings) => Show(new SettingsWindow(settings));
 
     public Task<bool> Fill(SnippetRunViewModel snippet) => Show(new SnippetRunDialog(snippet));
 

@@ -167,12 +167,13 @@ public class ShellWindowTests
         {
             var theme = new AppTheme();
             theme.PaintInto(Application.Current!);
-            var (window, model, _) = Open(theme);
+            var (window, _, _) = Open(theme);
             var search = In<TextBox>(window).First();
 
             Background(window).ShouldBe(ThemeTokens.ToColor(AppPalette.StrangeTermDark.Background));
 
-            model.Theme = AppPalette.Dracula;
+            // Through the theme itself, which is what the settings sheet does.
+            theme.Use(AppPalette.Dracula);
             Settle(window);
 
             // The window follows because its brush is a DynamicResource, and

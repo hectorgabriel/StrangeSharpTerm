@@ -85,11 +85,7 @@ public sealed partial class ShellViewModel : ObservableObject
 
         // Changing the theme repaints the open terminals where they stand. The
         // window's own colours are resources and need nobody to tell them.
-        _theme.Changed += (_, _) =>
-        {
-            Recolour();
-            OnPropertyChanged(nameof(Theme));
-        };
+        _theme.Changed += (_, _) => Recolour();
     }
 
     public InventoryViewModel Inventory { get; }
@@ -97,19 +93,6 @@ public sealed partial class ShellViewModel : ObservableObject
     public WorkspaceViewModel Workspace { get; }
 
     public ObservableCollection<TabItem> Tabs { get; } = [];
-
-    /// <summary>
-    /// The theme in use. Settable, because the picker is a list of themes with
-    /// one of them chosen, and that is the whole of the interaction.
-    /// </summary>
-    public AppPalette Theme
-    {
-        get => _theme.Palette;
-        set => _theme.Use(value);
-    }
-
-    /// <summary>The themes there are. Two, both dark; see docs/adr/0004.</summary>
-    public IReadOnlyList<AppPalette> Themes => AppPalette.BuiltIn;
 
     /// <summary>
     /// The focused tab's panes, in the order they were opened.
@@ -224,6 +207,19 @@ public sealed partial class ShellViewModel : ObservableObject
     [RelayCommand]
     public async Task ManageCredentials() =>
         await _dialogs.Manage(new CredentialsViewModel(Inventory, _secrets.Value, _dialogs));
+
+    /// <summary>
+    /// The settings sheet: the theme, and the way in to both libraries.
+    ///
+    /// The libraries are opened <em>through</em> it rather than listed in it, so
+    /// there is one implementation of each and the sheet is a signpost.
+    /// </summary>
+    [RelayCommand]
+    public async Task OpenSettings() =>
+        await _dialogs.Manage(new SettingsViewModel(
+            _theme,
+            () => ManageCredentialsCommand.ExecuteAsync(null),
+            () => ManageSnippetsCommand.ExecuteAsync(null)));
 
     /// <summary>The snippet library: commands worth keeping, and where each is offered.</summary>
     [RelayCommand]
