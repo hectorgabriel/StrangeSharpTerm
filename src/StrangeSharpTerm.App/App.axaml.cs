@@ -92,7 +92,7 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// <c>--demo-editor host|folder|credential|credentials|snippet|snippets|run</c>:
+    /// <c>--demo-editor host|folder|credential|credentials|snippet|snippets|run|settings</c>:
     /// a dialog on its own, over a fixture.
     ///
     /// The editors are reached through a flyout, and a flyout cannot be opened by
@@ -173,6 +173,10 @@ public partial class App : Application
             "snippets" => Snippets(tree),
             // Two panes, so the broadcast warning is the one being looked at.
             "run" => new SnippetRunDialog(new SnippetRunViewModel(snippet, "web-01", paneCount: 2)),
+            // Its own theme, not the app's: choosing one here repaints only this
+            // fixture, which is the point of looking at it.
+            "settings" => new SettingsWindow(new SettingsViewModel(
+                new Theming.AppTheme(), () => Task.CompletedTask, () => Task.CompletedTask)),
             _ => new HostEditor(HostDraft.For(tree, host)),
         };
     }

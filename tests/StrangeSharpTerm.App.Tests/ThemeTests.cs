@@ -309,15 +309,16 @@ public class ThemeTests
         // would drop that session, which is the whole reason Apply exists.
         var pane = new ThemedPane();
         var host = new Connection { Name = "web-01", Hostname = "web-01.example.com" };
+        var theme = new AppTheme();
         var shell = new ShellViewModel(
             new InventoryViewModel(null, new InventoryTree(connections: [host])),
             new FakeSessions(),
             (_, _) => pane,
-            theme: new AppTheme());
+            theme: theme);
         shell.Inventory.Selection = host.Id;
         await shell.ConnectSelectedCommand.ExecuteAsync(null);
 
-        shell.Theme = AppPalette.Dracula;
+        theme.Use(AppPalette.Dracula);
 
         pane.Applied.ShouldHaveSingleItem().ShouldBe(TerminalPalette.Dracula);
         shell.Panes.ShouldHaveSingleItem().View.ShouldBeSameAs(pane);
@@ -333,15 +334,16 @@ public class ThemeTests
             Hostname = "db-01.example.com",
             Settings = new ConnectionSettings { TerminalTheme = "StrangeTerm Dark" },
         };
+        var theme = new AppTheme();
         var shell = new ShellViewModel(
             new InventoryViewModel(null, new InventoryTree(connections: [host])),
             new FakeSessions(),
             (_, _) => pane,
-            theme: new AppTheme());
+            theme: theme);
         shell.Inventory.Selection = host.Id;
         await shell.ConnectSelectedCommand.ExecuteAsync(null);
 
-        shell.Theme = AppPalette.Dracula;
+        theme.Use(AppPalette.Dracula);
 
         pane.Applied.ShouldHaveSingleItem().ShouldBe(TerminalPalette.StrangeTermDark);
     }

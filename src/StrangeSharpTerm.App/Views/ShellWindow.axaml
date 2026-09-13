@@ -1,7 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:StrangeSharpTerm.App.ViewModels"
-        xmlns:theming="clr-namespace:StrangeSharpTerm.App.Theming"
         xmlns:views="clr-namespace:StrangeSharpTerm.App.Views"
         xmlns:transport="clr-namespace:StrangeSharpTerm.Transport;assembly=StrangeSharpTerm.Transport"
         x:Class="StrangeSharpTerm.App.Views.ShellWindow"
@@ -106,21 +105,17 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <!-- The theme, until the settings sheet arrives in M5 to hold it. -->
-            <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8"
-                        Margin="12,8,12,12" VerticalAlignment="Center">
-                <Path Classes="icon" Width="14" Height="14" Opacity="0.6" VerticalAlignment="Center"
-                      Data="{Binding Source=IconSettings, Converter={StaticResource Icon}}" />
-                <ComboBox x:Name="ThemePicker" MinWidth="180"
-                          ItemsSource="{Binding Themes}"
-                          SelectedItem="{Binding Theme, Mode=TwoWay}">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="theming:AppPalette">
-                            <TextBlock Text="{Binding Name}" />
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-            </StackPanel>
+            <!-- The theme moved into the settings sheet, which is what the foot of
+                 the sidebar now opens. -->
+            <Button Grid.Row="3" x:Name="SettingsButton" Classes="row" Margin="8,4,8,10"
+                    HorizontalAlignment="Left" Padding="8,6"
+                    Command="{Binding OpenSettingsCommand}" ToolTip.Tip="Settings">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Path Classes="icon" Width="14" Height="14" Opacity="0.7" VerticalAlignment="Center"
+                          Data="{Binding Source=IconSettings, Converter={StaticResource Icon}}" />
+                    <TextBlock Classes="muted" FontSize="12" Text="Settings" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
         </Grid>
 
         <!-- The tabs, and whatever the focused one is showing. -->
