@@ -81,6 +81,8 @@ public static class CommandCatalogue
                 Gesture: new KeyGesture(Key.W, command)),
             new("session.broadcast", "Broadcast to Every Pane", CommandGroup.Session, shell.ToggleBroadcastCommand,
                 Gesture: new KeyGesture(Key.B, command | KeyModifiers.Alt)),
+            new("session.files", "Browse Files", CommandGroup.Session, shell.BrowseFilesCommand,
+                Gesture: new KeyGesture(Key.B, command | KeyModifiers.Shift)),
 
             new("view.palette", "Command Palette…", CommandGroup.View, shell.OpenPaletteCommand,
                 Gesture: new KeyGesture(Key.K, command)),
