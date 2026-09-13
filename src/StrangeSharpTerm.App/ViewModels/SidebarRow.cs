@@ -18,7 +18,8 @@ public sealed record SidebarRow(
     bool IsFolder,
     bool IsExpanded = false,
     string? Hostname = null,
-    int HostCount = 0)
+    int HostCount = 0,
+    bool IsSelected = false)
 {
     /// <summary>Which icon the row draws, by resource key. See docs/adr/0003.</summary>
     public string IconKey => IsFolder ? (IsExpanded ? "IconFolderOpen" : "IconFolder") : "IconServer";
@@ -70,7 +71,8 @@ public sealed partial class InventoryViewModel
         rows.AddRange(ConnectionsIn(folder.Id).Select(HostRow(depth + 1)));
     }
 
-    private static Func<Model.Connection, SidebarRow> HostRow(int depth) =>
+    private Func<Model.Connection, SidebarRow> HostRow(int depth) =>
         connection => new SidebarRow(
-            connection.Id, connection.Name, depth, IsFolder: false, Hostname: connection.Hostname);
+            connection.Id, connection.Name, depth, IsFolder: false, Hostname: connection.Hostname,
+            IsSelected: connection.Id == Selection);
 }

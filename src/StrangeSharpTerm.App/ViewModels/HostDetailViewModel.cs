@@ -14,7 +14,14 @@ public enum FieldEmphasis
     Danger,
 }
 
-public sealed record DetailField(string Label, string Value, FieldEmphasis Emphasis = FieldEmphasis.None);
+public sealed record DetailField(string Label, string Value, FieldEmphasis Emphasis = FieldEmphasis.None)
+{
+    // As two flags rather than an enum the markup has to interpret: a style
+    // class takes a boolean, and the theme then owns what warning looks like.
+    public bool IsWarning => Emphasis == FieldEmphasis.Warning;
+
+    public bool IsDanger => Emphasis == FieldEmphasis.Danger;
+}
 
 public sealed record ForwardSummary(string Flag, string Specification, string Name, bool NeedsRoot);
 

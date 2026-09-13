@@ -5,6 +5,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Iciclecreek.Terminal;
+using StrangeSharpTerm.App.Theming;
 using StrangeSharpTerm.Terminal;
 
 namespace StrangeSharpTerm.App.Terminal;
@@ -18,11 +19,11 @@ namespace StrangeSharpTerm.App.Terminal;
 /// "what is on screen" for the assistant and the headless driver — which costs a
 /// second pass over the bytes and buys one honest answer instead of two.
 /// </summary>
-public sealed class TerminalPaneView : UserControl
+public sealed class TerminalPaneView : UserControl, IThemedPane
 {
     private readonly TerminalControl _terminal = new();
     private readonly TerminalRegistry? _registry;
-    private readonly TerminalPalette _palette;
+    private TerminalPalette _palette;
     private bool _attached;
 
     public TerminalPaneView(TerminalSession session, TerminalPalette? palette = null, TerminalRegistry? registry = null)
@@ -63,6 +64,9 @@ public sealed class TerminalPaneView : UserControl
     /// </summary>
     public void Apply(TerminalPalette palette)
     {
+        // Held as well as applied: a pane recoloured before it is loaded would
+        // otherwise be repainted in its old colours when it finally attaches.
+        _palette = palette;
         _terminal.Background = new SolidColorBrush(Opaque(palette.Background));
         _terminal.Foreground = new SolidColorBrush(Opaque(palette.Foreground));
         _terminal.CursorColor = Opaque(palette.Cursor);

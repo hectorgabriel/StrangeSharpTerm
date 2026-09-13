@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using StrangeSharpTerm.App.Terminal;
+using StrangeSharpTerm.App.Theming;
 using StrangeSharpTerm.App.Views;
 using StrangeSharpTerm.Model;
 using StrangeSharpTerm.Terminal;
@@ -28,6 +29,7 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly Func<Connection, TerminalSession> _connect;
     private readonly Func<TerminalSession, TerminalPalette, Control> _view;
     private readonly IDialogService _dialogs;
+    private readonly AppTheme _theme;
 
     /// <param name="connect">How a host becomes a session. Replaced in tests by something that needs no server.</param>
     /// <param name="view">How a session becomes something on screen. Likewise.</param>
@@ -35,10 +37,12 @@ public sealed partial class ShellViewModel : ObservableObject
         InventoryViewModel inventory,
         Func<Connection, TerminalSession>? connect = null,
         Func<TerminalSession, TerminalPalette, Control>? view = null,
-        IDialogService? dialogs = null)
+        IDialogService? dialogs = null,
+        AppTheme? theme = null)
     {
         Inventory = inventory;
         _dialogs = dialogs ?? new ScriptedDialogService();
+        _theme = theme ?? new AppTheme();
         Workspace = new WorkspaceViewModel(_terminals);
         _connect = connect ?? (connection => TerminalLauncher.Connect(Inventory.Tree, connection));
         _view = view ?? ((session, palette) => new TerminalPaneView(session, palette, _terminals));
@@ -57,6 +61,14 @@ public sealed partial class ShellViewModel : ObservableObject
         };
         Inventory.ConnectionRemoving += (_, host) => CloseEverythingFor(host);
         Workspace.PropertyChanged += (_, _) => RefreshTabs();
+
+        // Changing the theme repaints the open terminals where they stand. The
+        // window's own colours are resources and need nobody to tell them.
+        _theme.Changed += (_, _) =>
+        {
+            Recolour();
+            OnPropertyChanged(nameof(Theme));
+        };
     }
 
     public InventoryViewModel Inventory { get; }
@@ -64,6 +76,19 @@ public sealed partial class ShellViewModel : ObservableObject
     public WorkspaceViewModel Workspace { get; }
 
     public ObservableCollection<TabItem> Tabs { get; } = [];
+
+    /// <summary>
+    /// The theme in use. Settable, because the picker is a list of themes with
+    /// one of them chosen, and that is the whole of the interaction.
+    /// </summary>
+    public AppPalette Theme
+    {
+        get => _theme.Palette;
+        set => _theme.Use(value);
+    }
+
+    /// <summary>The themes there are. Two, both dark; see docs/adr/0004.</summary>
+    public IReadOnlyList<AppPalette> Themes => AppPalette.BuiltIn;
 
     /// <summary>The focused pane's view, or a message when there is nothing to show.</summary>
     [ObservableProperty]
@@ -171,8 +196,7 @@ public sealed partial class ShellViewModel : ObservableObject
             // a window that freezes while a host times out is the thing this
             // avoids.
             var session = await Task.Run(() => _connect(connection));
-            var palette = TerminalPalette.ByName(Inventory.Tree.Resolve(connection.Id).Settings.TerminalTheme);
-            var view = _view(session, palette);
+            var view = _view(session, _theme.TerminalPaletteFor(Inventory.Tree, connection));
 
             session.TitleChanged += (_, title) => Dispatcher.UIThread.Post(() => Workspace.UpdateTitle(session.Id, title));
             session.Ended += (_, _) => Dispatcher.UIThread.Post(() => Workspace.PaneExited(session.Id, null));
@@ -192,6 +216,24 @@ public sealed partial class ShellViewModel : ObservableObject
     }
 
     private readonly Dictionary<NodeId, Control> _views = [];
+
+    /// <summary>
+    /// Repaints every open terminal, in place. A pane whose host names a theme
+    /// of its own keeps it, so this asks for each pane's colours rather than
+    /// handing out the same ones.
+    /// </summary>
+    private void Recolour()
+    {
+        foreach (var pane in Workspace.Panes)
+        {
+            if (_views.GetValueOrDefault(pane.Id) is not IThemedPane themed)
+                continue;
+            if (pane.ConnectionId is { } host && Inventory.Tree.Connections.GetValueOrDefault(host) is { } connection)
+                themed.Apply(_theme.TerminalPaletteFor(Inventory.Tree, connection));
+            else
+                themed.Apply(_theme.Palette.Terminal);
+        }
+    }
 
     private void CloseEverythingFor(NodeId host)
     {
