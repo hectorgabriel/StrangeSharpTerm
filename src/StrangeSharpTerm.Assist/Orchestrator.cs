@@ -151,13 +151,16 @@ public sealed class Orchestrator(IAssistBackend collator)
         if (findings.All(finding => finding.Outcome != HostOutcome.Reported))
             return "No host reported, so there is nothing to collate.";
 
-        var report = new StringBuilder();
-        report.Append("The instruction was: ").AppendLine(instruction).AppendLine();
+        // Line feeds, not AppendLine's: what a provider is sent must not depend
+        // on the operating system the window happens to be running on. The same
+        // rule as HostContext.Render, and the same reason.
+        List<string> report = [$"The instruction was: {instruction}", ""];
 
         foreach (var finding in findings)
         {
-            report.Append("## ").Append(finding.Alias).Append(" (").Append(finding.Label).AppendLine(")");
-            report.AppendLine(finding.Text).AppendLine();
+            report.Add($"## {finding.Alias} ({finding.Label})");
+            report.Add(finding.Text);
+            report.Add("");
         }
 
         var said = new StringBuilder();
@@ -167,7 +170,7 @@ public sealed class Orchestrator(IAssistBackend collator)
                 new AssistRequest
                 {
                     System = AssistPrompts.Collator,
-                    Messages = [new AssistMessage { Role = AssistRole.User, Text = report.ToString() }],
+                    Messages = [new AssistMessage { Role = AssistRole.User, Text = string.Join('\n', report) }],
                 },
                 cancellationToken))
             {

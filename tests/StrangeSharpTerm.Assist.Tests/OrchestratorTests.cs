@@ -56,6 +56,8 @@ public class OrchestratorTests
         sent.System.ShouldContain("no access to any server");
         sent.Messages.Single().Text!.ShouldContain("## bastion (not asked)");
         sent.Messages.Single().Text!.ShouldContain("## web-01 (reported)");
+        // The same string on either operating system, as the context block is.
+        sent.Messages.Single().Text!.ShouldNotContain("\r");
     }
 
     [Fact]

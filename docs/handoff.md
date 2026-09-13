@@ -89,7 +89,12 @@ says. Three things it took to get right:
 - **Merging a stacked pull request merges it into its base**, not into `main`,
   and the commits are then stranded on a branch. It has happened three times.
   Open every pull request against `main` and rebase instead of stacking.
-- **Windows is where the surprises are.** The gate has caught: Enter sent as a
+- **Windows is where the surprises are.** The gate has caught: `AppendLine`
+  building a block that leaves the machine — the assistant's context block and
+  the orchestrator's collation message are read by a provider and describe a
+  *remote* host, so a Windows user asking about a Linux server was sending CRLF
+  for its output while everyone else sent LF; the rule is `string.Join('\n', …)`
+  for anything that crosses the wire, Enter sent as a
   line feed (typed but never run — a Unix pty translates it, Windows does not),
   `ssh-keygen` given a mangled empty passphrase by PowerShell quoting, a
   `window-change` sent before the server had a pty, and a credential service
