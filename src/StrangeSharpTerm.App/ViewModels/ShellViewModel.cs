@@ -16,6 +16,12 @@ namespace StrangeSharpTerm.App.ViewModels;
 public sealed record TabItem(NodeId Id, string Title, bool IsActive);
 
 /// <summary>
+/// One pane as the window needs it: what to draw, and whether the keyboard is
+/// in it. A split tab is a list of these along one axis.
+/// </summary>
+public sealed record PaneSlot(NodeId Id, Control View, bool IsActive);
+
+/// <summary>
 /// What the window binds to: the inventory on the left, the workspace on the
 /// right, and the few actions that join them.
 ///
@@ -90,9 +96,17 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>The themes there are. Two, both dark; see docs/adr/0004.</summary>
     public IReadOnlyList<AppPalette> Themes => AppPalette.BuiltIn;
 
-    /// <summary>The focused pane's view, or a message when there is nothing to show.</summary>
+    /// <summary>
+    /// The focused tab's panes, in the order they were opened.
+    ///
+    /// A list rather than one view: a tab that has been split shows all of them
+    /// at once, and only one of them has the keyboard.
+    /// </summary>
     [ObservableProperty]
-    public partial Control? PaneContent { get; private set; }
+    public partial IReadOnlyList<PaneSlot> Panes { get; private set; } = [];
+
+    /// <summary>Which way the focused tab's panes are laid out.</summary>
+    public SplitAxis Axis => Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal;
 
     /// <summary>
     /// Whether the right-hand side is showing the selected host rather than a
@@ -100,14 +114,14 @@ public sealed partial class ShellViewModel : ObservableObject
     /// from the one the focused pane belongs to.
     /// </summary>
     public bool ShowsDetail =>
-        Detail is not null && (PaneContent is null || Workspace.ActivePane?.ConnectionId != Inventory.Selection);
+        Detail is not null && (Panes.Count == 0 || Workspace.ActivePane?.ConnectionId != Inventory.Selection);
 
     /// <summary>
     /// Nothing selected and nothing open. Not simply "no detail": a terminal is
     /// showing whenever a pane is open, and an empty-state line drawn over it
     /// reads as part of the shell's output.
     /// </summary>
-    public bool ShowsEmptyState => PaneContent is null && !ShowsDetail;
+    public bool ShowsEmptyState => Panes.Count == 0 && !ShowsDetail;
 
     /// <summary>What went wrong with the last connection attempt, for the window to show.</summary>
     [ObservableProperty]
@@ -269,6 +283,60 @@ public sealed partial class ShellViewModel : ObservableObject
             Inventory.Selection = row.Id;
     }
 
+    /// <summary>
+    /// Opens a second shell on the focused pane's host, beside it.
+    ///
+    /// A split is another session on the same server, which is what splitting is
+    /// for: a log tailing on one side, a command on the other. It is not a second
+    /// view of the same shell — ssh has no such thing.
+    /// </summary>
+    [RelayCommand]
+    public async Task SplitRight() => await Split(SplitAxis.Horizontal);
+
+    /// <inheritdoc cref="SplitRight"/>
+    [RelayCommand]
+    public async Task SplitDown() => await Split(SplitAxis.Vertical);
+
+    private async Task Split(SplitAxis axis)
+    {
+        if (Workspace.ActivePane?.ConnectionId is not { } host)
+            return;
+        if (Inventory.Tree.Connections.GetValueOrDefault(host) is { } connection)
+            await OpenTerminal(connection, axis);
+    }
+
+    /// <summary>Moves the keyboard to a pane, and the sidebar with it.</summary>
+    [RelayCommand]
+    public void FocusPane(NodeId id)
+    {
+        Workspace.FocusPane(id);
+        Show();
+    }
+
+    /// <summary>Closes the focused pane, and the tab with it when it was the last.</summary>
+    [RelayCommand]
+    public void ClosePane()
+    {
+        if (Workspace.ActivePaneId is not { } pane)
+            return;
+        Workspace.ClosePane(pane);
+        Show();
+    }
+
+    /// <summary>Whether typing goes to every terminal in the focused tab.</summary>
+    public bool IsBroadcasting
+    {
+        get => Workspace.IsBroadcasting;
+        set
+        {
+            Workspace.IsBroadcasting = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>A group of one is not a broadcast, so the toggle waits for a split.</summary>
+    public bool CanBroadcast => Workspace.CanBroadcast;
+
     [RelayCommand]
     public void FocusTab(TabItem? tab)
     {
@@ -339,11 +407,23 @@ public sealed partial class ShellViewModel : ObservableObject
     private void CloseEverythingFor(NodeId host)
     {
         foreach (var pane in Workspace.Panes.Where(pane => pane.ConnectionId == host).Select(pane => pane.Id).ToArray())
-        {
             Workspace.ClosePane(pane);
-            _views.Remove(pane);
-        }
         Show();
+    }
+
+    /// <summary>
+    /// Drops the views of panes that are gone, whichever way they went — a pane
+    /// closed, a tab closed, a host deleted. One place rather than three, and the
+    /// only place a pane view is disposed.
+    /// </summary>
+    private void PruneViews()
+    {
+        var open = Workspace.Panes.Select(pane => pane.Id).ToHashSet();
+        foreach (var (id, view) in _views.Where(pane => !open.Contains(pane.Key)).ToArray())
+        {
+            (view as IDisposable)?.Dispose();
+            _views.Remove(id);
+        }
     }
 
     private void RefreshTabs()
@@ -353,17 +433,29 @@ public sealed partial class ShellViewModel : ObservableObject
             Tabs.Add(new TabItem(tab.Id, Workspace.TitleOf(tab), tab.Id == Workspace.ActiveTabId));
     }
 
-    /// <summary>Puts the focused pane's view on screen, with the keyboard on it.</summary>
+    /// <summary>Puts the focused tab's panes on screen, with the keyboard on one of them.</summary>
     private void Show()
     {
+        PruneViews();
         RefreshTabs();
-        PaneContent = Workspace.ActivePaneId is { } pane ? _views.GetValueOrDefault(pane) : null;
+        Panes = Workspace.ActiveTab is { } tab
+            ?
+            [
+                .. tab.PaneIds
+                    .Select(id => (Id: id, View: _views.GetValueOrDefault(id)))
+                    .Where(pane => pane.View is not null)
+                    .Select(pane => new PaneSlot(pane.Id, pane.View!, pane.Id == tab.ActivePaneId)),
+            ]
+            : [];
+
+        OnPropertyChanged(nameof(Axis));
+        OnPropertyChanged(nameof(ShowsDetail));
+        OnPropertyChanged(nameof(ShowsEmptyState));
+        OnPropertyChanged(nameof(CanBroadcast));
 
         // Switching back to a tab has to hand the keyboard back too: the pane was
         // loaded long ago, so nothing else will.
-        OnPropertyChanged(nameof(ShowsDetail));
-        OnPropertyChanged(nameof(ShowsEmptyState));
-        if (PaneContent is TerminalPaneView terminal)
+        if (Panes.FirstOrDefault(pane => pane.IsActive)?.View is TerminalPaneView terminal)
             Dispatcher.UIThread.Post(terminal.FocusTerminal, DispatcherPriority.Input);
     }
 }

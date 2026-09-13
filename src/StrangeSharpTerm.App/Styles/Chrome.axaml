@@ -96,6 +96,28 @@
         <Setter Property="Padding" Value="8,2" />
     </Style>
 
+    <!-- A pane in a split tab. Outlined when the keyboard is in it. -->
+    <Style Selector="Border.pane">
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+
+    <Style Selector="Border.pane.active">
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <!-- The divider between two panes: the background between them until it is
+         pointed at, and the accent while it is being dragged. -->
+    <Style Selector="GridSplitter.pane">
+        <Setter Property="Background" Value="{DynamicResource BackgroundBrush}" />
+    </Style>
+
+    <Style Selector="GridSplitter.pane:pointerover">
+        <Setter Property="Background" Value="{DynamicResource BorderBrush}" />
+    </Style>
+
     <!-- Something that went wrong, said where the user was looking. -->
     <Style Selector="Border.banner">
         <Setter Property="Background" Value="{DynamicResource DangerTintBrush}" />

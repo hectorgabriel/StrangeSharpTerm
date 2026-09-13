@@ -320,7 +320,7 @@ public class ThemeTests
         shell.Theme = AppPalette.Dracula;
 
         pane.Applied.ShouldHaveSingleItem().ShouldBe(TerminalPalette.Dracula);
-        shell.PaneContent.ShouldBeSameAs(pane);
+        shell.Panes.ShouldHaveSingleItem().View.ShouldBeSameAs(pane);
     }
 
     [Fact]

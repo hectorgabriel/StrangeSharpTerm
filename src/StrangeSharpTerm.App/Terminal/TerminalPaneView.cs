@@ -19,7 +19,7 @@ namespace StrangeSharpTerm.App.Terminal;
 /// "what is on screen" for the assistant and the headless driver — which costs a
 /// second pass over the bytes and buys one honest answer instead of two.
 /// </summary>
-public sealed class TerminalPaneView : UserControl, IThemedPane
+public sealed class TerminalPaneView : UserControl, IThemedPane, IDisposable
 {
     private readonly TerminalControl _terminal = new();
     private readonly TerminalRegistry? _registry;
@@ -129,11 +129,19 @@ public sealed class TerminalPaneView : UserControl, IThemedPane
         target.Focus(NavigationMethod.Pointer);
     }
 
-    protected override void OnDetachedFromVisualTree(Avalonia.VisualTreeAttachmentEventArgs e)
+    /// <summary>
+    /// Ends the pane: the engine goes, and the broadcast group forgets it.
+    ///
+    /// Not on detach, which is where this lived and was wrong. Splitting a tab
+    /// moves the existing pane into a new layout, and a view that disposes itself
+    /// on the way out cannot be moved: the first pane went dead the moment a
+    /// second one opened beside it — still drawn, still holding an ssh session,
+    /// and deaf to every keystroke. Whoever closes a pane says so.
+    /// </summary>
+    public void Dispose()
     {
         _registry?.Forget(Session.Id);
         _terminal.Dispose();
-        base.OnDetachedFromVisualTree(e);
     }
 
     private static Color Opaque(uint colour)
