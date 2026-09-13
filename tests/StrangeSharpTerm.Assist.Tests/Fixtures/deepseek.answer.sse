@@ -1,0 +1,14 @@
+data: {"id":"1","object":"chat.completion.chunk","model":"deepseek-v4-pro","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"1","choices":[{"index":0,"delta":{"reasoning_content":"The disk is at 98%, "},"finish_reason":null}]}
+
+data: {"id":"1","choices":[{"index":0,"delta":{"reasoning_content":"so the journal is the first thing to check."},"finish_reason":null}]}
+
+data: {"id":"1","choices":[{"index":0,"delta":{"content":"The journal is "},"finish_reason":null}]}
+
+data: {"id":"1","choices":[{"index":0,"delta":{"content":"37G of a 49G filesystem."},"finish_reason":null}]}
+
+data: {"id":"1","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+

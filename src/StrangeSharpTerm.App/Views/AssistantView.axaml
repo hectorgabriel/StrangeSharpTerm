@@ -1,0 +1,180 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:StrangeSharpTerm.App.ViewModels"
+             xmlns:views="clr-namespace:StrangeSharpTerm.App.Views"
+             xmlns:assist="clr-namespace:StrangeSharpTerm.Assist;assembly=StrangeSharpTerm.Assist"
+             x:Class="StrangeSharpTerm.App.Views.AssistantView"
+             x:DataType="vm:AssistantViewModel">
+    <!--
+        A conversation about one host, beside the terminal it is about.
+
+        Two things here are the design rather than the layout. A suggested
+        command is typed into the terminal and not run, so its button says so.
+        And a command the model wants to run itself is a row in this same list
+        with its reason under it: what it actually ran should never require
+        looking somewhere else.
+    -->
+    <UserControl.Resources>
+        <views:IconConverter x:Key="Icon" />
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto" Background="{DynamicResource BackgroundBrush}">
+
+        <!-- Who is answering, named here because it decides where this
+             conversation's terminal output is being sent. -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto,Auto" Margin="12,10,10,8">
+            <Path Grid.Column="0" Classes="icon" Width="14" Height="14" Margin="0,0,8,0"
+                  VerticalAlignment="Center" Stroke="{DynamicResource AccentBrush}"
+                  Data="{Binding Source=IconSparkles, Converter={StaticResource Icon}}" />
+            <TextBlock Grid.Column="1" Text="Assistant" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="2" Classes="muted" Margin="8,0,0,0" VerticalAlignment="Center"
+                       Text="{Binding Alias}" />
+
+            <CheckBox Grid.Column="3" Margin="0,0,10,0" VerticalAlignment="Center"
+                      IsChecked="{Binding MayRunCommands}">
+                <TextBlock Text="Run commands" FontSize="12" />
+            </CheckBox>
+
+            <TextBlock Grid.Column="4" Classes="muted" FontSize="11" VerticalAlignment="Center"
+                       Text="{Binding Answering}" />
+        </Grid>
+
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Margin="12,0,12,8" Spacing="10">
+
+                <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding IsEmpty}"
+                           Margin="0,8"
+                           Text="Ask about this host. The question carries its name, what uname reported, the metrics a probe collects now, and the tail of the terminal beside this pane — secrets removed. Nothing is run unless you turn on Run commands, and even then anything that writes stops to ask you." />
+
+                <ItemsControl ItemsSource="{Binding Rows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AssistRow">
+                            <StackPanel Margin="0,0,0,8">
+
+                                <!-- What was asked. -->
+                                <StackPanel IsVisible="{Binding IsQuestion}" Spacing="4">
+                                    <TextBlock Classes="section" Text="YOU" />
+                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <!-- What came back: prose and fenced blocks, each drawn as
+                                     what it is. Rendering the markdown raw would put the
+                                     fence characters on screen, and a code block would read
+                                     as part of the sentence above it. -->
+                                <StackPanel IsVisible="{Binding IsAnswer}" Spacing="6">
+                                    <TextBlock Classes="muted" FontSize="11" FontStyle="Italic"
+                                               TextWrapping="Wrap" IsVisible="{Binding ShowsReasoning}"
+                                               Text="{Binding Reasoning}" />
+
+                                    <ItemsControl ItemsSource="{Binding Blocks}">
+                                        <ItemsControl.DataTemplates>
+                                            <DataTemplate DataType="{x:Type assist:AnswerBlock+Prose}">
+                                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                                                           Margin="0,0,0,6" />
+                                            </DataTemplate>
+
+                                            <DataTemplate DataType="{x:Type assist:AnswerBlock+Code}">
+                                                <Border Classes="chip" Padding="10,8" CornerRadius="6"
+                                                        Margin="0,0,0,6">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <TextBlock Grid.Column="0" FontFamily="monospace" FontSize="12"
+                                                                   TextWrapping="Wrap" VerticalAlignment="Center"
+                                                                   Text="{Binding Text}" />
+                                                        <!-- Only a block the model tagged as shell gets the
+                                                             button, and the button types rather than runs.
+                                                             The pane, not $parent[ItemsControl]: this template
+                                                             is inside a second ItemsControl and the nearest
+                                                             one is that one. -->
+                                                        <Button Grid.Column="1" Padding="10,3" Margin="8,0,0,0"
+                                                                VerticalAlignment="Center"
+                                                                IsVisible="{Binding IsShell}"
+                                                                Command="{Binding $parent[UserControl].((vm:AssistantViewModel)DataContext).StageCommand}"
+                                                                CommandParameter="{Binding}">
+                                                            <TextBlock Text="Type it" FontSize="11" />
+                                                        </Button>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.DataTemplates>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <!-- A command, in the same list as the answer. -->
+                                <Border Classes="chip" Padding="12,9" CornerRadius="6" IsVisible="{Binding IsStep}">
+                                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+                                        <TextBlock Grid.Row="0" Grid.Column="0" FontFamily="monospace" FontSize="12"
+                                                   TextWrapping="Wrap" Text="{Binding Command}" />
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Classes="muted" FontSize="11"
+                                                   Margin="10,0,0,0" VerticalAlignment="Top" Text="{Binding State}" />
+
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="muted" FontSize="11"
+                                                   Margin="0,3,0,0" TextWrapping="Wrap" Text="{Binding Why}" />
+
+                                        <!-- Why a person is being asked, and the two answers. -->
+                                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Spacing="6" Margin="0,8,0,0"
+                                                    IsVisible="{Binding IsWaiting}">
+                                            <TextBlock Classes="warning" FontSize="11" TextWrapping="Wrap"
+                                                       Text="{Binding Gate}" IsVisible="{Binding !IsDestructive}" />
+                                            <TextBlock Classes="danger" FontSize="11" TextWrapping="Wrap"
+                                                       Text="{Binding Gate}" IsVisible="{Binding IsDestructive}" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Button Padding="12,4"
+                                                        Command="{Binding $parent[UserControl].((vm:AssistantViewModel)DataContext).AllowCommand}">
+                                                    <TextBlock Text="Run it" FontSize="12" />
+                                                </Button>
+                                                <Button Padding="12,4"
+                                                        Command="{Binding $parent[UserControl].((vm:AssistantViewModel)DataContext).RefuseCommand}">
+                                                    <TextBlock Text="No" FontSize="12" />
+                                                </Button>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <Border Grid.Row="3" Grid.ColumnSpan="2" Margin="0,8,0,0"
+                                                Padding="8" CornerRadius="4" IsVisible="{Binding HasOutput}"
+                                                Background="{DynamicResource BackgroundBrush}">
+                                            <TextBlock FontFamily="monospace" FontSize="11" TextWrapping="Wrap"
+                                                       Text="{Binding Output}" />
+                                        </Border>
+                                    </Grid>
+                                </Border>
+
+                                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                                           IsVisible="{Binding IsNote}" Text="{Binding Text}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- What gets sent. The preview is the request itself, not a description
+             of it, so it cannot drift from what is actually carried. -->
+        <Expander Grid.Row="2" Margin="12,0,12,6" Padding="0" IsExpanded="False"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <Expander.Header>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="What gets sent" FontSize="12" />
+                    <TextBlock Classes="muted" FontSize="11" Text="{Binding RedactionNote}" />
+                </StackPanel>
+            </Expander.Header>
+            <ScrollViewer MaxHeight="220">
+                <TextBlock FontFamily="monospace" FontSize="11" TextWrapping="Wrap"
+                           Margin="4,6" Text="{Binding Preview}" />
+            </ScrollViewer>
+        </Expander>
+
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="12,0,12,12">
+            <TextBox Grid.Column="0" Watermark="Ask about this host…" AcceptsReturn="False"
+                     Text="{Binding Question}" KeyDown="Send" />
+            <Button Grid.Column="1" Margin="8,0,0,0" Padding="12,6"
+                    Theme="{StaticResource PrimaryButton}"
+                    IsVisible="{Binding !IsAsking}" Command="{Binding AskCommand}">
+                <TextBlock Text="Ask" />
+            </Button>
+            <Button Grid.Column="1" Margin="8,0,0,0" Padding="12,6"
+                    IsVisible="{Binding IsAsking}" Command="{Binding StopCommand}">
+                <TextBlock Text="Stop" />
+            </Button>
+        </Grid>
+    </Grid>
+</UserControl>

@@ -1,0 +1,12 @@
+data: {"id":"2","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"2","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_abc","type":"function","function":{"name":"run_command","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"2","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"command\": \"df "}}]},"finish_reason":null}]}
+
+data: {"id":"2","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"-h /\", \"why\": \"how full, and which device\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"2","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+

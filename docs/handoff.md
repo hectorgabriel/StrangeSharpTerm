@@ -14,31 +14,35 @@ means; this says only what is done, what is in flight, and what to do first.
 | **M3** terminal | `TerminalSession` binding an XTerm.NET engine to an SSH channel, the Avalonia control, broadcast, scrollback, and `stctl terminal` |
 | **M5** (part) | one authenticated session per host, at last: `HostSessions` over the M2 pool, which every pane goes through. The SFTP browser (`IRemoteFiles`, a pane, ⇧⌘B), tunnels (`ITunnels`, a pane that starts and stops a host's forwards and releases the ports), the dashboard (`IServerHealth` over the M2 probe, in the detail pane, asked for rather than assumed), the credential library (a key or password described once, pointed at from any host or folder, with the secret in the platform store and never in the inventory), and snippets (saved commands, scoped to a folder or offered everywhere, run from the palette into the focused shell), and the settings sheet (the theme, as cards you can see, and the way in to both libraries) |
 | **M4** done | the window (sidebar, tabs, host detail, splits, broadcast), the theme system, the host and folder editors, the menu bar, the command palette, and the headless UI driver. `docs/adr/0004` and `0005` record the decisions |
+| **M6** done | `StrangeSharpTerm.Assist`: the two providers behind one seam, `CommandPolicy`, `Redaction`, the agent loop, the orchestrator and run plans — then the assistant pane (⌥⌘A), the orchestrator pane with its plan mode (⇧⌥⌘A), the settings section, `stctl ask`, and four `--demo-*` flags. `docs/adr/0006` records the one departure from the plan |
 
-Around 494 tests, all green on both operating systems. **M5 is done.**
+788 tests. **M6 is done** on macOS; the Windows half is CI's to confirm, and
+a red Windows job is a failure rather than something to fix later.
 
 ## In flight
 
 Check `gh pr list` first — a pull request may have landed since this was
-written. At the time of writing: **the settings sheet** (branch `m5-settings`), the last
-piece of M5.
+written. At the time of writing: nothing.
 
 ## What to do next, in order
 
-1. **M6, the assistant**: port `STAssist` and its 136 tests — both providers,
-   both stream decoders, `CommandPolicy`, `Redaction`, orchestration, run plans —
-   then the assistant and orchestrator panes. The settings sheet has a place
-   waiting for its section; so does M7's connected tools. `docs/adr/0005` lists
-   the two shortcuts (⌥⌘A, ⇧⌥⌘A) held back for it. Three of the Swift
-   app's shortcuts still wait for them — `docs/adr/0005` lists which and why,
-   including the one that cannot be translated to Windows as it stands (⌃⌘X).
-2. **What the panes do not do yet.** The browser has no rename and no
+1. **M7, MCP**: wrap the official SDK, port the config and OAuth surface and the
+   58 tests, then MCP settings and the server editor. The settings sheet has a
+   place waiting for its connected-tools section, and `SettingsViewModel` is
+   where it goes. One shortcut is still unbound: ⌃⌘X (disconnect), which cannot
+   be translated to Windows as it stands — `docs/adr/0005` says why.
+2. **One real assistant turn** is M6's manual check and has not been done: it
+   needs an account. `stctl ask user@host --question "…"` is the command, with
+   `--dump-context` to see the block first and `--run-commands --approve` to
+   exercise the tool loop. Everything up to the wire is checked against a
+   recorded stream — what is unchecked is a live provider.
+3. **What the panes do not do yet.** The browser has no rename and no
    new-folder, though `IRemoteFiles` carries both calls, and no progress for a
    large transfer. Tunnels are read from the host's settings and cannot be added
    or edited there — the host editor deliberately leaves forwards alone and
    preserves them, so an editor for them is the missing half. The dashboard is
    asked for one probe at a time; the Swift app refreshed on a timer.
-3. **Screenshots**, the other half of what the plan's CI table asks for at
+4. **Screenshots**, the other half of what the plan's CI table asks for at
    M4-M5. The driver is in place (`tests/StrangeSharpTerm.App.WindowTests`);
    what is missing is rendering. `CaptureRenderedFrame` returns a bitmap, but
    only with Skia behind the headless platform (`UseHeadlessDrawing = false`
@@ -97,7 +101,14 @@ says. Three things it took to get right:
   dialogs are also reachable as
   `--demo-editor host|folder|credential|credentials|snippet|snippets|run|settings`, a
   window of their own over a fixture, and the palette as `--demo-palette
-  [--demo-query x] [--demo-connect host]`. `--demo-connect` opens a shell before
+  [--demo-query x] [--demo-connect host]`. The assistant panes have four of their
+  own — `--demo-assistant`, `--demo-orchestrator`, `--demo-orchestrator-idle` and
+  `--demo-plan` — because they need a real connection *and* a real API key, and a
+  surface nobody can look at is a surface nothing is found in. Looking at them
+  found four things every test had passed through: the row-identity bug above,
+  raw fence characters rendered into the answer, findings listed in whichever
+  order the hosts happened to finish, and mode buttons that never said which mode
+  was in use. `--demo-connect` opens a shell before
   the palette, because half of what the palette offers needs one — a snippet has
   nowhere to be typed without it. The credential fixture keeps its secrets in
   memory, so looking at it never writes to the login keychain. Splits found
@@ -130,6 +141,28 @@ says. Three things it took to get right:
   "which shell has the focus" unanswerable from a view model, and silently false
   in any test that substitutes the pane view. The shell opens the session, so the
   shell registers it.
+- **A record is the wrong key for a row that changes.** The assistant pane kept
+  its rows in a dictionary keyed by the transcript entry. A step is a record, so
+  its hash changes the moment its state does — the row for a command became
+  unfindable exactly when the command finished, and every command on screen said
+  "running" forever. Every test passed: they asserted after the run, when the
+  container was built once at the final state. `--demo-assistant` showed it in a
+  second. Reference equality is the fix; the lesson is that a value type is a key
+  only while its value is fixed.
+- **A binding path through a null is three errors, not one.** The orchestrator's
+  approval banner bound `Waiting.Host`, `Waiting.Command` and `Waiting.Reason`,
+  and with nothing waiting — the ordinary state — each logged a binding error.
+  Making the pending command the banner's `DataContext` makes the empty case
+  silent, which matters because a trace full of harmless errors is a trace nobody
+  reads.
+- **`$parent[ItemsControl]` finds the nearest one.** An answer's staged commands
+  are an `ItemsControl` inside the rows `ItemsControl`, so a command bound that
+  way reached the inner one and resolved to null. `$parent[UserControl]` is
+  unambiguous and is what these views use.
+- **`--` is illegal inside an XML comment**, which is a problem in this repo
+  because every other comment here uses it as a dash. A `Directory.Packages.props`
+  with one in it fails restore with `NU1015: no version specified` for every
+  package in the file — an error that points nowhere near the real one.
 - **A global style beats an inherited state.** `TextBlock { Foreground }` in
   `Styles/Chrome.axaml` applies to the label inside a button too, so a disabled
   button's own foreground never reached it and every disabled button in the app

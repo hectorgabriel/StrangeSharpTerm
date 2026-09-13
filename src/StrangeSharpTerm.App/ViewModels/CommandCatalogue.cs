@@ -99,6 +99,14 @@ public static class CommandCatalogue
             // and inventing one risks colliding with a shortcut it does define.
             new("session.tunnels", "Tunnels", CommandGroup.Session, shell.OpenTunnelsCommand),
 
+            // The two the Swift app's table has for the assistant, held back
+            // since M4 because the thing they did did not exist yet. Alt is Alt
+            // on both platforms, so ⌥⌘A is Ctrl+Alt+A on Windows.
+            new("session.assistant", "Assistant", CommandGroup.Session, shell.OpenAssistantCommand,
+                Gesture: new KeyGesture(Key.A, command | KeyModifiers.Alt)),
+            new("session.orchestrator", "Ask Several Hosts…", CommandGroup.Session, shell.AskSeveralHostsCommand,
+                Gesture: new KeyGesture(Key.A, command | KeyModifiers.Alt | KeyModifiers.Shift)),
+
             new("view.palette", "Command Palette…", CommandGroup.View, shell.OpenPaletteCommand,
                 Gesture: new KeyGesture(Key.K, command)),
         ];
