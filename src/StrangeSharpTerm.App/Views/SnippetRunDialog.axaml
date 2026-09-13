@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:StrangeSharpTerm.App.ViewModels"
+        x:Class="StrangeSharpTerm.App.Views.SnippetRunDialog"
+        x:DataType="vm:SnippetRunViewModel"
+        Title="{Binding Title}"
+        SizeToContent="Height" Width="520" MinWidth="440"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BackgroundBrush}"
+        Foreground="{DynamicResource TextBrush}">
+
+    <!--
+        The preview is the point of this dialog: the line below is what will be
+        sent to a live shell, with the values already in it.
+    -->
+    <StackPanel Margin="20" Spacing="12">
+        <StackPanel Spacing="2">
+            <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" />
+            <TextBlock Classes="muted" FontSize="11" Text="{Binding Target, StringFormat='Runs in {0}'}" />
+        </StackPanel>
+
+        <Border Classes="banner" IsVisible="{Binding IsBroadcast}">
+            <TextBlock Text="{Binding BroadcastWarning}" TextWrapping="Wrap" />
+        </Border>
+
+        <ItemsControl ItemsSource="{Binding Values}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PlaceholderValue">
+                    <Grid ColumnDefinitions="130,*" Margin="0,0,0,8">
+                        <TextBlock Grid.Column="0" Classes="muted" Text="{Binding Name}" VerticalAlignment="Center" />
+                        <TextBox Grid.Column="1" Text="{Binding Value, Mode=TwoWay}" FontFamily="monospace" />
+                    </Grid>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <StackPanel Spacing="6">
+            <TextBlock Classes="section" Text="WILL RUN" />
+            <Border Classes="chip" Padding="10,8">
+                <TextBlock FontFamily="monospace" FontSize="12" TextWrapping="Wrap" Text="{Binding Preview}" />
+            </Border>
+        </StackPanel>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="Cancel" IsCancel="True" Padding="14,6" Click="Cancel" />
+            <Button Theme="{StaticResource PrimaryButton}" Content="Run" IsDefault="True" Padding="14,6"
+                    IsEnabled="{Binding IsComplete}" Click="Run" />
+        </StackPanel>
+    </StackPanel>
+</Window>

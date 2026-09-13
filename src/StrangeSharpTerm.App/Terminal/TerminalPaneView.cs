@@ -46,7 +46,10 @@ public sealed class TerminalPaneView : UserControl, IThemedPane, IDisposable
         session.TitleChanged += (_, title) => TitleChanged?.Invoke(this, title);
         session.Ended += (_, _) => Ended?.Invoke(this, EventArgs.Empty);
 
-        registry?.Register(session);
+        // Registration is the shell's, not this view's: whoever opened the
+        // session knows about it before a control exists, and a registry that
+        // only learns of a session when its control happens to be built cannot
+        // be asked "which shell has the focus".
         Content = _terminal;
     }
 

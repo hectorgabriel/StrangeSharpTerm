@@ -225,6 +225,75 @@ public sealed partial class ShellViewModel : ObservableObject
     public async Task ManageCredentials() =>
         await _dialogs.Manage(new CredentialsViewModel(Inventory, _secrets.Value, _dialogs));
 
+    /// <summary>The snippet library: commands worth keeping, and where each is offered.</summary>
+    [RelayCommand]
+    public async Task ManageSnippets()
+    {
+        var snippets = new SnippetsViewModel(Inventory, _dialogs);
+        snippets.Refresh();
+        await _dialogs.Manage(snippets);
+        // The palette offers snippets, so anything added or renamed in there has
+        // to be visible the next time it opens.
+        RefreshCommands();
+    }
+
+    /// <summary>
+    /// A snippet needs a shell to type into, and a browser or a dashboard is not
+    /// one. Checked rather than assumed: the palette offers only what can run.
+    /// </summary>
+    public bool CanRunSnippet(Snippet? snippet) => snippet is not null && ActiveTerminal() is not null;
+
+    /// <summary>
+    /// Types a saved command into the focused shell and runs it.
+    ///
+    /// Parameterised snippets ask first, and the dialog's preview is the last
+    /// thing shown before the line is sent — this runs on a live server, and
+    /// what a placeholder expanded to is the thing worth seeing.
+    ///
+    /// Sent rather than written, so broadcast fans it out exactly as it fans out
+    /// typing: a snippet in a broadcast group reaches every pane in the group.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanRunSnippet))]
+    public async Task RunSnippet(Snippet? snippet)
+    {
+        if (snippet is null || ActiveTerminal() is not { } session)
+            return;
+
+        var line = snippet.Command;
+        if (snippet.IsParameterised)
+        {
+            var filling = new SnippetRunViewModel(
+                snippet,
+                HostOfActivePane() ?? "this shell",
+                IsBroadcasting ? Workspace.ActiveTab?.PaneIds.Count ?? 1 : 1);
+
+            if (!await _dialogs.Fill(filling))
+                return;
+            line = filling.Preview;
+        }
+
+        // Carriage return, because that is what a terminal sends when a person
+        // presses Enter. A Unix pty translates a line feed; Windows does not, so
+        // a line feed there is typed and never run.
+        session.Send(line + "\r");
+    }
+
+    /// <summary>
+    /// The host the focused pane is about, by the name the inventory gives it.
+    ///
+    /// Not the pane's title: the far end sets that, and a shell prompt —
+    /// "ops@ip-10-0-1-7:~" — is not how anyone identifies the server they are
+    /// about to run something on.
+    /// </summary>
+    private string? HostOfActivePane() =>
+        Workspace.ActivePane?.ConnectionId is { } host
+            ? Inventory.Tree.Connections.GetValueOrDefault(host)?.Name
+            : null;
+
+    /// <summary>The focused pane's shell, when the focused pane is one.</summary>
+    private TerminalSession? ActiveTerminal() =>
+        Workspace.ActivePane is { IsTerminal: true, Id: var pane } ? _terminals.Session(pane) : null;
+
     /// <summary>Edits the selected host, for the button in the detail pane.</summary>
     [RelayCommand(CanExecute = nameof(HasSelectedHost))]
     public async Task EditSelected()
@@ -413,10 +482,32 @@ public sealed partial class ShellViewModel : ObservableObject
     public void Describe(KeyModifiers commandModifier)
     {
         Commands = CommandCatalogue.For(this, commandModifier);
-        Palette = new PaletteViewModel(Commands);
+        // The palette is given a function rather than a list because half of what
+        // it offers is not fixed: the snippets depend on which host is selected,
+        // and the library can be edited while the window is open. The menu and the
+        // key bindings keep the fixed list.
+        Palette = new PaletteViewModel(() => [.. Commands, .. SnippetCommands()]);
         OnPropertyChanged(nameof(Commands));
         OnPropertyChanged(nameof(Palette));
     }
+
+    /// <summary>
+    /// The snippets offered right now, as palette entries.
+    ///
+    /// Only the ones this host is in scope for: a snippet scoped to a folder is
+    /// offered beneath it and nowhere else, which is the whole point of the
+    /// scope. They are built fresh each time the palette opens rather than kept,
+    /// because both the selection and the library change under it.
+    /// </summary>
+    public IReadOnlyList<AppCommand> SnippetCommands() =>
+    [
+        .. Inventory.VisibleSnippets.Select(snippet => new AppCommand(
+            $"snippet.{snippet.Id}",
+            snippet.Name,
+            CommandGroup.Session,
+            RunSnippetCommand,
+            Parameter: snippet)),
+    ];
 
     [RelayCommand]
     public void OpenPalette() => Palette.Open();
@@ -531,6 +622,10 @@ public sealed partial class ShellViewModel : ObservableObject
             // a window that freezes while a host times out is the thing this
             // avoids.
             var session = await Task.Run(() => _sessions.Shell(connection));
+            // Registered here rather than by the view: broadcast and snippets ask
+            // the registry which shell has the focus, and that must not depend on
+            // which control was built for the pane.
+            _terminals.Register(session);
             var view = _view(session, _theme.TerminalPaletteFor(Inventory.Tree, connection));
 
             session.TitleChanged += (_, title) => Dispatcher.UIThread.Post(() => Workspace.UpdateTitle(session.Id, title));
@@ -597,6 +692,7 @@ public sealed partial class ShellViewModel : ObservableObject
         SplitDownCommand.NotifyCanExecuteChanged();
         ClosePaneCommand.NotifyCanExecuteChanged();
         BrowseFilesCommand.NotifyCanExecuteChanged();
+        RunSnippetCommand.NotifyCanExecuteChanged();
         OpenTunnelsCommand.NotifyCanExecuteChanged();
         ToggleBroadcastCommand.NotifyCanExecuteChanged();
         FocusTabAtCommand.NotifyCanExecuteChanged();

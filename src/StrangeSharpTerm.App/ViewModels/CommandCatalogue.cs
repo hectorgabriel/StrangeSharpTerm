@@ -73,6 +73,9 @@ public static class CommandCatalogue
             // No shortcut: the Swift app's table has none for the library, and
             // it is opened rarely enough that the menu is the right place.
             new("credentials", "Credentials…", CommandGroup.Edit, shell.ManageCredentialsCommand),
+            // Likewise no shortcut. The snippets themselves are in the palette,
+            // which is how one is run; this is only the library that holds them.
+            new("snippets", "Snippets…", CommandGroup.Edit, shell.ManageSnippetsCommand),
 
             new("session.open", "New Session", CommandGroup.Session, shell.ConnectSelectedCommand,
                 Gesture: new KeyGesture(Key.T, command)),

@@ -12,6 +12,8 @@ public abstract record PendingDeletion(NodeId Id)
     public sealed record Folder(NodeId Id) : PendingDeletion(Id);
 
     public sealed record Credential(NodeId Id) : PendingDeletion(Id);
+
+    public sealed record Snippet(NodeId Id) : PendingDeletion(Id);
 }
 
 /// <summary>
@@ -217,6 +219,7 @@ public sealed partial class InventoryViewModel : ObservableObject
             case PendingDeletion.Connection connection: DeleteConnection(connection.Id); break;
             case PendingDeletion.Folder folder: DeleteFolder(folder.Id); break;
             case PendingDeletion.Credential credential: DeleteCredential(credential.Id); break;
+            case PendingDeletion.Snippet snippet: DeleteSnippet(snippet.Id); break;
         }
         Pending = null;
     }
@@ -246,6 +249,13 @@ public sealed partial class InventoryViewModel : ObservableObject
                         ? "Nothing is using it."
                         : $"{count} host{(count == 1 ? "" : "s")} or folder{(count == 1 ? "" : "s")} "
                           + "using it will be left without a credential.");
+
+                case PendingDeletion.Snippet pending
+                    when Tree.Snippets.GetValueOrDefault(pending.Id) is { } snippet:
+                    // A snippet is a saved command and nothing depends on it, so
+                    // the question is only whether this is the right one: the
+                    // command itself is the answer to that.
+                    return ($"Delete {snippet.Name}?", snippet.Command);
 
                 default:
                     return null;

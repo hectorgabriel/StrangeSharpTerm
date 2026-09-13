@@ -9,9 +9,14 @@ public sealed record FolderChoice(string Label, NodeId? Id)
     public static FolderChoice Root { get; } = new("No folder", null);
 
     /// <summary>Every folder, depth-first, with the top level first.</summary>
-    public static IReadOnlyList<FolderChoice> Of(InventoryTree tree, NodeId? excluding = null)
+    /// <param name="root">
+    /// What the null choice is called. "No folder" for something being placed in
+    /// the tree; a snippet says "Everywhere", because for it null is a scope and
+    /// not an absence.
+    /// </param>
+    public static IReadOnlyList<FolderChoice> Of(InventoryTree tree, NodeId? excluding = null, string? root = null)
     {
-        var choices = new List<FolderChoice> { Root };
+        var choices = new List<FolderChoice> { root is null ? Root : new FolderChoice(root, null) };
         Walk(null, 0);
         return choices;
 
