@@ -1,8 +1,12 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="StrangeSharpTerm.App.App"
-             RequestedThemeVariant="Default">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
+             RequestedThemeVariant="Dark">
+    <!--
+        Dark, not "Default": both themes are dark (docs/adr/0004), so following
+        the system variant would light Fluent's controls while every surface
+        around them stayed near-black.
+    -->
 
     <Application.Resources>
         <ResourceDictionary>
@@ -14,20 +18,6 @@
 
     <Application.Styles>
         <FluentTheme />
-        <!--
-            Lucide is a stroke system: 24x24, two units wide, round caps and
-            joins. Setting it here once keeps every call site to a Data binding,
-            and keeps an icon from being drawn filled by accident.
-        -->
-        <Style Selector="Path.icon">
-            <Setter Property="Width" Value="16" />
-            <Setter Property="Height" Value="16" />
-            <Setter Property="Stretch" Value="Uniform" />
-            <Setter Property="Fill" Value="Transparent" />
-            <Setter Property="Stroke" Value="{Binding $parent[TemplatedControl].Foreground}" />
-            <Setter Property="StrokeThickness" Value="2" />
-            <Setter Property="StrokeLineCap" Value="Round" />
-            <Setter Property="StrokeJoin" Value="Round" />
-        </Style>
+        <StyleInclude Source="avares://StrangeSharpTerm/Styles/Chrome.axaml" />
     </Application.Styles>
 </Application>

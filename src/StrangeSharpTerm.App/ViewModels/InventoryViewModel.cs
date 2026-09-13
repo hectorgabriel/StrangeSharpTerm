@@ -50,6 +50,9 @@ public sealed partial class InventoryViewModel : ObservableObject
 
     partial void OnSearchChanged(string value) => OnPropertyChanged(nameof(Rows));
 
+    // The rows carry which one is selected, so moving the selection redraws them.
+    partial void OnSelectionChanged(NodeId? value) => OnPropertyChanged(nameof(Rows));
+
     /// <summary>Why the last save failed, for the UI to show without blocking the edit.</summary>
     [ObservableProperty]
     public partial string? StoreError { get; private set; }
