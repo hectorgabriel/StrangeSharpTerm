@@ -29,7 +29,7 @@ public class CommandTests
         var host = new Connection { Name = "web-01", Hostname = "web-01.example.com" };
         var shell = new ShellViewModel(
             new InventoryViewModel(null, new InventoryTree(connections: [host])),
-            _ => new TerminalSession(new DeadChannel()),
+            new FakeSessions(),
             (_, _) => new Border());
         shell.Describe(command);
         return (shell, host);

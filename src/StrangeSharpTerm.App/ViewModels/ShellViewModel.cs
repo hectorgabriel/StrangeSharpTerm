@@ -33,38 +33,29 @@ public sealed record PaneSlot(NodeId Id, Control View, bool IsActive);
 public sealed partial class ShellViewModel : ObservableObject
 {
     private readonly TerminalRegistry _terminals = new();
-    private readonly Func<Connection, TerminalSession> _connect;
-    private readonly Func<Connection, IRemoteFiles> _files;
-    private readonly Func<Connection, ITunnels> _tunnels;
-    private readonly Func<Connection, IServerHealth> _health;
+    private readonly IHostSessions _sessions;
     private readonly Dictionary<NodeId, DashboardViewModel> _dashboards = [];
     private readonly Func<TerminalSession, TerminalPalette, Control> _view;
     private readonly IDialogService _dialogs;
     private readonly AppTheme _theme;
 
-    /// <param name="connect">How a host becomes a session. Replaced in tests by something that needs no server.</param>
+    /// <param name="sessions">
+    /// Everything a host can be asked for, over one connection to it. Replaced
+    /// in tests by something that needs no server.
+    /// </param>
     /// <param name="view">How a session becomes something on screen. Likewise.</param>
-    /// <param name="files">How a host becomes a directory listing. Likewise again.</param>
-    /// <param name="tunnels">And how it becomes somewhere to start a forward.</param>
-    /// <param name="health">And how it is asked how it is.</param>
     public ShellViewModel(
         InventoryViewModel inventory,
-        Func<Connection, TerminalSession>? connect = null,
+        IHostSessions? sessions = null,
         Func<TerminalSession, TerminalPalette, Control>? view = null,
         IDialogService? dialogs = null,
-        AppTheme? theme = null,
-        Func<Connection, IRemoteFiles>? files = null,
-        Func<Connection, ITunnels>? tunnels = null,
-        Func<Connection, IServerHealth>? health = null)
+        AppTheme? theme = null)
     {
         Inventory = inventory;
         _dialogs = dialogs ?? new ScriptedDialogService();
         _theme = theme ?? new AppTheme();
         Workspace = new WorkspaceViewModel(_terminals);
-        _connect = connect ?? (connection => TerminalLauncher.Connect(Inventory.Tree, connection));
-        _files = files ?? (connection => TerminalLauncher.Files(Inventory.Tree, connection));
-        _tunnels = tunnels ?? (connection => TerminalLauncher.Tunnels(Inventory.Tree, connection));
-        _health = health ?? (connection => TerminalLauncher.Health(Inventory.Tree, connection));
+        _sessions = sessions ?? new HostSessions(() => Inventory.Tree);
         _view = view ?? ((session, palette) => new TerminalPaneView(session, palette, _terminals));
 
         // Focusing a pane moves the sidebar with it, and deleting a host closes
@@ -166,7 +157,7 @@ public sealed partial class ShellViewModel : ObservableObject
         }
 
         if (!_dashboards.TryGetValue(id, out var dashboard))
-            _dashboards[id] = dashboard = new DashboardViewModel(_health(connection));
+            _dashboards[id] = dashboard = new DashboardViewModel(_sessions.Health(connection));
 
         Detail = new HostDetailViewModel(Inventory.Tree.Resolve(id), dashboard);
     }
@@ -449,7 +440,7 @@ public sealed partial class ShellViewModel : ObservableObject
             // Off the UI thread for the same reason a connection is: SFTP costs
             // its own authentication (see SshNetSession.OpenSftp), and a window
             // that freezes while a host times out is what that would cost.
-            var files = await Task.Run(() => _files(connection));
+            var files = await Task.Run(() => _sessions.Files(connection));
             var browser = new FileBrowserViewModel(files, connection.Name, _dialogs);
 
             Workspace.Open(pane, Panes.Count > 0 ? Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal : null);
@@ -488,7 +479,7 @@ public sealed partial class ShellViewModel : ObservableObject
         {
             // Connecting is what takes the time; the forwards themselves are
             // already known, and none is started until someone asks.
-            var tunnels = await Task.Run(() => _tunnels(connection));
+            var tunnels = await Task.Run(() => _sessions.Tunnels(connection));
             var model = new TunnelsViewModel(tunnels, connection.Name, forwards);
 
             Workspace.Open(pane, Panes.Count > 0 ? Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal : null);
@@ -516,7 +507,7 @@ public sealed partial class ShellViewModel : ObservableObject
             // Connecting blocks on the network, so it happens off the UI thread;
             // a window that freezes while a host times out is the thing this
             // avoids.
-            var session = await Task.Run(() => _connect(connection));
+            var session = await Task.Run(() => _sessions.Shell(connection));
             var view = _view(session, _theme.TerminalPaletteFor(Inventory.Tree, connection));
 
             session.TitleChanged += (_, title) => Dispatcher.UIThread.Post(() => Workspace.UpdateTitle(session.Id, title));

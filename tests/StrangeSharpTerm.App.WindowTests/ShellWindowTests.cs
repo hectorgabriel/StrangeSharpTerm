@@ -98,7 +98,7 @@ public class ShellWindowTests
         var host = new Connection { ParentId = folder.Id, Name = "web-01", Hostname = "web-01.example.com" };
         var model = new ShellViewModel(
             new InventoryViewModel(null, new InventoryTree([folder], [host])),
-            _ => new TerminalSession(new QuietChannel()),
+            new StrangeSharpTerm.App.Tests.FakeSessions { OnShell = _ => new TerminalSession(new QuietChannel()) },
             // A stand-in for the terminal control, not the control itself:
             // Iciclecreek's renderer never settles under the headless platform
             // and the run does not finish. What these tests are about is the

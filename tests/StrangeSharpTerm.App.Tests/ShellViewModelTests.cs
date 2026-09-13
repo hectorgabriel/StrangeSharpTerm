@@ -25,7 +25,7 @@ public class ShellViewModelTests
         var inventory = new InventoryViewModel(null, new InventoryTree([folder], [host]));
         return new ShellViewModel(
             inventory,
-            connect ?? (_ => new TerminalSession(new DeadChannel())),
+            new FakeSessions { OnShell = connect },
             (_, _) => new Border());
     }
 
@@ -125,11 +125,7 @@ public class DeletingFromTheDetailPaneTests
     {
         host = new Connection { Name = "web-01", Hostname = "web-01.example.com" };
         var inventory = new InventoryViewModel(null, new InventoryTree(connections: [host]));
-        return new ShellViewModel(
-            inventory,
-            _ => new TerminalSession(new DeadChannel()),
-            (_, _) => new Border(),
-            dialogs);
+        return new ShellViewModel(inventory, new FakeSessions(), (_, _) => new Border(), dialogs);
     }
 
     [Fact]
@@ -197,7 +193,7 @@ public class WhatTheRightHandSideShowsTests
     {
         host = new Connection { Name = "web-01", Hostname = "web-01.example.com" };
         var inventory = new InventoryViewModel(null, new InventoryTree(connections: [host]));
-        return new ShellViewModel(inventory, _ => new TerminalSession(new DeadChannel()), (_, _) => new Border());
+        return new ShellViewModel(inventory, new FakeSessions(), (_, _) => new Border());
     }
 
     [Fact]

@@ -8,8 +8,9 @@ namespace StrangeSharpTerm.App.Terminal;
 /// <summary>
 /// Command-line arguments for opening a terminal on one host.
 ///
-/// A stand-in for the inventory and the sidebar, which arrive with the app shell
-/// in M4. It exists so this milestone can be run rather than only reviewed.
+/// A stand-in for the inventory and the sidebar, which arrived with the app
+/// shell in M4. It stays because it is how a terminal is checked against a real
+/// server without the window in the way.
 /// </summary>
 public sealed record TerminalLaunchRequest(string Target, string? KeyFile, bool TrustUnknownHostKey, string? Theme)
 {
@@ -31,86 +32,14 @@ public sealed record TerminalLaunchRequest(string Target, string? KeyFile, bool 
     }
 }
 
+/// <summary>
+/// One host, named on the command line, with no inventory behind it.
+///
+/// What the window asks for goes through <see cref="HostSessions"/> instead, so
+/// that every feature rides one authenticated session per host.
+/// </summary>
 public static class TerminalLauncher
 {
-    /// <summary>
-    /// Opens a shell on a host from the inventory, with its folder inheritance
-    /// and credential applied.
-    ///
-    /// Unknown host keys are refused rather than accepted: the sheet that shows a
-    /// fingerprint and asks is still to come, and silently trusting a first
-    /// contact is the one thing that must not happen while it is missing.
-    /// </summary>
-    public static TerminalSession Connect(InventoryTree tree, Connection connection, IHostKeyPrompt? prompt = null)
-    {
-        var factory = new SshSessionFactory(
-            new PlatformSecretStore(),
-            prompt ?? new RefuseUnknownHostKeys(),
-            id => tree.Credentials.GetValueOrDefault(id));
-
-        var session = (SshNetSession)factory.Connect(tree.Resolve(connection.Id));
-        return new TerminalSession(SshTerminalChannel.Open(session));
-    }
-
-    /// <summary>
-    /// The host's files, over SFTP.
-    ///
-    /// The same factory as a shell, so the host key is checked by the same rules
-    /// and the credential comes from the same place — but a second
-    /// authentication, which is SSH.NET's price and is noted where it is paid.
-    /// </summary>
-    public static IRemoteFiles Files(InventoryTree tree, Connection connection, IHostKeyPrompt? prompt = null)
-    {
-        var factory = new SshSessionFactory(
-            new PlatformSecretStore(),
-            prompt ?? new RefuseUnknownHostKeys(),
-            id => tree.Credentials.GetValueOrDefault(id));
-
-        var session = (SshNetSession)factory.Connect(tree.Resolve(connection.Id));
-        return new SftpFiles(session.OpenSftp());
-    }
-
-    /// <summary>
-    /// Somewhere to start this host's forwards.
-    ///
-    /// The session, not a second one: forwards ride the connection that is
-    /// already authenticated, which is the property ControlMaster gave the Swift
-    /// app and SSH.NET gives natively.
-    /// </summary>
-    public static ITunnels Tunnels(InventoryTree tree, Connection connection, IHostKeyPrompt? prompt = null)
-    {
-        var factory = new SshSessionFactory(
-            new PlatformSecretStore(),
-            prompt ?? new RefuseUnknownHostKeys(),
-            id => tree.Credentials.GetValueOrDefault(id));
-
-        return new SshTunnels((SshNetSession)factory.Connect(tree.Resolve(connection.Id)));
-    }
-
-    /// <summary>
-    /// Somewhere to ask this host how it is.
-    ///
-    /// Lazy: the session is opened by the first probe, not by building this.
-    /// Selecting a host must not connect to it, and the dashboard is built the
-    /// moment a host is selected.
-    /// </summary>
-    public static IServerHealth Health(InventoryTree tree, Connection connection, IHostKeyPrompt? prompt = null) =>
-        new LazyHealth(() =>
-        {
-            var factory = new SshSessionFactory(
-                new PlatformSecretStore(),
-                prompt ?? new RefuseUnknownHostKeys(),
-                id => tree.Credentials.GetValueOrDefault(id));
-            return new SshServerHealth((SshNetSession)factory.Connect(tree.Resolve(connection.Id)));
-        });
-
-    private sealed class LazyHealth(Func<IServerHealth> open) : IServerHealth
-    {
-        private IServerHealth? _opened;
-
-        public ServerMetrics Collect() => (_opened ??= open()).Collect();
-    }
-
     /// <summary>Opens a session on the host named by the request, ready to attach to a view.</summary>
     public static TerminalSession Connect(TerminalLaunchRequest request)
     {
