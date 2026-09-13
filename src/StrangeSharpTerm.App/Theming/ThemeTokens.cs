@@ -145,6 +145,12 @@ public static class ThemeTokens
         ["SystemControlHighlightListLowBrush"] = palette.Border,
         ["SystemControlHighlightListMediumBrush"] = palette.Border,
         ["SystemControlHighlightAltBaseHighBrush"] = palette.Text,
+
+        // A gauge: the accent while it is fine, the track behind it either way.
+        // Warning and critical are style classes on top of these.
+        ["ProgressBarForeground"] = palette.Accent,
+        ["ProgressBarBackground"] = palette.Border,
+        ["ProgressBarBorderBrush"] = palette.Border,
     };
 
     /// <summary>

@@ -36,6 +36,8 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly Func<Connection, TerminalSession> _connect;
     private readonly Func<Connection, IRemoteFiles> _files;
     private readonly Func<Connection, ITunnels> _tunnels;
+    private readonly Func<Connection, IServerHealth> _health;
+    private readonly Dictionary<NodeId, DashboardViewModel> _dashboards = [];
     private readonly Func<TerminalSession, TerminalPalette, Control> _view;
     private readonly IDialogService _dialogs;
     private readonly AppTheme _theme;
@@ -44,6 +46,7 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <param name="view">How a session becomes something on screen. Likewise.</param>
     /// <param name="files">How a host becomes a directory listing. Likewise again.</param>
     /// <param name="tunnels">And how it becomes somewhere to start a forward.</param>
+    /// <param name="health">And how it is asked how it is.</param>
     public ShellViewModel(
         InventoryViewModel inventory,
         Func<Connection, TerminalSession>? connect = null,
@@ -51,7 +54,8 @@ public sealed partial class ShellViewModel : ObservableObject
         IDialogService? dialogs = null,
         AppTheme? theme = null,
         Func<Connection, IRemoteFiles>? files = null,
-        Func<Connection, ITunnels>? tunnels = null)
+        Func<Connection, ITunnels>? tunnels = null,
+        Func<Connection, IServerHealth>? health = null)
     {
         Inventory = inventory;
         _dialogs = dialogs ?? new ScriptedDialogService();
@@ -60,6 +64,7 @@ public sealed partial class ShellViewModel : ObservableObject
         _connect = connect ?? (connection => TerminalLauncher.Connect(Inventory.Tree, connection));
         _files = files ?? (connection => TerminalLauncher.Files(Inventory.Tree, connection));
         _tunnels = tunnels ?? (connection => TerminalLauncher.Tunnels(Inventory.Tree, connection));
+        _health = health ?? (connection => TerminalLauncher.Health(Inventory.Tree, connection));
         _view = view ?? ((session, palette) => new TerminalPaneView(session, palette, _terminals));
 
         // Focusing a pane moves the sidebar with it, and deleting a host closes
@@ -69,7 +74,7 @@ public sealed partial class ShellViewModel : ObservableObject
         {
             if (e.PropertyName is nameof(InventoryViewModel.Selection) or nameof(InventoryViewModel.Tree))
             {
-                OnPropertyChanged(nameof(Detail));
+                RefreshDetail();
                 OnPropertyChanged(nameof(ShowsDetail));
                 OnPropertyChanged(nameof(ShowsEmptyState));
                 RefreshCommands();
@@ -141,10 +146,30 @@ public sealed partial class ShellViewModel : ObservableObject
     /// The selected host, resolved. Null when nothing is selected, or when the
     /// selection names a host that has since been deleted.
     /// </summary>
-    public HostDetailViewModel? Detail =>
-        Inventory.Selection is { } id && Inventory.Tree.Connections.ContainsKey(id)
-            ? new HostDetailViewModel(Inventory.Tree.Resolve(id))
-            : null;
+    [ObservableProperty]
+    public partial HostDetailViewModel? Detail { get; private set; }
+
+    /// <summary>
+    /// Rebuilds the detail pane for whatever is selected.
+    ///
+    /// The dashboard inside it is kept per host rather than rebuilt with the
+    /// pane: it holds what the server last said and the little history the
+    /// sparkline draws, and editing a host in the middle of watching it should
+    /// not throw that away.
+    /// </summary>
+    private void RefreshDetail()
+    {
+        if (Inventory.Selection is not { } id || !Inventory.Tree.Connections.TryGetValue(id, out var connection))
+        {
+            Detail = null;
+            return;
+        }
+
+        if (!_dashboards.TryGetValue(id, out var dashboard))
+            _dashboards[id] = dashboard = new DashboardViewModel(_health(connection));
+
+        Detail = new HostDetailViewModel(Inventory.Tree.Resolve(id), dashboard);
+    }
 
     /// <summary>
     /// Adds a host, in whichever folder the user is looking at.

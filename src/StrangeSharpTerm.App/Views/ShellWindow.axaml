@@ -3,6 +3,7 @@
         xmlns:vm="clr-namespace:StrangeSharpTerm.App.ViewModels"
         xmlns:theming="clr-namespace:StrangeSharpTerm.App.Theming"
         xmlns:views="clr-namespace:StrangeSharpTerm.App.Views"
+        xmlns:transport="clr-namespace:StrangeSharpTerm.Transport;assembly=StrangeSharpTerm.Transport"
         x:Class="StrangeSharpTerm.App.Views.ShellWindow"
         x:DataType="vm:ShellViewModel"
         x:Name="Root"
@@ -13,6 +14,24 @@
 
     <Window.Resources>
         <views:IconConverter x:Key="Icon" />
+
+        <!-- A bar and what it measures. Memory and disk are the same thing said
+             about different numbers, so they are the same template. -->
+        <DataTemplate x:Key="Gauge" x:DataType="vm:Gauge">
+            <Grid ColumnDefinitions="60,*,Auto" IsVisible="{Binding ., Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Grid.Column="0" Classes="muted" FontSize="11" VerticalAlignment="Center"
+                           Text="{Binding Label}" />
+                <ProgressBar Grid.Column="1" Height="4" Margin="0,0,10,0" VerticalAlignment="Center"
+                             Minimum="0" Maximum="100" Value="{Binding Percent}"
+                             Classes.warning="{Binding Pressure, Converter={x:Static views:PressureIs.Warning}}"
+                             Classes.critical="{Binding Pressure, Converter={x:Static views:PressureIs.Critical}}" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" Text="{Binding Detail}" />
+                    <TextBlock FontSize="11" VerticalAlignment="Center" Text="{Binding PercentText}" Width="34"
+                               TextAlignment="Right" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
     </Window.Resources>
 
     <Panel>
@@ -253,6 +272,83 @@
                             </Button>
                         </StackPanel>
 
+                        <!-- What the server says about itself, once someone asks.
+                             Asked for rather than assumed: selecting a host does
+                             not connect to it, and a dashboard that probed on
+                             selection would undo that quietly. -->
+                        <StackPanel Spacing="8" IsVisible="{Binding Detail.Dashboard,
+                                    Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <Grid ColumnDefinitions="*,Auto,Auto">
+                                <TextBlock Grid.Column="0" Classes="section" Text="SERVER"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Classes="muted" FontSize="11" Margin="0,0,8,0"
+                                           VerticalAlignment="Center"
+                                           Text="{Binding Detail.Dashboard.Uptime}" />
+                                <Button Grid.Column="2" Classes="row" Padding="8,3"
+                                        Command="{Binding Detail.Dashboard.RefreshCommand}">
+                                    <TextBlock FontSize="11" Text="Check" />
+                                </Button>
+                            </Grid>
+
+                            <Border Classes="chip" Padding="12,10" CornerRadius="6">
+                                <StackPanel Spacing="10">
+                                    <!-- Before the first answer, the card says what it is for. -->
+                                    <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                                               IsVisible="{Binding !Detail.Dashboard.HasAnswer}"
+                                               Text="Uptime, load, memory, disk and containers — one command, when you ask for it." />
+
+                                    <TextBlock Classes="danger" FontSize="11" TextWrapping="Wrap"
+                                               IsVisible="{Binding Detail.Dashboard.Failure,
+                                                           Converter={x:Static ObjectConverters.IsNotNull}}"
+                                               Text="{Binding Detail.Dashboard.Failure}" />
+
+                                    <TextBlock Classes="muted" FontSize="11"
+                                               IsVisible="{Binding Detail.Dashboard.AnsweredWithNothing}"
+                                               Text="The server answered, but has none of uptime, free or df." />
+
+                                    <!-- Load, with the little of it this pane has seen. -->
+                                    <Grid ColumnDefinitions="Auto,*,Auto"
+                                          IsVisible="{Binding Detail.Dashboard.Load,
+                                                      Converter={x:Static ObjectConverters.IsNotNull}}">
+                                        <TextBlock Grid.Column="0" Classes="muted" FontSize="11"
+                                                   Text="Load" VerticalAlignment="Center" Width="60" />
+                                        <TextBlock Grid.Column="1" FontFamily="monospace" FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   Text="{Binding Detail.Dashboard.Load}" />
+                                        <views:Sparkline Grid.Column="2" Width="120" Height="22"
+                                                         Stroke="{DynamicResource AccentBrush}"
+                                                         Values="{Binding Detail.Dashboard.LoadHistory}" />
+                                    </Grid>
+
+                                    <ContentControl Content="{Binding Detail.Dashboard.Memory}"
+                                                    ContentTemplate="{StaticResource Gauge}" />
+                                    <ContentControl Content="{Binding Detail.Dashboard.Disk}"
+                                                    ContentTemplate="{StaticResource Gauge}" />
+
+                                    <ItemsControl ItemsSource="{Binding Detail.Dashboard.Containers}" Margin="0,2,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="transport:ServerMetrics+Container">
+                                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2">
+                                                    <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                                                             Fill="{DynamicResource SuccessBrush}"
+                                                             IsVisible="{Binding IsRunning}" />
+                                                    <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+                                                             Fill="{DynamicResource MutedBrush}"
+                                                             IsVisible="{Binding !IsRunning}" />
+                                                    <TextBlock Text="{Binding Name}" FontSize="12"
+                                                               VerticalAlignment="Center" />
+                                                    <TextBlock Classes="muted" FontSize="11" Text="{Binding Status}"
+                                                               VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <TextBlock Classes="section" Text="CONNECTION" Margin="0,6,0,0" />
+
                         <ItemsControl ItemsSource="{Binding Detail.Fields}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:DetailField">
@@ -265,6 +361,9 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+
+                        <TextBlock Classes="section" Text="PORT FORWARDING" Margin="0,6,0,0"
+                                   IsVisible="{Binding Detail.Forwards.Count}" />
 
                         <ItemsControl ItemsSource="{Binding Detail.Forwards}">
                             <ItemsControl.ItemTemplate>

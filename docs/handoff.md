@@ -12,30 +12,38 @@ means; this says only what is done, what is in flight, and what to do first.
 | **M1** model and store | `StrangeSharpTerm.Model` and `.Store` with their 84 tests. The inventory file is byte-identical to the Swift app's, checked against goldens the Swift code itself generates (`build/swift-parity`) |
 | **M2** transport | One authenticated session per host carrying commands, shells, forwards and SFTP; host key trust shared with `ssh`; secrets in each platform's own store; `stctl`; the integration gate running against a real sshd on macOS **and** Windows in CI |
 | **M3** terminal | `TerminalSession` binding an XTerm.NET engine to an SSH channel, the Avalonia control, broadcast, scrollback, and `stctl terminal` |
-| **M5** (part) | the SFTP browser (`IRemoteFiles`, a pane, ⇧⌘B) and tunnels (`ITunnels`, a pane per host that starts and stops its forwards and releases the ports) |
+| **M5** (part) | the SFTP browser (`IRemoteFiles`, a pane, ⇧⌘B), tunnels (`ITunnels`, a pane that starts and stops a host's forwards and releases the ports), and the dashboard (`IServerHealth` over the M2 probe, in the detail pane, asked for rather than assumed) |
 | **M4** done | the window (sidebar, tabs, host detail, splits, broadcast), the theme system, the host and folder editors, the menu bar, the command palette, and the headless UI driver. `docs/adr/0004` and `0005` record the decisions |
 
-Around 401 tests, all green on both operating systems.
+Around 423 tests, all green on both operating systems.
 
 ## In flight
 
 Check `gh pr list` first — a pull request may have landed since this was
-written. At the time of writing: **tunnels** (branch `m5-tunnels`).
+written. At the time of writing: **the dashboard** (branch `m5-dashboard`).
 
 ## What to do next, in order
 
-1. **The rest of M5**: dashboards (`ServerProbe` and its parsers are already
-   ported, and `docs/reference/screenshots/dashboard.png` is the parity target),
-   credentials, snippets, and the settings sheet that should hold the theme
-   picker now at the foot of the sidebar. Three of the Swift app's shortcuts
-   still wait for them — `docs/adr/0005` lists which and why, including the one
-   that cannot be translated to Windows as it stands (⌃⌘X).
-2. **What the two new panes do not do yet.** The browser has no rename and no
+1. **A host authenticates once too often, and now three times.** `ConnectionPool`
+   was built in M2 to give one authenticated session per host, and
+   `TerminalLauncher` does not use it: a shell, a file browser, a set of tunnels
+   and a dashboard each build their own `SshSessionFactory` and connect again.
+   Watch `sshd.log` under `./build/local-sshd.sh` and you can count the
+   connections. It is the migration plan's headline transport property, so it
+   should be one app-level pool the launcher hands out sessions from — which
+   would also collapse the four factory arguments `ShellViewModel` now takes
+   into one seam.
+2. **The rest of M5**: credentials, snippets, and the settings sheet that should
+   hold the theme picker now at the foot of the sidebar. Three of the Swift
+   app's shortcuts still wait for them — `docs/adr/0005` lists which and why,
+   including the one that cannot be translated to Windows as it stands (⌃⌘X).
+3. **What the panes do not do yet.** The browser has no rename and no
    new-folder, though `IRemoteFiles` carries both calls, and no progress for a
    large transfer. Tunnels are read from the host's settings and cannot be added
    or edited there — the host editor deliberately leaves forwards alone and
-   preserves them, so an editor for them is the missing half.
-3. **Screenshots**, the other half of what the plan's CI table asks for at
+   preserves them, so an editor for them is the missing half. The dashboard is
+   asked for one probe at a time; the Swift app refreshed on a timer.
+4. **Screenshots**, the other half of what the plan's CI table asks for at
    M4-M5. The driver is in place (`tests/StrangeSharpTerm.App.WindowTests`);
    what is missing is rendering. `CaptureRenderedFrame` returns a bitmap, but
    only with Skia behind the headless platform (`UseHeadlessDrawing = false`
