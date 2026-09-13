@@ -53,7 +53,7 @@ public class ShellViewModelTests
         await shell.ConnectSelectedCommand.ExecuteAsync(null);
 
         shell.Tabs.Single().Title.ShouldBe("web-01");
-        shell.PaneContent.ShouldNotBeNull();
+        shell.Panes.ShouldHaveSingleItem();
         shell.ShowsDetail.ShouldBeFalse();
     }
 
@@ -91,7 +91,7 @@ public class ShellViewModelTests
         shell.Inventory.DeleteConnection(host.Id);
 
         shell.Workspace.Tabs.ShouldBeEmpty();
-        shell.PaneContent.ShouldBeNull();
+        shell.Panes.ShouldBeEmpty();
     }
 
     [Fact]
@@ -106,7 +106,7 @@ public class ShellViewModelTests
         shell.CloseTabCommand.Execute(shell.Tabs[0]);
 
         shell.Tabs.Count.ShouldBe(1);
-        shell.PaneContent.ShouldNotBeNull();
+        shell.Panes.ShouldHaveSingleItem();
     }
 }
 

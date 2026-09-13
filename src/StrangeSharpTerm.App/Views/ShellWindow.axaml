@@ -102,6 +102,34 @@
 
         <!-- The tabs, and whatever the focused one is showing. -->
         <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*">
+            <!-- Splitting, closing and broadcasting act on the focused tab, so
+                 they sit at the end of its strip rather than in the pane. -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="2"
+                        HorizontalAlignment="Right" Margin="8,8,8,0"
+                        IsVisible="{Binding Panes.Count}">
+                <ToggleButton Classes="row" Padding="6" ToolTip.Tip="Type into every pane"
+                              IsChecked="{Binding IsBroadcasting, Mode=TwoWay}"
+                              IsEnabled="{Binding CanBroadcast}">
+                    <Path Classes="icon" Width="14" Height="14"
+                          Data="{Binding Source=IconRadioTower, Converter={StaticResource Icon}}" />
+                </ToggleButton>
+                <Button Classes="row" Padding="6" ToolTip.Tip="Split side by side"
+                        Command="{Binding SplitRightCommand}">
+                    <Path Classes="icon" Width="14" Height="14"
+                          Data="{Binding Source=IconColumns2, Converter={StaticResource Icon}}" />
+                </Button>
+                <Button Classes="row" Padding="6" ToolTip.Tip="Split stacked"
+                        Command="{Binding SplitDownCommand}">
+                    <Path Classes="icon" Width="14" Height="14"
+                          Data="{Binding Source=IconRows2, Converter={StaticResource Icon}}" />
+                </Button>
+                <Button Classes="row" Padding="6" ToolTip.Tip="Close this pane"
+                        Command="{Binding ClosePaneCommand}">
+                    <Path Classes="icon" Width="14" Height="14"
+                          Data="{Binding Source=IconCircleX, Converter={StaticResource Icon}}" />
+                </Button>
+            </StackPanel>
+
             <ItemsControl Grid.Row="0" ItemsSource="{Binding Tabs}" Margin="8,8,8,0">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -143,7 +171,10 @@
                 </StackPanel>
             </Border>
 
-            <ContentControl Grid.Row="2" Margin="8" Content="{Binding PaneContent}" />
+            <views:PaneSplitView Grid.Row="2" Margin="8"
+                                 Panes="{Binding Panes}"
+                                 Axis="{Binding Axis}"
+                                 FocusCommand="{Binding FocusPaneCommand}" />
 
             <TextBlock Grid.Row="2" Classes="muted" Margin="24" TextWrapping="Wrap"
                        IsVisible="{Binding ShowsEmptyState}"
