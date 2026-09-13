@@ -34,24 +34,28 @@ public sealed partial class ShellViewModel : ObservableObject
 {
     private readonly TerminalRegistry _terminals = new();
     private readonly Func<Connection, TerminalSession> _connect;
+    private readonly Func<Connection, IRemoteFiles> _files;
     private readonly Func<TerminalSession, TerminalPalette, Control> _view;
     private readonly IDialogService _dialogs;
     private readonly AppTheme _theme;
 
     /// <param name="connect">How a host becomes a session. Replaced in tests by something that needs no server.</param>
     /// <param name="view">How a session becomes something on screen. Likewise.</param>
+    /// <param name="files">How a host becomes a directory listing. Likewise again.</param>
     public ShellViewModel(
         InventoryViewModel inventory,
         Func<Connection, TerminalSession>? connect = null,
         Func<TerminalSession, TerminalPalette, Control>? view = null,
         IDialogService? dialogs = null,
-        AppTheme? theme = null)
+        AppTheme? theme = null,
+        Func<Connection, IRemoteFiles>? files = null)
     {
         Inventory = inventory;
         _dialogs = dialogs ?? new ScriptedDialogService();
         _theme = theme ?? new AppTheme();
         Workspace = new WorkspaceViewModel(_terminals);
         _connect = connect ?? (connection => TerminalLauncher.Connect(Inventory.Tree, connection));
+        _files = files ?? (connection => TerminalLauncher.Files(Inventory.Tree, connection));
         _view = view ?? ((session, palette) => new TerminalPaneView(session, palette, _terminals));
 
         // Focusing a pane moves the sidebar with it, and deleting a host closes
@@ -400,6 +404,40 @@ public sealed partial class ShellViewModel : ObservableObject
         Show();
     }
 
+    /// <summary>Opens a file browser on the selected host, beside whatever is open.</summary>
+    [RelayCommand(CanExecute = nameof(HasSelectedHost))]
+    public async Task BrowseFiles()
+    {
+        if (Detail is not { } detail)
+            return;
+
+        Failure = null;
+        var connection = detail.Connection;
+        var pane = new Pane { Title = $"{connection.Name} files", Kind = new PaneKind.Files(), ConnectionId = connection.Id };
+
+        try
+        {
+            // Off the UI thread for the same reason a connection is: SFTP costs
+            // its own authentication (see SshNetSession.OpenSftp), and a window
+            // that freezes while a host times out is what that would cost.
+            var files = await Task.Run(() => _files(connection));
+            var browser = new FileBrowserViewModel(files, connection.Name, _dialogs);
+
+            Workspace.Open(pane, Panes.Count > 0 ? Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal : null);
+            _views[pane.Id] = _browser(browser);
+            Show();
+            await browser.Refresh();
+        }
+        catch (Exception e)
+        {
+            System.Diagnostics.Trace.WriteLine($"browsing {connection.Name} failed: {e}");
+            Failure = SshFailure.Classify(e).Summary;
+        }
+    }
+
+    /// <summary>How a browser becomes something on screen. Replaced in tests.</summary>
+    private readonly Func<FileBrowserViewModel, Control> _browser = model => new FileBrowserView(model);
+
     /// <summary>Opens a shell on a host, in its own tab.</summary>
     public async Task OpenTerminal(Connection connection, SplitAxis? splitting = null)
     {
@@ -477,6 +515,7 @@ public sealed partial class ShellViewModel : ObservableObject
         SplitRightCommand.NotifyCanExecuteChanged();
         SplitDownCommand.NotifyCanExecuteChanged();
         ClosePaneCommand.NotifyCanExecuteChanged();
+        BrowseFilesCommand.NotifyCanExecuteChanged();
         ToggleBroadcastCommand.NotifyCanExecuteChanged();
         FocusTabAtCommand.NotifyCanExecuteChanged();
     }

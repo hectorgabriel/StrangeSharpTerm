@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Layout;
+using Avalonia.Platform.Storage;
 using Avalonia.Media;
 using StrangeSharpTerm.App.ViewModels;
 
@@ -27,6 +28,9 @@ public interface IDialogService
 
     /// <inheritdoc cref="Edit(HostDraft)"/>
     Task<bool> Edit(FolderDraft draft);
+
+    /// <summary>Asks for files from this machine. Empty when the user picked none.</summary>
+    Task<IReadOnlyList<string>> PickFiles(string title);
 }
 
 /// <summary>Answers without asking. For tests, and for a headless run.</summary>
@@ -60,6 +64,15 @@ public sealed class ScriptedDialogService(bool answer = false) : IDialogService
         Edited.Add(draft);
         return Task.FromResult(EditFolder?.Invoke(draft) ?? answer);
     }
+
+    /// <summary>What the file picker would have returned. Nothing, unless a test says otherwise.</summary>
+    public IReadOnlyList<string> Files { get; set; } = [];
+
+    public Task<IReadOnlyList<string>> PickFiles(string title)
+    {
+        Asked.Add((title, ""));
+        return Task.FromResult(Files);
+    }
 }
 
 public sealed class DialogService(Func<Window?> owner) : IDialogService
@@ -67,6 +80,28 @@ public sealed class DialogService(Func<Window?> owner) : IDialogService
     public Task<bool> Edit(HostDraft draft) => Show(new HostEditor(draft));
 
     public Task<bool> Edit(FolderDraft draft) => Show(new FolderEditor(draft));
+
+    /// <summary>
+    /// The platform's own file picker, through Avalonia's storage provider —
+    /// <c>NSOpenPanel</c> on macOS and the Win32 dialog on Windows, without this
+    /// knowing which.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> PickFiles(string title)
+    {
+        if (owner() is not { StorageProvider: { } storage })
+            return [];
+
+        var chosen = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = true,
+        });
+
+        // Local files only: a picked item that has no path is something like an
+        // iCloud placeholder, and uploading it would need a stream rather than a
+        // name.
+        return [.. chosen.Select(file => file.TryGetLocalPath()).OfType<string>()];
+    }
 
     /// <summary>
     /// Modal to the window that asked, where there is one. A dialog with no

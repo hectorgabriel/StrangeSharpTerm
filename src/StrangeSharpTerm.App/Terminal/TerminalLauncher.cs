@@ -52,6 +52,24 @@ public static class TerminalLauncher
         return new TerminalSession(SshTerminalChannel.Open(session));
     }
 
+    /// <summary>
+    /// The host's files, over SFTP.
+    ///
+    /// The same factory as a shell, so the host key is checked by the same rules
+    /// and the credential comes from the same place — but a second
+    /// authentication, which is SSH.NET's price and is noted where it is paid.
+    /// </summary>
+    public static IRemoteFiles Files(InventoryTree tree, Connection connection, IHostKeyPrompt? prompt = null)
+    {
+        var factory = new SshSessionFactory(
+            new PlatformSecretStore(),
+            prompt ?? new RefuseUnknownHostKeys(),
+            id => tree.Credentials.GetValueOrDefault(id));
+
+        var session = (SshNetSession)factory.Connect(tree.Resolve(connection.Id));
+        return new SftpFiles(session.OpenSftp());
+    }
+
     /// <summary>Opens a session on the host named by the request, ready to attach to a view.</summary>
     public static TerminalSession Connect(TerminalLaunchRequest request)
     {

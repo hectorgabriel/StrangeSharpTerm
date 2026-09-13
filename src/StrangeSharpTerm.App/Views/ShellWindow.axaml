@@ -223,6 +223,13 @@
                                     <TextBlock Text="Open a shell" Foreground="{DynamicResource OnAccentBrush}" />
                                 </StackPanel>
                             </Button>
+                            <Button Command="{Binding BrowseFilesCommand}" Padding="12,6">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Path Classes="icon" Width="14" Height="14"
+                                          Data="{Binding Source=IconFolderOpen, Converter={StaticResource Icon}}" />
+                                    <TextBlock Text="Browse files" />
+                                </StackPanel>
+                            </Button>
                             <Button Command="{Binding EditSelectedCommand}" Padding="12,6">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <Path Classes="icon" Width="14" Height="14"
