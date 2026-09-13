@@ -83,6 +83,9 @@ public static class CommandCatalogue
                 Gesture: new KeyGesture(Key.B, command | KeyModifiers.Alt)),
             new("session.files", "Browse Files", CommandGroup.Session, shell.BrowseFilesCommand,
                 Gesture: new KeyGesture(Key.B, command | KeyModifiers.Shift)),
+            // No shortcut: the Swift app's keyboard table has none for tunnels,
+            // and inventing one risks colliding with a shortcut it does define.
+            new("session.tunnels", "Tunnels", CommandGroup.Session, shell.OpenTunnelsCommand),
 
             new("view.palette", "Command Palette…", CommandGroup.View, shell.OpenPaletteCommand,
                 Gesture: new KeyGesture(Key.K, command)),

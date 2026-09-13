@@ -70,6 +70,23 @@ public static class TerminalLauncher
         return new SftpFiles(session.OpenSftp());
     }
 
+    /// <summary>
+    /// Somewhere to start this host's forwards.
+    ///
+    /// The session, not a second one: forwards ride the connection that is
+    /// already authenticated, which is the property ControlMaster gave the Swift
+    /// app and SSH.NET gives natively.
+    /// </summary>
+    public static ITunnels Tunnels(InventoryTree tree, Connection connection, IHostKeyPrompt? prompt = null)
+    {
+        var factory = new SshSessionFactory(
+            new PlatformSecretStore(),
+            prompt ?? new RefuseUnknownHostKeys(),
+            id => tree.Credentials.GetValueOrDefault(id));
+
+        return new SshTunnels((SshNetSession)factory.Connect(tree.Resolve(connection.Id)));
+    }
+
     /// <summary>Opens a session on the host named by the request, ready to attach to a view.</summary>
     public static TerminalSession Connect(TerminalLaunchRequest request)
     {

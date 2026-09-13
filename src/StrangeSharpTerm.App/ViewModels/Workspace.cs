@@ -32,6 +32,9 @@ public abstract record PaneKind
 
     public sealed record Files : PaneKind;
 
+    /// <summary>This host's port forwards, and which of them are up.</summary>
+    public sealed record Tunnels : PaneKind;
+
     /// <summary>A conversation about this pane's host, whose transcript lives elsewhere, keyed by pane.</summary>
     public sealed record Assistant : PaneKind;
 
