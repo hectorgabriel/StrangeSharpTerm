@@ -34,8 +34,14 @@ public sealed record ForwardSummary(string Flag, string Specification, string Na
 /// parts are decisions — what an unset port means, which values deserve a
 /// warning — and those are worth testing.
 /// </summary>
-public sealed class HostDetailViewModel(ResolvedConnection resolved)
+public sealed class HostDetailViewModel(ResolvedConnection resolved, DashboardViewModel? dashboard = null)
 {
+    /// <summary>
+    /// What the server says about itself, once someone asks. Null in the tests
+    /// that are only about the fields.
+    /// </summary>
+    public DashboardViewModel? Dashboard { get; } = dashboard;
+
     private ResolvedSettings Settings => resolved.Settings;
 
     public Connection Connection => resolved.Connection;

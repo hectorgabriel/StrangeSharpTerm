@@ -87,6 +87,30 @@ public static class TerminalLauncher
         return new SshTunnels((SshNetSession)factory.Connect(tree.Resolve(connection.Id)));
     }
 
+    /// <summary>
+    /// Somewhere to ask this host how it is.
+    ///
+    /// Lazy: the session is opened by the first probe, not by building this.
+    /// Selecting a host must not connect to it, and the dashboard is built the
+    /// moment a host is selected.
+    /// </summary>
+    public static IServerHealth Health(InventoryTree tree, Connection connection, IHostKeyPrompt? prompt = null) =>
+        new LazyHealth(() =>
+        {
+            var factory = new SshSessionFactory(
+                new PlatformSecretStore(),
+                prompt ?? new RefuseUnknownHostKeys(),
+                id => tree.Credentials.GetValueOrDefault(id));
+            return new SshServerHealth((SshNetSession)factory.Connect(tree.Resolve(connection.Id)));
+        });
+
+    private sealed class LazyHealth(Func<IServerHealth> open) : IServerHealth
+    {
+        private IServerHealth? _opened;
+
+        public ServerMetrics Collect() => (_opened ??= open()).Collect();
+    }
+
     /// <summary>Opens a session on the host named by the request, ready to attach to a view.</summary>
     public static TerminalSession Connect(TerminalLaunchRequest request)
     {

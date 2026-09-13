@@ -118,6 +118,16 @@
         <Setter Property="Background" Value="{DynamicResource BorderBrush}" />
     </Style>
 
+    <!-- A gauge that is filling up says so in colour: three quarters is worth
+         noticing, nine tenths is why anyone opened the dashboard. -->
+    <Style Selector="ProgressBar.warning /template/ Border#PART_Indicator">
+        <Setter Property="Background" Value="{DynamicResource WarningBrush}" />
+    </Style>
+
+    <Style Selector="ProgressBar.critical /template/ Border#PART_Indicator">
+        <Setter Property="Background" Value="{DynamicResource DangerBrush}" />
+    </Style>
+
     <!-- The command palette: a sheet of its own, over the window. -->
     <Style Selector="Border.palette">
         <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
