@@ -116,6 +116,32 @@ public class HostContextTests
         context.Render().ShouldContain("```\ndeploy@web-01:~$ df -h\n```");
     }
 
+    /// <summary>
+    /// The block is the same string on either operating system.
+    ///
+    /// It describes a remote host and is read by a provider, and neither has an
+    /// opinion about the machine the window is running on. Built with
+    /// <c>AppendLine</c> it carried CRLF on Windows, which CI caught and macOS
+    /// never would have.
+    /// </summary>
+    [Fact]
+    public void TheBlockIsTheSameOnEitherOperatingSystem()
+    {
+        var context = new HostContext
+        {
+            Alias = "web-01",
+            Kernel = "Linux 6.1.0 x86_64",
+            Metrics = new ServerMetrics { Uptime = "3 days" },
+            // Whatever the far end sent, one ending leaves here.
+            TerminalTail = "deploy@web-01:~$ df -h\r\n/dev/sda1 98% /",
+        };
+
+        var block = context.Render();
+
+        block.ShouldNotContain("\r");
+        block.ShouldContain("```\ndeploy@web-01:~$ df -h\n/dev/sda1 98% /\n```");
+    }
+
     [Theory]
     [InlineData(0UL, "0B")]
     [InlineData(512UL, "512B")]

@@ -47,26 +47,36 @@ public sealed record HostContext
     /// </summary>
     public string Render()
     {
-        var block = new StringBuilder();
-        block.Append("Host: ").AppendLine(Alias);
+        List<string> lines = [$"Host: {Alias}"];
 
         if (Kernel is { Length: > 0 } kernel)
-            block.Append("System: ").AppendLine(kernel.Trim());
+            lines.Add($"System: {kernel.Trim()}");
 
         if (Metrics is { IsEmpty: false } metrics)
         {
-            block.AppendLine().AppendLine("Current state:");
-            foreach (var line in Describe(metrics))
-                block.Append("- ").AppendLine(line);
+            lines.Add("");
+            lines.Add("Current state:");
+            lines.AddRange(Describe(metrics).Select(line => $"- {line}"));
         }
 
         if (TerminalTail is { Length: > 0 } tail)
         {
-            block.AppendLine().AppendLine("What the terminal is showing:");
-            block.AppendLine("```").AppendLine(tail).AppendLine("```");
+            lines.Add("");
+            lines.Add("What the terminal is showing:");
+            lines.Add("```");
+            // The tail comes from a pty on the far end, which may have sent
+            // either ending; what leaves here is one.
+            lines.AddRange(tail.Replace("\r\n", "\n").Split('\n'));
+            lines.Add("```");
         }
 
-        return block.ToString().TrimEnd();
+        // Joined with a line feed rather than built with AppendLine, whose
+        // ending is the *local* machine's. This block describes a remote host
+        // and is read by a provider, and neither has an opinion about the
+        // operating system the window happens to be running on -- a Windows user
+        // asking about a Linux server was sending CRLF for its output, and the
+        // preview and the request have to be one string.
+        return string.Join('\n', lines).TrimEnd();
     }
 
     /// <summary>Metrics as sentences, leaving out whatever the server did not report.</summary>
