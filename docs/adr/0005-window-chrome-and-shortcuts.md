@@ -78,16 +78,18 @@ applies to anything else that uses Control as a second modifier on macOS.
 ### What is bound now, and what is not
 
 Bound: ⌘K palette, ⌘T new session, ⌘D and ⇧⌘D split, ⌘W close pane, ⌘1–⌘9 tabs,
-⌥⌘B broadcast, ⌘N and ⇧⌘N new host and folder, ⌘E edit, ⇧⌘B browse files, and
-⌘, settings.
+⌥⌘B broadcast, ⌘N and ⇧⌘N new host and folder, ⌘E edit, ⇧⌘B browse files,
+⌘, settings, and — **since M6** — ⌥⌘A assistant and ⇧⌥⌘A ask several hosts. Alt
+is Alt on both platforms, so those two are Ctrl+Alt+A and Ctrl+Shift+Alt+A on
+Windows, which is the mapping rule above and not an exception to it.
 
 **⌘, is the one gesture here that is not a port.** The Swift app never declared
 it: SwiftUI's `Settings` scene binds it on macOS for free. Declaring it is what
 it takes to have the same habit work here, and Ctrl+, is the same habit on
 Windows. Anything else added this way belongs in this list, with the reason.
 
-Not bound, because the thing they do does not exist yet, each waiting for its
-milestone: ⌥⌘A and ⇧⌥⌘A (assistant, M6), ⌃⌘X (disconnect, M5, and see above). ⌘0 (host details) is left out for a different reason: the detail
+Not bound, because the thing they do does not exist yet: ⌃⌘X (disconnect, and
+see above). ⌘0 (host details) is left out for a different reason: the detail
 pane here appears when nothing is open or when the selection differs from the
 focused pane, so there is no state for ⌘0 to put the window into that a
 selection does not already describe. If that changes, it comes back.

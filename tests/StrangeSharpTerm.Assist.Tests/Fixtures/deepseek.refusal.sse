@@ -1,0 +1,6 @@
+data: {"id":"3","choices":[{"index":0,"delta":{"role":"assistant","content":"I cannot help with that."},"finish_reason":null}]}
+
+data: {"id":"3","choices":[{"index":0,"delta":{},"finish_reason":"content_filter"}]}
+
+data: [DONE]
+

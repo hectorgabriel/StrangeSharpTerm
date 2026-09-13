@@ -10,6 +10,37 @@ Swift/SwiftUI app. No Swift code carries over; the design does.
 
 ## Status
 
+**M6 — the assistant.** A conversation scoped to one host, opened with ⌥⌘A and
+split beside the session it is about. Questions carry the name you gave the
+host, what `uname` reported, the metrics the dashboard's own probe collects when
+you ask, and the tail of the terminal beside the pane — scrubbed of secrets, with
+the count shown, and previewed in full before anything is sent.
+
+By default nothing is ever run: a suggested command arrives with a button that
+*types* it into the terminal and stops. Turning on **Run commands** gives the
+model one tool, and `CommandPolicy` is what makes that something other than
+reckless — an allowlist where every stage of a pipeline is judged, so `ps aux |
+tee /tmp/x` stops and `df -h` does not. Twelve commands a question, sixty seconds
+each.
+
+⇧⌥⌘A opens the orchestrator: one instruction across every host you tick, three
+at a time, each with its own agent and its own gate, collated into one answer
+that is told which hosts never reported. Its second mode writes a **plan** —
+phases in order, different work per host, one value carried between them — and
+runs none of it until you have read it.
+
+Both providers, Claude and DeepSeek, are reached through one seam; see
+`docs/adr/0006` for why one is an SDK and the other is not.
+
+```sh
+# one real exchange against a real host and a real provider
+dotnet run --project src/stctl -- ask user@host --question "why is the disk full?"
+```
+
+**M5 — feature panes.** SFTP browser, tunnels, the dashboard, the credential and
+snippet libraries, and the settings sheet — all over one authenticated session
+per host.
+
 **M4 — the app shell.** A window with a sidebar, tabs, split panes, host
 detail, the host and folder editors, a menu bar and a command palette, in either
 of the Swift app's two themes. `docs/adr/0004` says where the colours came from
@@ -22,7 +53,7 @@ XTerm.NET engine, rendered by an Avalonia control; the server owns the pty, so
 there is no ConPTY and no openpty anywhere in the code, which is why the same
 terminal works on both platforms. Resizing the window reaches the remote pty,
 themes carry the Swift app's colours, broadcast types into several panes at
-once, and scrollback is readable — the thing the assistant will read in M6.
+once, and scrollback is readable — which is what the assistant reads.
 
 Run one against a host:
 
@@ -81,7 +112,8 @@ src/StrangeSharpTerm.Store/       inventory JSON, ssh_config parser and importer
 src/StrangeSharpTerm.Security/    known_hosts, credential storage
 src/StrangeSharpTerm.Transport/   SSH.NET connection pool, SFTP, probes
 src/StrangeSharpTerm.Terminal/    XTerm.NET engine bound to an SSH channel
-src/StrangeSharpTerm.Assist/      LLM providers, tool loop, command policy
+src/StrangeSharpTerm.Assist/      providers, the agent loop, the command gate,
+                                  redaction, orchestration and run plans
 src/StrangeSharpTerm.Mcp/         MCP client
 src/StrangeSharpTerm.App/         Avalonia views and view models
 src/stctl/                        headless driver, used by the integration tests

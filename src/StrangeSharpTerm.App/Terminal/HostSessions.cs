@@ -23,6 +23,23 @@ public interface IHostSessions
 
     /// <summary>Lazy: built without connecting, because a dashboard is built before it is asked.</summary>
     IServerHealth Health(Connection connection);
+
+    /// <summary>
+    /// Somewhere to run a command, for the assistant. Lazy for the same reason
+    /// as <see cref="Health"/>: an assistant pane is opened before it is asked
+    /// anything, and opening one should not connect.
+    /// </summary>
+    IRemoteCommands Commands(Connection connection);
+
+    /// <summary>
+    /// Whether this host is already connected.
+    ///
+    /// Asked rather than assumed, and asked without connecting: an orchestrated
+    /// run only asks hosts that are up, because connecting can raise a host-key
+    /// decision and a fan-out that stopped on a dialog for every host would be
+    /// worse than one that says plainly which hosts it left out.
+    /// </summary>
+    bool IsOpen(Connection connection);
 }
 
 /// <summary>
@@ -78,6 +95,11 @@ public sealed class HostSessions : IHostSessions, IDisposable
 
     public IServerHealth Health(Connection connection) => new Lazily(() => new SshServerHealth(Session(connection)));
 
+    public IRemoteCommands Commands(Connection connection) =>
+        new LazyCommands(() => new SshCommands(Session(connection)));
+
+    public bool IsOpen(Connection connection) => _pool.IsOpen(connection.Id);
+
     /// <summary>Closes a host's session, and everything riding it.</summary>
     public void Disconnect(NodeId host) => _pool.Disconnect(host);
 
@@ -97,5 +119,13 @@ public sealed class HostSessions : IHostSessions, IDisposable
         private IServerHealth? _opened;
 
         public ServerMetrics Collect() => (_opened ??= open()).Collect();
+    }
+
+    /// <inheritdoc cref="Lazily"/>
+    private sealed class LazyCommands(Func<IRemoteCommands> open) : IRemoteCommands
+    {
+        private IRemoteCommands? _opened;
+
+        public CommandResult Run(string command, TimeSpan timeout) => (_opened ??= open()).Run(command, timeout);
     }
 }

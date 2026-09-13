@@ -1,6 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="Anthropic" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The shell scanner and the policy's rule table are pinned by tests without being public API. -->
+    <InternalsVisibleTo Include="StrangeSharpTerm.Assist.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../StrangeSharpTerm.Model/StrangeSharpTerm.Model.csproj" />
+    <ProjectReference Include="../StrangeSharpTerm.Security/StrangeSharpTerm.Security.csproj" />
+    <!--
+      For ServerMetrics alone. The assistant reports what the dashboard shows,
+      so the two read one type: a second metrics record here would be a second
+      thing to keep in step, and the first time it drifted the pane and the
+      dashboard would disagree about the same server.
+    -->
+    <ProjectReference Include="../StrangeSharpTerm.Transport/StrangeSharpTerm.Transport.csproj" />
   </ItemGroup>
 </Project>

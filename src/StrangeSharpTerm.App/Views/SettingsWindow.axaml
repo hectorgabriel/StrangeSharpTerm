@@ -11,9 +11,13 @@
         Foreground="{DynamicResource TextBrush}">
 
     <!--
-        Appearance and the libraries. The Swift sheet also had an assistant
-        section and a connected-tools section; those arrive with M6 and M7, and
-        an empty section now would only promise something that is not there.
+        Appearance, the assistant, and the libraries. Connected tools is the
+        section still to come, with M7; an empty one now would only promise
+        something that is not there.
+
+        The assistant's two context switches live here rather than in a pane
+        because each of them is a choice about what leaves the machine, and a
+        choice like that belongs somewhere a person can find it.
     -->
     <Window.Resources>
         <!-- Declared here rather than on the application, as every other view
@@ -67,6 +71,70 @@
 
                 <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
                            Text="{x:Static vm:SettingsViewModel.ThemeNote}" />
+
+                <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,14" />
+
+                <TextBlock Classes="section" Text="ASSISTANT" />
+
+                <ItemsControl ItemsSource="{Binding Providers}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ProviderChoice">
+                            <Button Classes="card" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                                    Margin="0,0,0,6" Padding="10"
+                                    Command="{Binding $parent[ItemsControl].((vm:SettingsViewModel)DataContext).ChooseProviderCommand}"
+                                    CommandParameter="{Binding}">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel Grid.Column="0" Spacing="2">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                        <!-- Which country the terminal output is going to is
+                                             part of choosing one, not a footnote. -->
+                                        <TextBlock Classes="muted" FontSize="11" Text="{Binding DataGoesTo}" />
+                                        <TextBlock Classes="muted" FontSize="11" Text="{Binding KeyNote}" />
+                                    </StackPanel>
+                                    <Path Grid.Column="1" Classes="icon" Width="18" Height="18"
+                                          VerticalAlignment="Center" IsVisible="{Binding IsChosen}"
+                                          Stroke="{DynamicResource AccentBrush}"
+                                          Data="{Binding Source=IconCircleCheck, Converter={StaticResource Icon}}" />
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Free text with the known ones offered: model names change
+                     faster than this app ships. -->
+                <Grid ColumnDefinitions="Auto,*" Margin="0,6,0,0">
+                    <TextBlock Grid.Column="0" Text="Model" VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <AutoCompleteBox Grid.Column="1" Text="{Binding Model}"
+                                     Watermark="{Binding DefaultModel}"
+                                     FilterMode="Contains" MinimumPrefixLength="0"
+                                     ItemsSource="{Binding KnownModels}" />
+                </Grid>
+
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,6,0,0">
+                    <TextBlock Grid.Column="0" Text="API key" VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <TextBox Grid.Column="1" PasswordChar="•" Text="{Binding NewKey}"
+                             Watermark="Paste a key to save it" />
+                    <Button Grid.Column="2" Padding="10,4" Margin="8,0,0,0" Command="{Binding SaveKeyCommand}">
+                        <TextBlock Text="Save" FontSize="12" />
+                    </Button>
+                    <Button Grid.Column="3" Padding="10,4" Margin="6,0,0,0" Command="{Binding ForgetKeyCommand}">
+                        <TextBlock Text="Forget" FontSize="12" />
+                    </Button>
+                </Grid>
+
+                <TextBlock Classes="danger" FontSize="11" TextWrapping="Wrap" Text="{Binding KeyFailure}"
+                           IsVisible="{Binding KeyFailure, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"
+                           Text="{x:Static vm:SettingsViewModel.ContextNote}" />
+
+                <CheckBox IsChecked="{Binding SendMetrics}">
+                    <TextBlock Text="Send the host's current metrics" FontSize="12" />
+                </CheckBox>
+                <CheckBox IsChecked="{Binding SendTerminalTail}" Margin="0,-6,0,0">
+                    <TextBlock Text="Send what the terminal is showing, with secrets removed" FontSize="12" />
+                </CheckBox>
 
                 <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,14" />
 

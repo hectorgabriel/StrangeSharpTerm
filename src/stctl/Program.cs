@@ -10,6 +10,7 @@ using System.CommandLine;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using StrangeSharpTerm.Assist;
 using StrangeSharpTerm.Model;
 using StrangeSharpTerm.Security;
 using StrangeSharpTerm.Terminal;
@@ -266,6 +267,71 @@ get.SetAction(parsed => WithSession(parsed, session =>
 var sftp = new Command("sftp", "Move files over SFTP.") { put, get };
 root.Add(sftp);
 
+// ------------------------------------------------------------------- ask
+//
+// One real assistant turn against a real host and a real provider. Every piece
+// of the assistant has unit tests and both providers are driven end to end
+// against a stub, but nothing in a test says whether a live exchange works --
+// that needs an account, and this is the command that spends one.
+//
+// STRANGESHARPTERM_ASSIST_PROVIDER, _MODEL and _ENDPOINT redirect it, which is
+// how a provider's wire format is checked against a stub without an account.
+var questionOption = new Option<string>("--question") { Description = "What to ask about the host.", Required = true };
+var contextOption = new Option<bool>("--dump-context") { Description = "Print the block verbatim before it is sent." };
+var runCommandsOption = new Option<bool>("--run-commands") { Description = "Give the model the tool that runs commands." };
+var approveOption = new Option<bool>("--approve") { Description = "Answer every gate with yes. For a throwaway server only." };
+
+var ask = new Command("ask", "Ask an assistant about the host.")
+{
+    target, questionOption, contextOption, runCommandsOption, approveOption,
+};
+ask.SetAction(parsed => WithSession(parsed, session =>
+{
+    var settings = new AssistSettings().WithEnvironmentOverrides();
+    if (AssistBackends.For(settings) is not { } backend)
+    {
+        Console.Error.WriteLine(AssistBackends.NoKey(settings));
+        return 2;
+    }
+
+    var alias = parsed.GetValue(target)!;
+    var host = new StctlHost(alias, session);
+    var approved = parsed.GetValue(approveOption);
+    var agent = new HostAgent(backend, host, settings, new StandingAnswer(approved));
+
+    Console.WriteLine($"{backend.ProviderName} · {backend.Model}");
+
+    if (parsed.GetValue(contextOption))
+    {
+        var context = agent.Context().GetAwaiter().GetResult();
+        Console.WriteLine("--- what gets sent ---");
+        Console.WriteLine(context.Render());
+        Console.WriteLine($"--- {context.Redactions} secret(s) removed ---");
+    }
+
+    // Printed as they happen rather than at the end: a run that stops at a gate
+    // with --approve off should say what it was stopped on.
+    agent.Added += (_, entry) =>
+    {
+        if (entry is TranscriptEntry.Step step)
+            Console.WriteLine($"$ {step.Command}   ({(step.RanUnattended ? "auto" : step.Gate)})");
+        else if (entry is TranscriptEntry.Note note)
+            Console.WriteLine($"! {note.Text}");
+    };
+
+    var answer = agent.Ask(
+        parsed.GetValue(questionOption)!,
+        new AskOptions { MayRunCommands = parsed.GetValue(runCommandsOption) }).GetAwaiter().GetResult();
+
+    Console.WriteLine();
+    Console.WriteLine(answer.Text);
+    Console.WriteLine();
+    Console.WriteLine($"commands={answer.CommandsRun}");
+
+    return answer.Failed ? 1 : 0;
+}));
+root.Add(ask);
+
 return root.Parse(args).Invoke();
 
 /// <summary>COLSxROWS, as people write a terminal size.</summary>
@@ -300,6 +366,44 @@ static string ReadBanner(int port)
     catch (Exception e)
     {
         return $"<{e.GetType().Name}>";
+    }
+}
+
+/// <summary>
+/// <see cref="IHostAccess"/> over one stctl session.
+///
+/// There is no terminal here, so a question carries the host's name, its kernel
+/// and its metrics and nothing else -- which is also the smallest thing that
+/// proves the path works.
+/// </summary>
+internal sealed class StctlHost(string alias, SshNetSession session) : IHostAccess
+{
+    public string Alias => alias;
+
+    public Task<HostSnapshot> Look(bool metrics, bool terminalTail, int tailLines, CancellationToken cancellationToken = default)
+    {
+        var kernel = session.Run(HostContext.KernelCommand, TimeSpan.FromSeconds(10)).StandardOutput.Trim();
+        return Task.FromResult(new HostSnapshot(
+            kernel,
+            metrics ? ServerProbe.Parse(session.Run(ServerProbe.Command, TimeSpan.FromSeconds(20)).StandardOutput) : null));
+    }
+
+    public Task<CommandOutcome> Run(string command, TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var result = session.Run(command, timeout);
+            var output = string.Join(
+                "\n",
+                new[] { result.StandardOutput, result.StandardError }
+                    .Where(stream => stream.Trim().Length > 0)
+                    .Select(stream => stream.TrimEnd()));
+            return Task.FromResult(new CommandOutcome(result.ExitStatus, output));
+        }
+        catch (Exception e) when (e is TimeoutException or OperationCanceledException)
+        {
+            return Task.FromResult(new CommandOutcome(-1, "", TimedOut: true));
+        }
     }
 }
 

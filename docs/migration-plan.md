@@ -362,9 +362,19 @@ an ADR, the Windows title bar, where the menu lives, and how ⌘ shortcuts map t
 **M5 — Feature panes.** SFTP browser (SSH.NET `SftpClient`), tunnels (`ForwardedPort*`),
 dashboards, credentials, snippets, all editor dialogs via `IDialogService`.
 
-**M6 — Assistant.** Port `STAssist` and its 136 tests: both providers, both stream
-decoders, `CommandPolicy`, `Redaction`, orchestration, run plans. The assistant and
-orchestrator panes.
+**M6 — Assistant. Done.** `StrangeSharpTerm.Assist` and its 265 tests: both
+providers, `CommandPolicy`, `Redaction`, the agent loop, orchestration and run
+plans, plus the assistant and orchestrator panes and the settings section.
+
+One decision departs from the plan and is recorded as `docs/adr/0006`. The plan
+says "both stream decoders", which was right for Swift and is not right here:
+Swift had no Anthropic SDK and C# does, and the request shapes this depends on —
+adaptive thinking, a refusal as a stop reason, a tool call streamed as partial
+JSON — are exactly the ones that move between model generations. Claude goes
+through the official SDK; DeepSeek stays raw HTTP, so one decoder is ported and
+it is the one with no vendor keeping it current. `IAssistBackend` is still the
+only seam, and both providers are driven end to end against a stub returning a
+recorded stream.
 
 **M7 — MCP.** Wrap the official SDK, port the config and OAuth surface, port the 58
 tests. MCP settings and server editor UI.

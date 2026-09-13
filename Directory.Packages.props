@@ -44,6 +44,18 @@
     <PackageVersion Include="SshNet.Agent" Version="2026.0.0" />
   </ItemGroup>
 
+  <ItemGroup Label="Assistant">
+    <!--
+      The official Anthropic SDK, rather than the raw HTTP the Swift app used:
+      Swift had no SDK to take and C# does. The request shapes this app cares
+      about (adaptive thinking, a streamed tool call, a refusal) are exactly the
+      ones that have moved between model generations, and following them is what
+      an SDK is for. DeepSeek stays raw HTTP: it is OpenAI-shaped and has no SDK
+      of its own here. See docs/adr/0006.
+    -->
+    <PackageVersion Include="Anthropic" Version="12.47.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Platform">
     <!-- Git Credential Manager's store: macOS Keychain, Windows Credential Manager. -->
     <PackageVersion Include="Devlooped.CredentialManager" Version="2.7.0" />

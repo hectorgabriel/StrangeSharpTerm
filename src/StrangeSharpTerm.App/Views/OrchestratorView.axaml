@@ -1,0 +1,259 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:StrangeSharpTerm.App.ViewModels"
+             xmlns:views="clr-namespace:StrangeSharpTerm.App.Views"
+             xmlns:assist="clr-namespace:StrangeSharpTerm.Assist;assembly=StrangeSharpTerm.Assist"
+             x:Class="StrangeSharpTerm.App.Views.OrchestratorView"
+             x:DataType="vm:OrchestratorViewModel">
+    <!--
+        One instruction across several hosts, and the plan mode beside it.
+
+        Every host is listed with its own status and findings above the collated
+        answer. A summary that reads as though it covered ten hosts when three
+        were unreachable is the failure this layout exists to prevent, so a host
+        that failed or was skipped says so in that list.
+
+        A plan appears in full: every phase, its hosts, and the words each host
+        will be given. Summarising it into "3 phases, 4 hosts" would be a plan
+        nobody could review, and review is the only thing standing between a
+        model and a fleet.
+    -->
+    <UserControl.Resources>
+        <views:IconConverter x:Key="Icon" />
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto,Auto,Auto" Background="{DynamicResource BackgroundBrush}">
+
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="12,10,10,8">
+            <Path Grid.Column="0" Classes="icon" Width="14" Height="14" Margin="0,0,8,0"
+                  VerticalAlignment="Center" Stroke="{DynamicResource AccentBrush}"
+                  Data="{Binding Source=IconLayers, Converter={StaticResource Icon}}" />
+            <TextBlock Grid.Column="1" Text="Orchestrator" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="2" Classes="muted" Margin="8,0,0,0" VerticalAlignment="Center"
+                       Text="{Binding Progress}" />
+            <TextBlock Grid.Column="3" Classes="muted" FontSize="11" VerticalAlignment="Center"
+                       Text="{Binding Answering}" />
+        </Grid>
+
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Margin="12,0,12,8" Spacing="8">
+
+                <TextBlock Classes="danger" FontSize="12" TextWrapping="Wrap"
+                           IsVisible="{Binding Refusal, Converter={x:Static ObjectConverters.IsNotNull}}"
+                           Text="{Binding Refusal}" />
+
+                <!-- The question the findings below are answers to. -->
+                <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,4"
+                           IsVisible="{Binding Asked.Length}" Text="{Binding Asked}" />
+
+                <!-- Ask: one row per host, then the collated answer. -->
+                <ItemsControl ItemsSource="{Binding Findings}" IsVisible="{Binding IsAsking}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:FindingRow">
+                            <Border Classes="chip" Padding="12,10" CornerRadius="6" Margin="0,0,0,6">
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Alias}"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Classes="muted" FontSize="11"
+                                               Text="{Binding Label}" />
+                                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0"
+                                               TextWrapping="Wrap" FontSize="12" Text="{Binding Text}"
+                                               IsVisible="{Binding Reported}" />
+                                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" Classes="muted"
+                                               TextWrapping="Wrap" FontSize="12" Text="{Binding Text}"
+                                               IsVisible="{Binding !Reported}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Border Classes="chip" Padding="14,12" CornerRadius="6"
+                        IsVisible="{Binding Collated.Length}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Classes="section" Text="ACROSS ALL HOSTS" />
+                        <!-- Commands here are shown but never staged: they apply to
+                             hosts, plural, and picking one terminal would be
+                             picking the wrong one. -->
+                        <TextBlock TextWrapping="Wrap" Text="{Binding Collated}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Plan: every phase in full, each switchable. -->
+                <StackPanel Spacing="6" IsVisible="{Binding IsPlanning}">
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding HasPlan}"
+                               Text="Nothing has run. Read it, switch off anything you do not want, then run it." />
+
+                    <ItemsControl ItemsSource="{Binding Phases}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PhaseRow">
+                                <Border Classes="chip" Padding="12,10" CornerRadius="6" Margin="0,0,0,6">
+                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+                                        <CheckBox Grid.Row="0" Grid.Column="0" Margin="0,0,6,0"
+                                                  VerticalAlignment="Top" IsChecked="{Binding IsEnabled}" />
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Classes="muted" Margin="0,0,8,0"
+                                                   Text="{Binding Number}" />
+                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding Name}"
+                                                   FontWeight="SemiBold" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Row="0" Grid.Column="3" Classes="muted" FontSize="11"
+                                                   Text="{Binding Hosts}" />
+
+                                        <TextBlock Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2"
+                                                   Margin="0,4,0,0" FontSize="12" TextWrapping="Wrap"
+                                                   Text="{Binding Task}" />
+
+                                        <StackPanel Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="2"
+                                                    Orientation="Horizontal" Spacing="12" Margin="0,4,0,0">
+                                            <TextBlock Classes="muted" FontSize="11" IsVisible="{Binding Yields}"
+                                                       Text="{Binding YieldsWhat}" />
+                                            <TextBlock Classes="muted" FontSize="11" IsVisible="{Binding Uses}"
+                                                       Text="{Binding UsesWhat}" />
+                                            <TextBlock Classes="muted" FontSize="11" Text="{Binding Outcome}" />
+                                        </StackPanel>
+
+                                        <!-- A captured value is shown verbatim where it was
+                                             produced: it is the one thing in the run the user
+                                             neither wrote nor read before a machine acted on it. -->
+                                        <Border Grid.Row="3" Grid.Column="2" Grid.ColumnSpan="2" Margin="0,6,0,0"
+                                                Padding="8" CornerRadius="4"
+                                                Background="{DynamicResource BackgroundBrush}"
+                                                IsVisible="{Binding Captured, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Classes="muted" FontSize="10" Text="{Binding CapturedLabel}" />
+                                                <TextBlock FontFamily="monospace" FontSize="11" TextWrapping="Wrap"
+                                                           Text="{Binding Captured}" />
+                                            </StackPanel>
+                                        </Border>
+
+                                        <StackPanel Grid.Row="4" Grid.Column="2" Grid.ColumnSpan="2" Margin="0,6,0,0"
+                                                    Spacing="4">
+                                            <TextBlock Classes="warning" FontSize="11" TextWrapping="Wrap"
+                                                       Text="{Binding Note}"
+                                                       IsVisible="{Binding Note, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                            <ItemsControl ItemsSource="{Binding Findings}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:FindingRow">
+                                                        <StackPanel Margin="0,2,0,0">
+                                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                                <TextBlock FontSize="11" FontWeight="SemiBold"
+                                                                           Text="{Binding Alias}" />
+                                                                <TextBlock Classes="muted" FontSize="11"
+                                                                           Text="{Binding Label}" />
+                                                            </StackPanel>
+                                                            <TextBlock Classes="muted" FontSize="11"
+                                                                       TextWrapping="Wrap" Text="{Binding Text}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- A command waiting on a person, named with its host. Approving
+             "systemctl restart nginx" means nothing until you know whose. -->
+        <!-- The pending command is the DataContext of the whole banner rather
+             than the head of three binding paths: with nothing waiting, one null
+             DataContext is silent where three null paths each log an error, and
+             a binding that logs when nothing is wrong is a binding nobody reads. -->
+        <Border Grid.Row="2" Classes="banner" Margin="12,0,12,8" Padding="12,10"
+                DataContext="{Binding Waiting}"
+                IsVisible="{Binding $self.DataContext, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto"
+                  x:DataType="assist:PendingCommand">
+                <TextBlock Grid.Row="0" Grid.Column="0" FontWeight="SemiBold" FontSize="12"
+                           Text="{Binding Host}" />
+                <TextBlock Grid.Row="1" Grid.Column="0" FontFamily="monospace" FontSize="12"
+                           TextWrapping="Wrap" Margin="0,2,0,0" Text="{Binding Command}" />
+                <TextBlock Grid.Row="2" Grid.Column="0" Classes="muted" FontSize="11" TextWrapping="Wrap"
+                           Margin="0,2,0,0" Text="{Binding Reason}" />
+
+                <Button Grid.Row="1" Grid.Column="1" Padding="12,4" Margin="8,0,6,0"
+                        Command="{Binding $parent[UserControl].((vm:OrchestratorViewModel)DataContext).AllowCommand}">
+                    <TextBlock Text="Run it" FontSize="12" />
+                </Button>
+                <Button Grid.Row="1" Grid.Column="2" Padding="12,4"
+                        Command="{Binding $parent[UserControl].((vm:OrchestratorViewModel)DataContext).RefuseCommand}">
+                    <TextBlock Text="No" FontSize="12" />
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Which hosts. Disconnected ones stay tickable and are reported as not asked. -->
+        <Expander Grid.Row="3" Margin="12,0,12,6" Padding="0"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <Expander.Header>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Hosts" FontSize="12" />
+                    <TextBlock Classes="muted" FontSize="11" Text="{Binding ChosenNote}" />
+                </StackPanel>
+            </Expander.Header>
+            <ItemsControl ItemsSource="{Binding Targets}" Margin="4,6">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:TargetRow">
+                        <Border Classes="chip" Padding="10,6" CornerRadius="4" Margin="0,0,6,6" MinWidth="160">
+                            <CheckBox IsChecked="{Binding IsChosen}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="{Binding Alias}" FontSize="12" />
+                                    <TextBlock Classes="muted" FontSize="10" VerticalAlignment="Center"
+                                               Text="not connected" IsVisible="{Binding !IsConnected}" />
+                                </StackPanel>
+                            </CheckBox>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Expander>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" Spacing="8" Margin="12,0,12,6">
+            <!-- Which mode is in use is said by the button, not only by the note
+                 beside it: the two do very different things to a fleet. -->
+            <Button Classes="row" Classes.selected="{Binding IsAsking}" Padding="10,3"
+                    Command="{Binding ChooseCommand}"
+                    CommandParameter="{x:Static vm:OrchestratorMode.Ask}">
+                <TextBlock Text="Ask" FontSize="12" />
+            </Button>
+            <Button Classes="row" Classes.selected="{Binding IsPlanning}" Padding="10,3"
+                    Command="{Binding ChooseCommand}"
+                    CommandParameter="{x:Static vm:OrchestratorMode.Plan}">
+                <TextBlock Text="Plan" FontSize="12" />
+            </Button>
+            <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" Text="{Binding ModeNote}" />
+            <CheckBox VerticalAlignment="Center" IsChecked="{Binding MayRunCommands}">
+                <TextBlock Text="Run commands" FontSize="12" />
+            </CheckBox>
+        </StackPanel>
+
+        <Grid Grid.Row="5" ColumnDefinitions="*,Auto,Auto,Auto" Margin="12,0,12,12">
+            <TextBox Grid.Column="0" AcceptsReturn="False" Text="{Binding Instruction}"
+                     Watermark="Ask every selected host…" IsVisible="{Binding IsAsking}" />
+            <TextBox Grid.Column="0" AcceptsReturn="False" Text="{Binding Instruction}"
+                     Watermark="What should be done across these hosts?" IsVisible="{Binding IsPlanning}" />
+
+            <Button Grid.Column="1" Margin="8,0,0,0" Padding="12,6" Command="{Binding DiscardCommand}"
+                    IsVisible="{Binding HasPlan}">
+                <TextBlock Text="Discard" />
+            </Button>
+            <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,6"
+                    Theme="{StaticResource PrimaryButton}"
+                    IsVisible="{Binding !IsRunning}" Command="{Binding RunCommand}">
+                <TextBlock Text="{Binding RunLabel}" />
+            </Button>
+            <Button Grid.Column="3" Margin="8,0,0,0" Padding="12,6"
+                    IsVisible="{Binding IsRunning}" Command="{Binding StopCommand}">
+                <TextBlock Text="Stop" />
+            </Button>
+        </Grid>
+    </Grid>
+</UserControl>

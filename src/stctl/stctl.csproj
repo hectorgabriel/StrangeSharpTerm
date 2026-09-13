@@ -9,6 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../StrangeSharpTerm.Assist/StrangeSharpTerm.Assist.csproj" />
     <ProjectReference Include="../StrangeSharpTerm.Model/StrangeSharpTerm.Model.csproj" />
     <ProjectReference Include="../StrangeSharpTerm.Security/StrangeSharpTerm.Security.csproj" />
     <ProjectReference Include="../StrangeSharpTerm.Store/StrangeSharpTerm.Store.csproj" />

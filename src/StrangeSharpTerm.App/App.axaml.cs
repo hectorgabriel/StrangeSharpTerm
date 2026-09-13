@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using StrangeSharpTerm.App.Assistant;
 using StrangeSharpTerm.App.Terminal;
 using StrangeSharpTerm.App.Theming;
 using StrangeSharpTerm.App.ViewModels;
@@ -38,8 +39,9 @@ public partial class App : Application
             // no argument the app opens its own window.
             var arguments = desktop.Args ?? [];
             var request = TerminalLaunchRequest.Parse(arguments);
-            desktop.MainWindow =
-                Editor(arguments) ?? (request is null ? Shell(theme, arguments) : TerminalWindow(request, theme));
+            desktop.MainWindow = Assistant(arguments)
+                ?? Editor(arguments)
+                ?? (request is null ? Shell(theme, arguments) : TerminalWindow(request, theme));
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -51,7 +53,13 @@ public partial class App : Application
         // needs the view model that asks for dialogs, so the reference is late.
         ShellWindow? window = null;
         var model = new ShellViewModel(
-            InventoryLoader.Load(), dialogs: new DialogService(() => window), theme: theme);
+            InventoryLoader.Load(),
+            dialogs: new DialogService(() => window),
+            theme: theme,
+            // Where the assistant's settings are remembered. The same file the
+            // theme uses, so a throwaway inventory takes its assistant settings
+            // with it.
+            preferencesPath: Preferences.DefaultPath());
         window = new ShellWindow(model);
 
         // --demo-palette [--demo-query x] [--demo-connect host], as the Swift app
@@ -82,6 +90,30 @@ public partial class App : Application
                 DispatcherPriority.Background);
 
         return window;
+    }
+
+    /// <summary>
+    /// <c>--demo-assistant</c>, <c>--demo-orchestrator</c>,
+    /// <c>--demo-orchestrator-idle</c> and <c>--demo-plan</c>: the two assistant
+    /// panes over a fixture, with nothing reaching a network or a server.
+    ///
+    /// The Swift app had the last three for the same reason. These panes only
+    /// exist after a real connection <em>and</em> a real API key, and neither is
+    /// available to whoever is looking at the window — which would make them the
+    /// only surfaces in the app nobody could look at. Every UI change so far has
+    /// found something that every test passed through.
+    /// </summary>
+    private static Window? Assistant(string[] arguments)
+    {
+        if (arguments.Contains("--demo-assistant"))
+            return Rehearsal.AssistantPane();
+        if (arguments.Contains("--demo-orchestrator"))
+            return Rehearsal.OrchestratorPane(finished: true);
+        if (arguments.Contains("--demo-orchestrator-idle"))
+            return Rehearsal.OrchestratorPane(finished: false);
+        if (arguments.Contains("--demo-plan"))
+            return Rehearsal.PlanPane();
+        return null;
     }
 
     /// <summary>The value after a flag, or null when it is absent or last.</summary>
@@ -174,9 +206,14 @@ public partial class App : Application
             // Two panes, so the broadcast warning is the one being looked at.
             "run" => new SnippetRunDialog(new SnippetRunViewModel(snippet, "web-01", paneCount: 2)),
             // Its own theme, not the app's: choosing one here repaints only this
-            // fixture, which is the point of looking at it.
+            // fixture, which is the point of looking at it. Its API keys are in
+            // memory too, so looking at the assistant section never writes to
+            // the login keychain.
             "settings" => new SettingsWindow(new SettingsViewModel(
-                new Theming.AppTheme(), () => Task.CompletedTask, () => Task.CompletedTask)),
+                new Theming.AppTheme(),
+                () => Task.CompletedTask,
+                () => Task.CompletedTask,
+                keys: Rehearsal.Keys())),
             _ => new HostEditor(HostDraft.For(tree, host)),
         };
     }

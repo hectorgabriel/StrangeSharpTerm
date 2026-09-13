@@ -22,6 +22,11 @@ public sealed class FakeSessions : IHostSessions
 
     public Func<Connection, IServerHealth>? OnHealth { get; set; }
 
+    public Func<Connection, IRemoteCommands>? OnCommands { get; set; }
+
+    /// <summary>Which hosts count as connected. Empty is the default, as a fresh window is.</summary>
+    public HashSet<string> Open { get; } = [];
+
     /// <summary>Every host asked for, in order, whatever it was asked for.</summary>
     public List<string> Asked { get; } = [];
 
@@ -49,6 +54,14 @@ public sealed class FakeSessions : IHostSessions
         return OnHealth?.Invoke(connection) ?? new NoHealth();
     }
 
+    public IRemoteCommands Commands(Connection connection)
+    {
+        Asked.Add($"commands {connection.Name}");
+        return OnCommands?.Invoke(connection) ?? new NoCommands();
+    }
+
+    public bool IsOpen(Connection connection) => Open.Contains(connection.Name);
+
     /// <summary>A channel that carries nothing, so a session needs no server.</summary>
     public sealed class DeadChannel : ITerminalChannel
     {
@@ -62,5 +75,11 @@ public sealed class FakeSessions : IHostSessions
     private sealed class NoHealth : IServerHealth
     {
         public ServerMetrics Collect() => throw new NotSupportedException("this test has no server to ask");
+    }
+
+    private sealed class NoCommands : IRemoteCommands
+    {
+        public CommandResult Run(string command, TimeSpan timeout) =>
+            throw new NotSupportedException("this test has no server to run on");
     }
 }

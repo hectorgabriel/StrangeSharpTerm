@@ -4,9 +4,11 @@ using Avalonia.Input;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using StrangeSharpTerm.App.Assistant;
 using StrangeSharpTerm.App.Terminal;
 using StrangeSharpTerm.App.Theming;
 using StrangeSharpTerm.App.Views;
+using StrangeSharpTerm.Assist;
 using StrangeSharpTerm.Model;
 using StrangeSharpTerm.Security;
 using StrangeSharpTerm.Terminal;
@@ -40,6 +42,8 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly IDialogService _dialogs;
     private readonly Lazy<ISecretStore> _secrets;
     private readonly AppTheme _theme;
+    private readonly Func<AssistSettings, IAssistBackend?> _backends;
+    private readonly string? _preferencesPath;
 
     /// <param name="sessions">
     /// Everything a host can be asked for, over one connection to it. Replaced
@@ -52,7 +56,10 @@ public sealed partial class ShellViewModel : ObservableObject
         Func<TerminalSession, TerminalPalette, Control>? view = null,
         IDialogService? dialogs = null,
         AppTheme? theme = null,
-        ISecretStore? secrets = null)
+        ISecretStore? secrets = null,
+        AssistSettings? assist = null,
+        Func<AssistSettings, IAssistBackend?>? backends = null,
+        string? preferencesPath = null)
     {
         Inventory = inventory;
         _dialogs = dialogs ?? new ScriptedDialogService();
@@ -63,6 +70,12 @@ public sealed partial class ShellViewModel : ObservableObject
             ? new Lazy<ISecretStore>(given)
             : new Lazy<ISecretStore>(() => new PlatformSecretStore());
         _theme = theme ?? new AppTheme();
+        _preferencesPath = preferencesPath;
+        // The assistant's settings are the app's, not a pane's: the preview a
+        // pane shows is of a choice made once, somewhere a person can find it.
+        AssistantSettings = assist ?? (preferencesPath is { } path ? AssistPreferences.Load(path) : new AssistSettings());
+        // Substituted in tests, and the only place a provider is built.
+        _backends = backends ?? (settings => AssistBackends.For(settings, _secrets.Value));
         Workspace = new WorkspaceViewModel(_terminals);
         _sessions = sessions ?? new HostSessions(() => Inventory.Tree);
         _view = view ?? ((session, palette) => new TerminalPaneView(session, palette, _terminals));
@@ -91,6 +104,15 @@ public sealed partial class ShellViewModel : ObservableObject
     public InventoryViewModel Inventory { get; }
 
     public WorkspaceViewModel Workspace { get; }
+
+    /// <summary>
+    /// How the assistant is configured, for every pane in this window.
+    ///
+    /// One setting rather than one per pane: which provider is answering decides
+    /// where this window's terminal output is being sent, and that is not a
+    /// per-conversation choice.
+    /// </summary>
+    public AssistSettings AssistantSettings { get; private set; }
 
     public ObservableCollection<TabItem> Tabs { get; } = [];
 
@@ -215,11 +237,34 @@ public sealed partial class ShellViewModel : ObservableObject
     /// there is one implementation of each and the sheet is a signpost.
     /// </summary>
     [RelayCommand]
-    public async Task OpenSettings() =>
-        await _dialogs.Manage(new SettingsViewModel(
+    public async Task OpenSettings()
+    {
+        var settings = new SettingsViewModel(
             _theme,
             () => ManageCredentialsCommand.ExecuteAsync(null),
-            () => ManageSnippetsCommand.ExecuteAsync(null)));
+            () => ManageSnippetsCommand.ExecuteAsync(null),
+            AssistantSettings,
+            // API keys go to a store of their own, never the one connection
+            // credentials use: an API key is not a server secret.
+            _assistKeys.Value,
+            // Applied as it is changed rather than on Done, as the theme is:
+            // there is nothing here to confirm, and a pane opened next reads it.
+            assist =>
+            {
+                AssistantSettings = assist;
+                if (_preferencesPath is { } path)
+                    AssistPreferences.Save(path, assist);
+            });
+
+        await _dialogs.Manage(settings);
+    }
+
+    /// <summary>
+    /// Where API keys live. Opened when Settings is, for the same reason the
+    /// credential store is opened when the library is.
+    /// </summary>
+    private readonly Lazy<ISecretStore> _assistKeys =
+        new(() => new PlatformSecretStore(AssistKeys.Service));
 
     /// <summary>The snippet library: commands worth keeping, and where each is offered.</summary>
     [RelayCommand]
@@ -606,6 +651,155 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>How a set of tunnels becomes something on screen. Replaced in tests.</summary>
     private readonly Func<TunnelsViewModel, Control> _tunnelsView = model => new TunnelsView(model);
 
+    /// <summary>
+    /// Opens an assistant on the selected host, beside the session it is about.
+    ///
+    /// Beside rather than in a tab of its own: the pane is a conversation about
+    /// what the terminal is showing, and a conversation that hides its subject
+    /// is a worse one. It carries the tail of whichever shell has the focus, so
+    /// which pane was focused when it opened is the thing it is about.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(HasSelectedHost))]
+    public void OpenAssistant()
+    {
+        if (Detail is not { } detail)
+            return;
+
+        Failure = null;
+        if (_backends(AssistantSettings) is not { } backend)
+        {
+            // No key is an ordinary state on a fresh install. It deserves a
+            // sentence offering Settings, not a pane that fails when asked.
+            Failure = AssistBackends.NoKey(AssistantSettings);
+            return;
+        }
+
+        var connection = detail.Connection;
+        var beside = Workspace.ActivePane is { IsTerminal: true, ConnectionId: var host, Id: var focused }
+            && host == connection.Id
+                ? focused
+                : (NodeId?)null;
+
+        var agent = Agent(connection, beside);
+        var pane = new Pane
+        {
+            Title = $"{connection.Name} assistant",
+            Kind = new PaneKind.Assistant(),
+            ConnectionId = connection.Id,
+        };
+
+        // The pane is its own gate: the command is already a row in the
+        // transcript by the time a person is asked, with its reason beside it.
+        AssistantViewModel? model = null;
+        model = new AssistantViewModel(
+            agent(() => model!),
+            AssistantSettings,
+            // Typed into the shell it is beside, and not run. Sent rather than
+            // written, so a broadcast group fans it out as it fans out typing.
+            text => (beside is { } id ? _terminals.Session(id) : ActiveTerminal())?.Send(text));
+
+        Workspace.Open(pane, Panes.Count > 0 ? Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal : null);
+        _views[pane.Id] = _assistantView(model);
+        Show();
+
+        // The disclosure is filled in before anything is typed: every question
+        // shows exactly what it will carry before you ask it.
+        _ = model.LookCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>How an assistant becomes something on screen. Replaced in tests.</summary>
+    private readonly Func<AssistantViewModel, Control> _assistantView = model => new AssistantView(model);
+
+    /// <summary>
+    /// Opens the orchestrator: one instruction across several hosts.
+    ///
+    /// In a tab of its own and belonging to no host, because disconnecting a
+    /// host closes the panes belonging to it and a fan-out across eight servers
+    /// should not vanish because one was disconnected.
+    /// </summary>
+    [RelayCommand]
+    public void AskSeveralHosts()
+    {
+        Failure = null;
+        if (_backends(AssistantSettings) is not { } backend)
+        {
+            Failure = AssistBackends.NoKey(AssistantSettings);
+            return;
+        }
+
+        var pane = new Pane { Title = "Orchestrator", Kind = new PaneKind.Orchestrator() };
+
+        OrchestratorViewModel? model = null;
+        model = new OrchestratorViewModel(
+            backend,
+            Inventory.Tree.Connections.Values
+                .OrderBy(connection => connection.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(connection => new TargetRow
+                {
+                    Alias = connection.Name,
+                    // Only connected hosts are asked. Connecting can raise a
+                    // host-key decision, and a fan-out that stopped on a dialog
+                    // per host would be worse than one that says which it left out.
+                    IsConnected = _sessions.IsOpen(connection),
+                }),
+            alias => Connected(alias) is { } target ? Agent(target, Focused(target.Id))(() => model!) : null);
+
+        Workspace.Open(pane, splitting: null);
+        _views[pane.Id] = _orchestratorView(model);
+        Show();
+    }
+
+    /// <summary>How an orchestrator becomes something on screen. Replaced in tests.</summary>
+    private readonly Func<OrchestratorViewModel, Control> _orchestratorView = model => new OrchestratorView(model);
+
+    /// <summary>
+    /// Builds a conversation about one host.
+    ///
+    /// The gate is passed in late because a pane is its own gate and cannot be
+    /// built before the agent it holds.
+    /// </summary>
+    private Func<Func<ICommandGate>, HostAgent> Agent(Connection connection, NodeId? terminal) =>
+        gate =>
+        {
+            var access = new SshHostAccess(
+                connection.Name,
+                _sessions.Commands(connection),
+                _sessions.Health(connection),
+                TerminalTail.Of(_terminals, terminal, AssistantSettings.TerminalTailLines));
+
+            return new HostAgent(
+                _backends(AssistantSettings)
+                    ?? throw new AssistException(AssistBackends.NoKey(AssistantSettings)),
+                access,
+                AssistantSettings,
+                new Deferred(gate));
+        };
+
+    /// <summary>A host by the name the inventory gives it, and only if it is connected.</summary>
+    private Connection? Connected(string alias) =>
+        Inventory.Tree.Connections.Values.FirstOrDefault(connection => connection.Name == alias) is { } target
+        && _sessions.IsOpen(target)
+            ? target
+            : null;
+
+    /// <summary>The host's focused shell, when one of its panes has the keyboard.</summary>
+    private NodeId? Focused(NodeId host) =>
+        Workspace.ActivePane is { IsTerminal: true, ConnectionId: var owner, Id: var pane } && owner == host
+            ? pane
+            : Workspace.Panes.FirstOrDefault(open => open.IsTerminal && open.ConnectionId == host)?.Id;
+
+    /// <summary>
+    /// A gate that is not known until the pane holding it exists.
+    ///
+    /// The pane answers the gate and the pane holds the agent, so one of the two
+    /// references has to be late. This is it.
+    /// </summary>
+    private sealed class Deferred(Func<ICommandGate> gate) : ICommandGate
+    {
+        public Task<bool> Allow(PendingCommand command, CancellationToken cancellationToken = default) =>
+            gate().Allow(command, cancellationToken);
+    }
+
     /// <summary>Opens a shell on a host, in its own tab.</summary>
     public async Task OpenTerminal(Connection connection, SplitAxis? splitting = null)
     {
@@ -690,6 +884,7 @@ public sealed partial class ShellViewModel : ObservableObject
         BrowseFilesCommand.NotifyCanExecuteChanged();
         RunSnippetCommand.NotifyCanExecuteChanged();
         OpenTunnelsCommand.NotifyCanExecuteChanged();
+        OpenAssistantCommand.NotifyCanExecuteChanged();
         ToggleBroadcastCommand.NotifyCanExecuteChanged();
         FocusTabAtCommand.NotifyCanExecuteChanged();
     }
