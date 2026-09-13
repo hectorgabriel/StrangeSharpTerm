@@ -12,27 +12,30 @@ means; this says only what is done, what is in flight, and what to do first.
 | **M1** model and store | `StrangeSharpTerm.Model` and `.Store` with their 84 tests. The inventory file is byte-identical to the Swift app's, checked against goldens the Swift code itself generates (`build/swift-parity`) |
 | **M2** transport | One authenticated session per host carrying commands, shells, forwards and SFTP; host key trust shared with `ssh`; secrets in each platform's own store; `stctl`; the integration gate running against a real sshd on macOS **and** Windows in CI |
 | **M3** terminal | `TerminalSession` binding an XTerm.NET engine to an SSH channel, the Avalonia control, broadcast, scrollback, and `stctl terminal` |
-| **M5** (part) | the SFTP browser: `IRemoteFiles` in the transport, a pane that lists, navigates, uploads, downloads and deletes, and ⇧⌘B to open one |
+| **M5** (part) | the SFTP browser (`IRemoteFiles`, a pane, ⇧⌘B) and tunnels (`ITunnels`, a pane per host that starts and stops its forwards and releases the ports) |
 | **M4** done | the window (sidebar, tabs, host detail, splits, broadcast), the theme system, the host and folder editors, the menu bar, the command palette, and the headless UI driver. `docs/adr/0004` and `0005` record the decisions |
 
-Around 384 tests, all green on both operating systems.
+Around 401 tests, all green on both operating systems.
 
 ## In flight
 
 Check `gh pr list` first — a pull request may have landed since this was
-written. At the time of writing: **the SFTP browser** (branch `m5-sftp`), the
-first of M5's panes.
+written. At the time of writing: **tunnels** (branch `m5-tunnels`).
 
 ## What to do next, in order
 
-1. **The rest of M5**: tunnels (`ForwardedPort*`), dashboards (`ServerProbe` is
-   already ported), credentials, snippets, and the settings sheet that should
-   hold the theme picker now at the foot of the sidebar. Three of the Swift
-   app's shortcuts still wait for them — `docs/adr/0005` lists which and why,
-   including the one that cannot be translated to Windows as it stands (⌃⌘X).
-   The browser has no rename or new-folder yet, and no progress for a large
-   transfer; `IRemoteFiles` already carries both calls.
-2. **Screenshots**, the other half of what the plan's CI table asks for at
+1. **The rest of M5**: dashboards (`ServerProbe` and its parsers are already
+   ported, and `docs/reference/screenshots/dashboard.png` is the parity target),
+   credentials, snippets, and the settings sheet that should hold the theme
+   picker now at the foot of the sidebar. Three of the Swift app's shortcuts
+   still wait for them — `docs/adr/0005` lists which and why, including the one
+   that cannot be translated to Windows as it stands (⌃⌘X).
+2. **What the two new panes do not do yet.** The browser has no rename and no
+   new-folder, though `IRemoteFiles` carries both calls, and no progress for a
+   large transfer. Tunnels are read from the host's settings and cannot be added
+   or edited there — the host editor deliberately leaves forwards alone and
+   preserves them, so an editor for them is the missing half.
+3. **Screenshots**, the other half of what the plan's CI table asks for at
    M4-M5. The driver is in place (`tests/StrangeSharpTerm.App.WindowTests`);
    what is missing is rendering. `CaptureRenderedFrame` returns a bitmap, but
    only with Skia behind the headless platform (`UseHeadlessDrawing = false`

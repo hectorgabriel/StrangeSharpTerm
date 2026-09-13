@@ -35,6 +35,7 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly TerminalRegistry _terminals = new();
     private readonly Func<Connection, TerminalSession> _connect;
     private readonly Func<Connection, IRemoteFiles> _files;
+    private readonly Func<Connection, ITunnels> _tunnels;
     private readonly Func<TerminalSession, TerminalPalette, Control> _view;
     private readonly IDialogService _dialogs;
     private readonly AppTheme _theme;
@@ -42,13 +43,15 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <param name="connect">How a host becomes a session. Replaced in tests by something that needs no server.</param>
     /// <param name="view">How a session becomes something on screen. Likewise.</param>
     /// <param name="files">How a host becomes a directory listing. Likewise again.</param>
+    /// <param name="tunnels">And how it becomes somewhere to start a forward.</param>
     public ShellViewModel(
         InventoryViewModel inventory,
         Func<Connection, TerminalSession>? connect = null,
         Func<TerminalSession, TerminalPalette, Control>? view = null,
         IDialogService? dialogs = null,
         AppTheme? theme = null,
-        Func<Connection, IRemoteFiles>? files = null)
+        Func<Connection, IRemoteFiles>? files = null,
+        Func<Connection, ITunnels>? tunnels = null)
     {
         Inventory = inventory;
         _dialogs = dialogs ?? new ScriptedDialogService();
@@ -56,6 +59,7 @@ public sealed partial class ShellViewModel : ObservableObject
         Workspace = new WorkspaceViewModel(_terminals);
         _connect = connect ?? (connection => TerminalLauncher.Connect(Inventory.Tree, connection));
         _files = files ?? (connection => TerminalLauncher.Files(Inventory.Tree, connection));
+        _tunnels = tunnels ?? (connection => TerminalLauncher.Tunnels(Inventory.Tree, connection));
         _view = view ?? ((session, palette) => new TerminalPaneView(session, palette, _terminals));
 
         // Focusing a pane moves the sidebar with it, and deleting a host closes
@@ -438,6 +442,44 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>How a browser becomes something on screen. Replaced in tests.</summary>
     private readonly Func<FileBrowserViewModel, Control> _browser = model => new FileBrowserView(model);
 
+    /// <summary>Opens the selected host's tunnels, beside whatever is open.</summary>
+    [RelayCommand(CanExecute = nameof(HasSelectedHost))]
+    public async Task OpenTunnels()
+    {
+        if (Detail is not { } detail)
+            return;
+
+        Failure = null;
+        var connection = detail.Connection;
+        var forwards = Inventory.Tree.Resolve(connection.Id).Settings.PortForwards;
+        var pane = new Pane
+        {
+            Title = $"{connection.Name} tunnels",
+            Kind = new PaneKind.Tunnels(),
+            ConnectionId = connection.Id,
+        };
+
+        try
+        {
+            // Connecting is what takes the time; the forwards themselves are
+            // already known, and none is started until someone asks.
+            var tunnels = await Task.Run(() => _tunnels(connection));
+            var model = new TunnelsViewModel(tunnels, connection.Name, forwards);
+
+            Workspace.Open(pane, Panes.Count > 0 ? Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal : null);
+            _views[pane.Id] = _tunnelsView(model);
+            Show();
+        }
+        catch (Exception e)
+        {
+            System.Diagnostics.Trace.WriteLine($"opening tunnels for {connection.Name} failed: {e}");
+            Failure = SshFailure.Classify(e).Summary;
+        }
+    }
+
+    /// <summary>How a set of tunnels becomes something on screen. Replaced in tests.</summary>
+    private readonly Func<TunnelsViewModel, Control> _tunnelsView = model => new TunnelsView(model);
+
     /// <summary>Opens a shell on a host, in its own tab.</summary>
     public async Task OpenTerminal(Connection connection, SplitAxis? splitting = null)
     {
@@ -516,6 +558,7 @@ public sealed partial class ShellViewModel : ObservableObject
         SplitDownCommand.NotifyCanExecuteChanged();
         ClosePaneCommand.NotifyCanExecuteChanged();
         BrowseFilesCommand.NotifyCanExecuteChanged();
+        OpenTunnelsCommand.NotifyCanExecuteChanged();
         ToggleBroadcastCommand.NotifyCanExecuteChanged();
         FocusTabAtCommand.NotifyCanExecuteChanged();
     }
@@ -530,6 +573,8 @@ public sealed partial class ShellViewModel : ObservableObject
         var open = Workspace.Panes.Select(pane => pane.Id).ToHashSet();
         foreach (var (id, view) in _views.Where(pane => !open.Contains(pane.Key)).ToArray())
         {
+            // Whatever the pane holds — an ssh session, a running forward — goes
+            // with it. The view knows what it has; this only says when.
             (view as IDisposable)?.Dispose();
             _views.Remove(id);
         }

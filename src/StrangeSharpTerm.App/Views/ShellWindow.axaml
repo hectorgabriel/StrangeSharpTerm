@@ -230,6 +230,13 @@
                                     <TextBlock Text="Browse files" />
                                 </StackPanel>
                             </Button>
+                            <Button Command="{Binding OpenTunnelsCommand}" Padding="12,6">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Path Classes="icon" Width="14" Height="14"
+                                          Data="{Binding Source=IconArrowLeftRight, Converter={StaticResource Icon}}" />
+                                    <TextBlock Text="Tunnels" />
+                                </StackPanel>
+                            </Button>
                             <Button Command="{Binding EditSelectedCommand}" Padding="12,6">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <Path Classes="icon" Width="14" Height="14"

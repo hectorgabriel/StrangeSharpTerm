@@ -57,10 +57,19 @@ public sealed class SshNetSession(SshClient client, ConnectionInfo connectionInf
     public ForwardedPortLocal StartLocalForward(string boundHost, uint boundPort, string host, uint port)
     {
         var forward = new ForwardedPortLocal(boundHost, boundPort, host, port);
+        StartForward(forward);
+        return forward;
+    }
+
+    /// <summary>
+    /// Starts a forward of any kind and keeps it: disposing the session stops
+    /// whatever is still up, so quitting cannot leave a port bound.
+    /// </summary>
+    public void StartForward(ForwardedPort forward)
+    {
         Client.AddForwardedPort(forward);
         forward.Start();
         _owned.Add(forward);
-        return forward;
     }
 
     /// <summary>
