@@ -15,11 +15,15 @@
         <views:IconConverter x:Key="Icon" />
     </Window.Resources>
 
+    <Panel>
     <Grid ColumnDefinitions="260,*">
 
         <!-- What you have, and what you are looking for. -->
         <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*,Auto" Background="{DynamicResource SidebarBrush}">
-            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="14,12,10,8">
+            <!-- On macOS the traffic lights float over this corner, so the
+                 header starts below them; on Windows the inset is nothing. -->
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto"
+                  Margin="{x:Static views:ShellWindow.HeaderMargin}">
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="Hosts" FontWeight="SemiBold" VerticalAlignment="Center" />
                     <Border Classes="chip" VerticalAlignment="Center">
@@ -101,10 +105,13 @@
         </Grid>
 
         <!-- The tabs, and whatever the focused one is showing. -->
-        <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*">
+        <Grid Grid.Column="1" RowDefinitions="Auto,Auto,Auto,*">
+            <!-- Windows has no system menu bar to put this in; macOS does, and
+                 there this draws nothing. See docs/adr/0005. -->
+            <NativeMenuBar Grid.Row="0" HorizontalAlignment="Left" Margin="4,2,0,0" />
             <!-- Splitting, closing and broadcasting act on the focused tab, so
                  they sit at the end of its strip rather than in the pane. -->
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="2"
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="2"
                         HorizontalAlignment="Right" Margin="8,8,8,0"
                         IsVisible="{Binding Panes.Count}">
                 <ToggleButton Classes="row" Padding="6" ToolTip.Tip="Type into every pane"
@@ -130,7 +137,7 @@
                 </Button>
             </StackPanel>
 
-            <ItemsControl Grid.Row="0" ItemsSource="{Binding Tabs}" Margin="8,8,8,0">
+            <ItemsControl Grid.Row="1" ItemsSource="{Binding Tabs}" Margin="8,8,8,0">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <StackPanel Orientation="Horizontal" Spacing="4" />
@@ -162,7 +169,7 @@
             </ItemsControl>
 
             <!-- A failed connection says why, where the user was looking. -->
-            <Border Grid.Row="1" Classes="banner" Margin="8,8,8,0"
+            <Border Grid.Row="2" Classes="banner" Margin="8,8,8,0"
                     IsVisible="{Binding Failure, Converter={x:Static ObjectConverters.IsNotNull}}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <Path Classes="icon" Width="14" Height="14" Stroke="{DynamicResource DangerBrush}"
@@ -171,18 +178,18 @@
                 </StackPanel>
             </Border>
 
-            <views:PaneSplitView Grid.Row="2" Margin="8"
+            <views:PaneSplitView Grid.Row="3" Margin="8"
                                  Panes="{Binding Panes}"
                                  Axis="{Binding Axis}"
                                  FocusCommand="{Binding FocusPaneCommand}" />
 
-            <TextBlock Grid.Row="2" Classes="muted" Margin="24" TextWrapping="Wrap"
+            <TextBlock Grid.Row="3" Classes="muted" Margin="24" TextWrapping="Wrap"
                        IsVisible="{Binding ShowsEmptyState}"
                        Text="Choose a host on the left." />
 
             <!-- With nothing open, the selected host explains itself: what a
                  connection would actually use, inheritance included. -->
-            <ScrollViewer Grid.Row="2" Margin="24" Background="{DynamicResource BackgroundBrush}"
+            <ScrollViewer Grid.Row="3" Margin="24" Background="{DynamicResource BackgroundBrush}"
                           IsVisible="{Binding ShowsDetail}">
                 <StackPanel Spacing="16" MaxWidth="520" HorizontalAlignment="Left">
 
@@ -262,4 +269,35 @@
             </ScrollViewer>
         </Grid>
     </Grid>
+
+    <!-- Type a few letters, get the thing you meant. Over the window rather
+         than in it: it is asked for from anywhere and belongs to no pane. -->
+    <Border IsVisible="{Binding Palette.IsOpen}" Background="#66000000">
+        <Border Classes="palette" VerticalAlignment="Top" HorizontalAlignment="Center"
+                Margin="0,120,0,0" Width="520">
+            <StackPanel>
+                <TextBox x:Name="PaletteQuery" Margin="10" PlaceholderText="What would you like to do?"
+                         Text="{Binding Palette.Query, Mode=TwoWay}" />
+
+                <ListBox Margin="4,0,4,8" MaxHeight="320" Background="Transparent"
+                         ItemsSource="{Binding Palette.Matches}"
+                         SelectedIndex="{Binding Palette.SelectedIndex, Mode=TwoWay}">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AppCommand">
+                            <Grid ColumnDefinitions="*,Auto" Margin="4,2">
+                                <TextBlock Grid.Column="0" Text="{Binding Title}" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Classes="muted" FontSize="11"
+                                           Text="{Binding Shortcut}" VerticalAlignment="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <TextBlock Classes="muted" Margin="14,0,14,10" FontSize="11"
+                           IsVisible="{Binding !Palette.Matches.Count}"
+                           Text="Nothing matches." />
+            </StackPanel>
+        </Border>
+    </Border>
+    </Panel>
 </Window>

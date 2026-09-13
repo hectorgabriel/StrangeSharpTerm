@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -63,6 +64,7 @@ public sealed partial class ShellViewModel : ObservableObject
                 OnPropertyChanged(nameof(Detail));
                 OnPropertyChanged(nameof(ShowsDetail));
                 OnPropertyChanged(nameof(ShowsEmptyState));
+                RefreshCommands();
             }
         };
         Inventory.ConnectionRemoving += (_, host) => CloseEverythingFor(host);
@@ -167,8 +169,17 @@ public sealed partial class ShellViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Whether a host is chosen. Three commands need one, and a menu that offers
+    /// "Edit Host" with nothing selected is a menu that lies.
+    /// </summary>
+    public bool HasSelectedHost => Detail is not null;
+
+    /// <summary>Whether there is a pane to close, split or act on.</summary>
+    public bool HasOpenPane => Workspace.ActivePaneId is not null;
+
     /// <summary>Edits the selected host, for the button in the detail pane.</summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasSelectedHost))]
     public async Task EditSelected()
     {
         if (Detail is { } detail)
@@ -228,7 +239,7 @@ public sealed partial class ShellViewModel : ObservableObject
     }
 
     /// <summary>Opens a shell on the selected host, for the button in the detail pane.</summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasSelectedHost))]
     public async Task ConnectSelected()
     {
         if (Detail is { } detail)
@@ -239,7 +250,7 @@ public sealed partial class ShellViewModel : ObservableObject
     /// Deletes the selected host, after asking. The confirmation names what goes
     /// with it rather than merely asking twice.
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasSelectedHost))]
     public async Task DeleteSelected()
     {
         if (Detail is not { } detail)
@@ -290,11 +301,11 @@ public sealed partial class ShellViewModel : ObservableObject
     /// for: a log tailing on one side, a command on the other. It is not a second
     /// view of the same shell — ssh has no such thing.
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasOpenPane))]
     public async Task SplitRight() => await Split(SplitAxis.Horizontal);
 
     /// <inheritdoc cref="SplitRight"/>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasOpenPane))]
     public async Task SplitDown() => await Split(SplitAxis.Vertical);
 
     private async Task Split(SplitAxis axis)
@@ -314,7 +325,7 @@ public sealed partial class ShellViewModel : ObservableObject
     }
 
     /// <summary>Closes the focused pane, and the tab with it when it was the last.</summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(HasOpenPane))]
     public void ClosePane()
     {
         if (Workspace.ActivePaneId is not { } pane)
@@ -336,6 +347,42 @@ public sealed partial class ShellViewModel : ObservableObject
 
     /// <summary>A group of one is not a broadcast, so the toggle waits for a split.</summary>
     public bool CanBroadcast => Workspace.CanBroadcast;
+
+    /// <summary>For the menu and the palette, which need a command rather than a property.</summary>
+    [RelayCommand(CanExecute = nameof(CanBroadcast))]
+    public void ToggleBroadcast() => IsBroadcasting = !IsBroadcasting;
+
+    /// <summary>Everything the app can be asked to do, and the way in by name.</summary>
+    public PaletteViewModel Palette { get; private set; } = null!;
+
+    public IReadOnlyList<AppCommand> Commands { get; private set; } = [];
+
+    /// <summary>
+    /// Builds the command list, once the view model is whole.
+    ///
+    /// Late because the catalogue holds this object's own commands: it cannot be
+    /// built in the constructor without handing out a half-built shell.
+    /// </summary>
+    public void Describe(KeyModifiers commandModifier)
+    {
+        Commands = CommandCatalogue.For(this, commandModifier);
+        Palette = new PaletteViewModel(Commands);
+        OnPropertyChanged(nameof(Commands));
+        OnPropertyChanged(nameof(Palette));
+    }
+
+    [RelayCommand]
+    public void OpenPalette() => Palette.Open();
+
+    /// <summary>⌘5 with two tabs open does nothing rather than something odd.</summary>
+    public bool CanFocusTabAt(int index) => index >= 0 && index < Tabs.Count;
+
+    [RelayCommand(CanExecute = nameof(CanFocusTabAt))]
+    public void FocusTabAt(int index)
+    {
+        Workspace.FocusTabAt(index);
+        Show();
+    }
 
     [RelayCommand]
     public void FocusTab(TabItem? tab)
@@ -412,6 +459,29 @@ public sealed partial class ShellViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Tells every command to ask again whether it can run.
+    ///
+    /// A menu greys an item out by asking, and asks only when told the answer may
+    /// have changed. Selecting a host and closing the last pane are the two
+    /// moments that change it.
+    /// </summary>
+    private void RefreshCommands()
+    {
+        OnPropertyChanged(nameof(HasSelectedHost));
+        OnPropertyChanged(nameof(HasOpenPane));
+        OnPropertyChanged(nameof(CanBroadcast));
+
+        ConnectSelectedCommand.NotifyCanExecuteChanged();
+        EditSelectedCommand.NotifyCanExecuteChanged();
+        DeleteSelectedCommand.NotifyCanExecuteChanged();
+        SplitRightCommand.NotifyCanExecuteChanged();
+        SplitDownCommand.NotifyCanExecuteChanged();
+        ClosePaneCommand.NotifyCanExecuteChanged();
+        ToggleBroadcastCommand.NotifyCanExecuteChanged();
+        FocusTabAtCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
     /// Drops the views of panes that are gone, whichever way they went — a pane
     /// closed, a tab closed, a host deleted. One place rather than three, and the
     /// only place a pane view is disposed.
@@ -438,6 +508,7 @@ public sealed partial class ShellViewModel : ObservableObject
     {
         PruneViews();
         RefreshTabs();
+        RefreshCommands();
         Panes = Workspace.ActiveTab is { } tab
             ?
             [

@@ -118,6 +118,14 @@
         <Setter Property="Background" Value="{DynamicResource BorderBrush}" />
     </Style>
 
+    <!-- The command palette: a sheet of its own, over the window. -->
+    <Style Selector="Border.palette">
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="10" />
+    </Style>
+
     <!-- Something that went wrong, said where the user was looking. -->
     <Style Selector="Border.banner">
         <Setter Property="Background" Value="{DynamicResource DangerTintBrush}" />

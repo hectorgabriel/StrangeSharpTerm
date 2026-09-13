@@ -10,6 +10,13 @@ Swift/SwiftUI app. No Swift code carries over; the design does.
 
 ## Status
 
+**M4 — the app shell.** A window with a sidebar, tabs, split panes, host
+detail, the host and folder editors, a menu bar and a command palette, in either
+of the Swift app's two themes. `docs/adr/0004` says where the colours came from
+— measured out of the Swift app's own screenshots — and `docs/adr/0005` settles
+the three questions the plan held open for this milestone: what the hidden title
+bar means on Windows, where the menu lives, and how ⌘ becomes Ctrl.
+
 **M3 — terminal.** There is a working terminal. An SSH shell channel drives an
 XTerm.NET engine, rendered by an Avalonia control; the server owns the pty, so
 there is no ConPTY and no openpty anywhere in the code, which is why the same

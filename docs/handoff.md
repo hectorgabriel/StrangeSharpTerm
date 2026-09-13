@@ -12,22 +12,23 @@ means; this says only what is done, what is in flight, and what to do first.
 | **M1** model and store | `StrangeSharpTerm.Model` and `.Store` with their 84 tests. The inventory file is byte-identical to the Swift app's, checked against goldens the Swift code itself generates (`build/swift-parity`) |
 | **M2** transport | One authenticated session per host carrying commands, shells, forwards and SFTP; host key trust shared with `ssh`; secrets in each platform's own store; `stctl`; the integration gate running against a real sshd on macOS **and** Windows in CI |
 | **M3** terminal | `TerminalSession` binding an XTerm.NET engine to an SSH channel, the Avalonia control, broadcast, scrollback, and `stctl terminal` |
-| **M4** (part) | `InventoryViewModel`, `WorkspaceViewModel`, the Lucide icon set, the window (sidebar, tabs, host detail, splits and broadcast), the theme system, the host and folder editors, and the headless UI driver |
+| **M4** done | the window (sidebar, tabs, host detail, splits, broadcast), the theme system, the host and folder editors, the menu bar, the command palette, and the headless UI driver. `docs/adr/0004` and `0005` record the decisions |
 
-Around 334 tests, all green on both operating systems.
+Around 355 tests, all green on both operating systems.
 
 ## In flight
 
 Check `gh pr list` first — a pull request may have landed since this was
-written. At the time of writing: **the headless UI driver** (branch `m4-headless`).
+written. At the time of writing: **the menu bar and command palette** (branch
+`m4-menu`), which closes M4.
 
 ## What to do next, in order
 
-1. **Menu bar and command palette**, with the two Windows questions the plan
-   wants answered as ADRs: what the hidden title bar means there, and how ⌘1–⌘9
-   map to Ctrl. The theme belongs in the menu once there is one; until then it is
-   a picker at the foot of the sidebar, adding a host is a flyout on the sidebar
-   header, and splitting is a toolbar at the end of the tab strip.
+1. **M5, the feature panes**: the SFTP browser, tunnels, dashboards, credentials
+   and snippets, and the settings sheet that should hold the theme picker now at
+   the foot of the sidebar. Four of the Swift app's shortcuts wait for them —
+   `docs/adr/0005` lists which and why, including the one that cannot be
+   translated to Windows as it stands (⌃⌘X).
 2. **Screenshots**, the other half of what the plan's CI table asks for at
    M4-M5. The driver is in place (`tests/StrangeSharpTerm.App.WindowTests`);
    what is missing is rendering. `CaptureRenderedFrame` returns a bitmap, but
@@ -54,6 +55,10 @@ says. Three things it took to get right:
 - **The real terminal control does not settle** under the headless renderer, so
   these tests put a plain control in the pane. What the control itself does is
   still checked by running the app.
+- **An Avalonia object wants a platform, and hangs without one.** A
+  `NativeMenuItem` built in a plain unit test hung the whole run — no error, no
+  timeout, just a suite that never finished — exactly as a `GridSplitter` did.
+  Anything that constructs a control or a menu belongs in the window tests.
 
 ## Setting up a machine
 
@@ -91,6 +96,7 @@ says. Three things it took to get right:
   log, which a windowed app otherwise sends nowhere.
 - **`STRANGESHARPTERM_INVENTORY`** points the app at a throwaway inventory, which
   is how the window gets tested without touching a real one. `preferences.json`
+  is written beside it, so a test run's theme choice is throwaway too. `preferences.json`
   is written beside it, so a test run's theme choice is throwaway too.
 - **Colours are measured, not chosen.** The Swift source is not on this machine,
   but `docs/reference/screenshots/` is, and `build/theme/sample.py` reads the
