@@ -12,6 +12,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/StrangeSharpTerm.App.Tests/StrangeSharpTerm.App.Tests.csproj" />
+    <Project Path="tests/StrangeSharpTerm.App.WindowTests/StrangeSharpTerm.App.WindowTests.csproj" />
     <Project Path="tests/StrangeSharpTerm.Assist.Tests/StrangeSharpTerm.Assist.Tests.csproj" />
     <Project Path="tests/StrangeSharpTerm.Mcp.Tests/StrangeSharpTerm.Mcp.Tests.csproj" />
     <Project Path="tests/StrangeSharpTerm.Model.Tests/StrangeSharpTerm.Model.Tests.csproj" />

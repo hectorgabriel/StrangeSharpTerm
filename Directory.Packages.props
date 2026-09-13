@@ -17,6 +17,13 @@
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.2" />
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.2" />
     <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.2" />
+    <!--
+      The headless platform, for tests that need a real window without a screen.
+      Avalonia.Headless.XUnit is deliberately not taken: it pins
+      xunit.v3.extensibility.core, and the harness it provides is a dozen lines
+      (tests/StrangeSharpTerm.App.WindowTests/Headless.cs).
+    -->
+    <PackageVersion Include="Avalonia.Headless" Version="12.1.2" />
     <PackageVersion Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
   </ItemGroup>

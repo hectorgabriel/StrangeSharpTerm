@@ -12,14 +12,14 @@ means; this says only what is done, what is in flight, and what to do first.
 | **M1** model and store | `StrangeSharpTerm.Model` and `.Store` with their 84 tests. The inventory file is byte-identical to the Swift app's, checked against goldens the Swift code itself generates (`build/swift-parity`) |
 | **M2** transport | One authenticated session per host carrying commands, shells, forwards and SFTP; host key trust shared with `ssh`; secrets in each platform's own store; `stctl`; the integration gate running against a real sshd on macOS **and** Windows in CI |
 | **M3** terminal | `TerminalSession` binding an XTerm.NET engine to an SSH channel, the Avalonia control, broadcast, scrollback, and `stctl terminal` |
-| **M4** (part) | `InventoryViewModel`, `WorkspaceViewModel`, the Lucide icon set, the window (sidebar, tabs, host detail, splits and broadcast), the theme system, and the host and folder editors |
+| **M4** (part) | `InventoryViewModel`, `WorkspaceViewModel`, the Lucide icon set, the window (sidebar, tabs, host detail, splits and broadcast), the theme system, the host and folder editors, and the headless UI driver |
 
-Around 324 tests, all green on both operating systems.
+Around 334 tests, all green on both operating systems.
 
 ## In flight
 
 Check `gh pr list` first — a pull request may have landed since this was
-written. At the time of writing: **splits in the window** (branch `m4-splits`).
+written. At the time of writing: **the headless UI driver** (branch `m4-headless`).
 
 ## What to do next, in order
 
@@ -28,11 +28,32 @@ written. At the time of writing: **splits in the window** (branch `m4-splits`).
    map to Ctrl. The theme belongs in the menu once there is one; until then it is
    a picker at the foot of the sidebar, adding a host is a flyout on the sidebar
    header, and splitting is a toolbar at the end of the tab strip.
-2. **A headless UI driver**, which the plan's CI table asks for at M4-M5. It is
-   what would have caught the split bug below, and what `--render` screenshots
-   need. `Avalonia.Headless` is the package; nothing in the repo uses it yet, so
-   a control that touches a platform service (a `GridSplitter` wants a cursor)
-   cannot be constructed in a test today.
+2. **Screenshots**, the other half of what the plan's CI table asks for at
+   M4-M5. The driver is in place (`tests/StrangeSharpTerm.App.WindowTests`);
+   what is missing is rendering. `CaptureRenderedFrame` returns a bitmap, but
+   only with Skia behind the headless platform (`UseHeadlessDrawing = false`
+   plus `Avalonia.Skia`), and a diff against `docs/reference/screenshots/` needs
+   a decision about how much cross-platform text rendering is allowed to differ
+   before a build fails. That decision is the work, not the plumbing.
+
+## Looking at the window without a screen
+
+`tests/StrangeSharpTerm.App.WindowTests` runs the real window on Avalonia's
+headless platform: templates applied, layout run, mouse and keys delivered. It
+is where an assertion goes when it needs a visual tree — that a pane is not
+detached when another opens beside it, that a text field is the colour the theme
+says. Three things it took to get right:
+
+- **A test body runs on the UI thread**, so awaiting inside one waits for a
+  continuation only that thread can run. `Headless.Finish` pumps the dispatcher
+  while it waits, with a deadline, so a mistake fails a test instead of hanging
+  the suite.
+- **An empty `MemoryStream` is not a quiet shell.** Reading one returns zero,
+  which a terminal reads as the end and asks again, forever. The fixture blocks
+  instead.
+- **The real terminal control does not settle** under the headless renderer, so
+  these tests put a plain control in the pane. What the control itself does is
+  still checked by running the app.
 
 ## Setting up a machine
 

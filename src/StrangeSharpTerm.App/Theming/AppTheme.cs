@@ -1,3 +1,4 @@
+using Avalonia;
 using StrangeSharpTerm.Model;
 using StrangeSharpTerm.Terminal;
 
@@ -47,6 +48,19 @@ public sealed class AppTheme
     {
         var path = preferencesPath ?? Preferences.DefaultPath();
         return new AppTheme(AppPalette.ById(Preferences.Load(path).Theme), path);
+    }
+
+    /// <summary>
+    /// Paints this theme into an application, now and whenever it changes.
+    ///
+    /// The subscription lived in <c>App.OnFrameworkInitializationCompleted</c>,
+    /// which meant a window built any other way — a headless test, a preview —
+    /// had a theme that never took effect. Wiring is the theme's own business.
+    /// </summary>
+    public void PaintInto(Application application)
+    {
+        ThemeTokens.Apply(application, Palette);
+        Changed += (_, palette) => ThemeTokens.Apply(application, palette);
     }
 
     public void Use(AppPalette palette)

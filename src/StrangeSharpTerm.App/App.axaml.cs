@@ -30,8 +30,7 @@ public partial class App : Application
             // The theme comes back before any window is built, so nothing is
             // ever painted in one theme and then repainted in another.
             var theme = AppTheme.Load();
-            ThemeTokens.Apply(this, theme.Palette);
-            theme.Changed += (_, palette) => ThemeTokens.Apply(this, palette);
+            theme.PaintInto(this);
 
             // --connect opens one host and nothing else, which is how a terminal
             // is checked against a server without the inventory in the way. With
