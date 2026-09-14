@@ -94,6 +94,32 @@ public class ShellViewModelTests
         shell.Panes.ShouldBeEmpty();
     }
 
+    /// <summary>
+    /// The layout is handed the focused tab's panes, so it cannot tell a pane
+    /// that closed from one sitting in another tab. OpenPanes is what tells it,
+    /// and without it switching tabs detached the other tab's terminals, which
+    /// cost them the connection they were given.
+    /// </summary>
+    [Fact]
+    public async Task OpenPanesSpansEveryTabWhilePanesIsJustTheFocusedOne()
+    {
+        var shell = Arrange(out var host);
+        shell.ActivateCommand.Execute(shell.Inventory.Rows.Single(r => r.Id == host.Id));
+        await shell.ConnectSelectedCommand.ExecuteAsync(null);
+        var firstTabsPane = shell.Panes.ShouldHaveSingleItem().Id;
+
+        await shell.ConnectSelectedCommand.ExecuteAsync(null);
+
+        shell.Tabs.Count.ShouldBe(2);
+        shell.Panes.ShouldHaveSingleItem().Id.ShouldNotBe(firstTabsPane);
+        shell.OpenPanes.Count.ShouldBe(2);
+        shell.OpenPanes.ShouldContain(firstTabsPane);
+
+        // And it shrinks when a tab really does close.
+        shell.CloseTabCommand.Execute(shell.Tabs[0]);
+        shell.OpenPanes.ShouldHaveSingleItem().ShouldNotBe(firstTabsPane);
+    }
+
     [Fact]
     public async Task ClosingATabLeavesTheOthersAlone()
     {

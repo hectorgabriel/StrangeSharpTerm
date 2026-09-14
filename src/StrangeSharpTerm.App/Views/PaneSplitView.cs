@@ -24,11 +24,29 @@ namespace StrangeSharpTerm.App.Views;
 /// visual tree tears its connection down, and both panes ended up reading one
 /// stream, each seeing half of it. A pane's frame is therefore made once, and
 /// only what actually changed is changed.
+///
+/// <see cref="Panes"/> is the focused tab's panes, which is why it cannot decide
+/// on its own what to take out of the grid: a pane missing from it has either
+/// closed or is sitting in another tab, and the two must not be treated alike.
+/// <see cref="OpenPanes"/> is what tells them apart. Getting this wrong was the
+/// same bug one level up: opening a second tab detached the first tab's panes,
+/// the control tore its connection down — "Process exited with code: 0", our
+/// ExitCode — and on the way back it launched a default process of its own. The
+/// tab returned showing a local shell wearing the remote host's name.
 /// </summary>
 public sealed class PaneSplitView : Decorator
 {
     public static readonly StyledProperty<IReadOnlyList<PaneSlot>?> PanesProperty =
         AvaloniaProperty.Register<PaneSplitView, IReadOnlyList<PaneSlot>?>(nameof(Panes));
+
+    /// <summary>
+    /// Every pane that is open, across every tab — not just the focused tab's.
+    ///
+    /// Null means there are no other tabs to account for, so the focused tab is
+    /// the whole world and a pane missing from it has genuinely closed.
+    /// </summary>
+    public static readonly StyledProperty<IReadOnlyList<NodeId>?> OpenPanesProperty =
+        AvaloniaProperty.Register<PaneSplitView, IReadOnlyList<NodeId>?>(nameof(OpenPanes));
 
     public static readonly StyledProperty<SplitAxis> AxisProperty =
         AvaloniaProperty.Register<PaneSplitView, SplitAxis>(nameof(Axis));
@@ -43,6 +61,7 @@ public sealed class PaneSplitView : Decorator
     static PaneSplitView()
     {
         PanesProperty.Changed.AddClassHandler<PaneSplitView>((view, _) => view.Arrange());
+        OpenPanesProperty.Changed.AddClassHandler<PaneSplitView>((view, _) => view.Arrange());
         AxisProperty.Changed.AddClassHandler<PaneSplitView>((view, _) => view.Arrange());
     }
 
@@ -52,6 +71,12 @@ public sealed class PaneSplitView : Decorator
     {
         get => GetValue(PanesProperty);
         set => SetValue(PanesProperty, value);
+    }
+
+    public IReadOnlyList<NodeId>? OpenPanes
+    {
+        get => GetValue(OpenPanesProperty);
+        set => SetValue(OpenPanesProperty, value);
     }
 
     public SplitAxis Axis
@@ -72,13 +97,26 @@ public sealed class PaneSplitView : Decorator
         var sideBySide = Axis == SplitAxis.Horizontal;
 
         // Panes that have closed: the frame goes, and the view with it — whoever
-        // closed the pane owns disposing what was inside.
-        foreach (var (id, frame) in _frames.Where(pane => panes.All(open => open.Id != pane.Key)).ToArray())
+        // closed the pane owns disposing what was inside. Closed means gone from
+        // every tab, not merely absent from this one; OpenPanes is the only thing
+        // that knows the difference, and without it the focused tab is all there is.
+        var open = OpenPanes;
+        var closed = _frames
+            .Where(pane => open is null ? panes.All(shown => shown.Id != pane.Key) : !open.Contains(pane.Key))
+            .ToArray();
+        foreach (var (id, frame) in closed)
         {
             frame.Child = null;
             _grid.Children.Remove(frame);
             _frames.Remove(id);
         }
+
+        // Whatever survives that belongs to some tab. The ones this tab is not
+        // showing are hidden where they stand rather than taken out of the grid:
+        // an invisible control is still in the visual tree, and a terminal that
+        // leaves the tree loses the connection it was given.
+        foreach (var frame in _frames.Values)
+            frame.IsVisible = false;
 
         // Dividers carry no state, so they are made fresh each time rather than
         // matched up.
@@ -103,6 +141,7 @@ public sealed class PaneSplitView : Decorator
         {
             var slot = panes[index];
             var frame = Frame(slot);
+            frame.IsVisible = true;
 
             // The focused pane is outlined. With one pane it says little; with
             // three it is the only way to know where a keystroke goes.
