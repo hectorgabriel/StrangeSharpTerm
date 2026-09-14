@@ -290,6 +290,61 @@ public class AssistantPaneTests
         });
     }
 
+    /// <summary>
+    /// The plan ran, every host reported, and the results stopped at the screen:
+    /// the next question was answered by the one participant that never found out
+    /// whether any of it worked.
+    ///
+    /// Here rather than in the view-model tests because it turns on state that is
+    /// posted to the UI thread -- whether a plan is on screen decides whether the
+    /// button plans or runs -- and only a real dispatcher settles that the same
+    /// way twice.
+    /// </summary>
+    [Fact]
+    public void WhatTheHostsReportedComesBackToTheNextPlan()
+    {
+        Headless.Run(() =>
+        {
+            const string plan = """
+            {"phases":[{"name":"Install OpenClaw","hosts":["web-01"],
+              "commands":["apt-get install -y openclaw"]}]}
+            """;
+            var planner = new Canned(Canned.Says(plan), Canned.Says(plan));
+            var model = new OrchestratorViewModel(
+                planner,
+                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+                alias => new HostAgent(
+                    new Canned(Canned.Says("E: Unable to locate package openclaw")),
+                    new Quiet(alias),
+                    new AssistSettings(),
+                    new StandingAnswer(true)));
+            var window = Show(new OrchestratorView(model));
+
+            model.Mode = OrchestratorMode.Plan;
+            model.Instruction = "install OpenClaw";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+            model.Phases.ShouldHaveSingleItem();
+
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+
+            // With a plan on screen the button runs it, so planning again starts
+            // by throwing the old one away -- which drops the phases, not the
+            // memory.
+            model.DiscardCommand.Execute(null);
+            Settle(window);
+            model.Instruction = "try something else";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+
+            var asked = planner.Requests[^1].Messages[^1].Text.ShouldNotBeNull();
+            asked.ShouldContain("Unable to locate package openclaw");
+            asked.ShouldContain("Install OpenClaw");
+            asked.ShouldContain("try something else");
+        });
+    }
+
     [Fact]
     public void APlanIsShownInFullAndNothingRunsUntilItIsRun()
     {
@@ -553,6 +608,9 @@ public class AssistantPaneTests
 
         public string Model => "canned-1";
 
+        /// <summary>Every request it was handed, in order.</summary>
+        internal List<AssistRequest> Requests { get; } = [];
+
         internal static IReadOnlyList<AssistEvent> Says(string text) =>
             [new AssistEvent.Say(text), new AssistEvent.Finished(AssistStop.EndTurn)];
 
@@ -575,6 +633,7 @@ public class AssistantPaneTests
             AssistRequest request,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            Requests.Add(request);
             var turn = _turn < turns.Length ? turns[_turn] : Says("Nothing more.");
             _turn++;
             foreach (var streamed in turn)
