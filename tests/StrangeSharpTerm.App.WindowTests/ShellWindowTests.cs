@@ -266,6 +266,57 @@ public class ShellWindowTests
         });
     }
 
+    /// <summary>
+    /// Selecting a different host while a terminal is open hands the room to the
+    /// host detail. It has to be the whole room: the detail is inset by a larger
+    /// margin than the panes, so leaving them drawn underneath showed a ring of
+    /// live terminal around it -- the remote banner across the top and its text
+    /// down the side.
+    ///
+    /// Hidden rather than removed, because a terminal out of the visual tree
+    /// loses its connection and comes back as a local shell.
+    /// </summary>
+    [Fact]
+    public void TheDetailTakesTheWholeRoomAndTheTerminalKeepsItsPlace()
+    {
+        Headless.Run(() =>
+        {
+            var host = new Connection { Name = "web-01", Hostname = "web-01.example.com" };
+            var other = new Connection { Name = "db-primary", Hostname = "db-01.example.com" };
+            var model = new ShellViewModel(
+                new InventoryViewModel(null, new InventoryTree(connections: [host, other])),
+                new StrangeSharpTerm.App.Tests.FakeSessions { OnShell = _ => new TerminalSession(new QuietChannel()) },
+                (_, _) => new Border { Background = Brushes.Black });
+            var window = new ShellWindow(model) { Width = 1100, Height = 700 };
+            window.Show();
+            Settle(window);
+
+            model.Inventory.Selection = host.Id;
+            Headless.Finish(model.ConnectSelectedCommand.ExecuteAsync(null));
+            Settle(window);
+
+            var layout = In<PaneSplitView>(window).ShouldHaveSingleItem();
+            var pane = model.Panes.ShouldHaveSingleItem().View;
+            layout.IsVisible.ShouldBeTrue();
+
+            // The sidebar moves to a host the open terminal is not about.
+            model.Inventory.Selection = other.Id;
+            Settle(window);
+
+            model.ShowsDetail.ShouldBeTrue();
+            layout.IsVisible.ShouldBeFalse();
+            // Still in the tree, still parented: hidden is not detached.
+            pane.GetSelfAndVisualAncestors().OfType<Window>().Any().ShouldBeTrue();
+            pane.Parent.ShouldNotBeNull();
+
+            // And selecting it back gives the terminal the room again.
+            model.Inventory.Selection = host.Id;
+            Settle(window);
+            layout.IsVisible.ShouldBeTrue();
+            layout.Bounds.Width.ShouldBeGreaterThan(0);
+        });
+    }
+
     private static IReadOnlyList<Border> Panes(Visual window) =>
         [.. In<PaneSplitView>(window).SelectMany(In<Border>).Where(border => border.Classes.Contains("pane"))];
 }

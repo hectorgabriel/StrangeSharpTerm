@@ -120,6 +120,45 @@ public class ShellViewModelTests
         shell.OpenPanes.ShouldHaveSingleItem().ShouldNotBe(firstTabsPane);
     }
 
+    /// <summary>
+    /// The panes, the detail and the empty-state line share a row, and exactly
+    /// one of them shows. Leaving the panes drawn under the detail left a ring of
+    /// terminal around it, because the two are inset by different margins.
+    /// </summary>
+    [Fact]
+    public async Task ThePanesAndTheDetailAreNeverBothOnScreen()
+    {
+        var host = new Connection { Name = "web-01", Hostname = "web-01.example.com" };
+        var other = new Connection { Name = "db-primary", Hostname = "db-01.example.com" };
+        var shell = new ShellViewModel(
+            new InventoryViewModel(null, new InventoryTree(connections: [host, other])),
+            new FakeSessions(),
+            (_, _) => new Border());
+
+        // Nothing open: the selected host explains itself and there are no panes.
+        shell.Inventory.Selection = host.Id;
+        shell.ShowsDetail.ShouldBeTrue();
+        shell.ShowsPanes.ShouldBeFalse();
+
+        shell.ActivateCommand.Execute(shell.Inventory.Rows.Single(r => r.Id == host.Id));
+        await shell.ConnectSelectedCommand.ExecuteAsync(null);
+
+        // Open on the host that is selected: the terminal has the room.
+        shell.ShowsDetail.ShouldBeFalse();
+        shell.ShowsPanes.ShouldBeTrue();
+
+        // Selecting a different host gives the room to the detail, and the panes
+        // stand down rather than showing around its edges.
+        shell.Inventory.Selection = other.Id;
+        shell.ShowsDetail.ShouldBeTrue();
+        shell.ShowsPanes.ShouldBeFalse();
+
+        // And back.
+        shell.Inventory.Selection = host.Id;
+        shell.ShowsDetail.ShouldBeFalse();
+        shell.ShowsPanes.ShouldBeTrue();
+    }
+
     [Fact]
     public async Task ClosingATabLeavesTheOthersAlone()
     {
