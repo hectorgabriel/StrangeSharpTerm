@@ -19,21 +19,78 @@ public class OrchestratorTests
         run.Collated.ShouldBe("Two of the three have an uncapped journal.");
     }
 
+    /// <summary>
+    /// A host that is not already open is no longer left out of the run: it is
+    /// connected when the run reaches it. One that cannot be reached at all says
+    /// why, in its own row, which is more use than being skipped in silence.
+    /// </summary>
     [Fact]
-    public async Task OnlyConnectedHostsAreAskedAndTheRestSaySo()
+    public async Task AHostThatCannotBeReachedSaysWhyRatherThanBeingSkipped()
     {
         var collator = new ScriptedBackend(ScriptedBackend.Says("Summary."));
         var run = await new Orchestrator(collator).Ask(
             "check the journal",
-            [Target("web-01", "Affected."), Target("bastion", "", connected: false)],
+            [Target("web-01", "Affected."), Unreachable("bastion", "No route to host.")],
             mayRunCommands: false,
             TestContext.Current.CancellationToken);
 
         var bastion = run.Findings.Single(finding => finding.Alias == "bastion");
-        bastion.Outcome.ShouldBe(HostOutcome.NotAsked);
-        bastion.Text.ShouldBe("Not connected — connect it and run again.");
-        bastion.Label.ShouldBe("not asked");
-        run.HostsAsked.ShouldBe(1);
+        bastion.Outcome.ShouldBe(HostOutcome.Failed);
+        bastion.Text.ShouldBe("No route to host.");
+        run.Findings.Single(finding => finding.Alias == "web-01").Outcome.ShouldBe(HostOutcome.Reported);
+    }
+
+    /// <summary>
+    /// The orchestrator keeps its own conversation, so a second instruction is a
+    /// second turn: "and now the other two" means something, and the answer can
+    /// refer to what the last run found.
+    /// </summary>
+    [Fact]
+    public async Task ASecondRunIsASecondTurnForTheSummariser()
+    {
+        var collator = new ScriptedBackend(
+            ScriptedBackend.Says("Two of the three are affected."),
+            ScriptedBackend.Says("The third is now as well."));
+        var orchestrator = new Orchestrator(collator);
+
+        await orchestrator.Ask(
+            "check the journal", [Target("web-01", "Affected.")],
+            mayRunCommands: false, TestContext.Current.CancellationToken);
+        await orchestrator.Ask(
+            "and now the third", [Target("web-02", "Affected too.")],
+            mayRunCommands: false, TestContext.Current.CancellationToken);
+
+        var second = collator.Requests[1].Messages;
+        second.Count.ShouldBe(3);
+        second[0].Text.ShouldNotBeNull().ShouldContain("web-01");
+        second[1].Text.ShouldBe("Two of the three are affected.");
+        second[2].Text.ShouldNotBeNull().ShouldContain("web-02");
+    }
+
+    /// <summary>
+    /// A turn the provider never answered leaves no question behind it, or the
+    /// next run would be read against a report with nothing after it.
+    /// </summary>
+    [Fact]
+    public async Task ASummaryThatFailedIsNotKeptInTheHistory()
+    {
+        var collator = new ScriptedBackend(ScriptedBackend.Says("Fine."))
+        {
+            Fails = new AssistException("The key was refused."),
+        };
+        var orchestrator = new Orchestrator(collator);
+
+        var first = await orchestrator.Ask(
+            "check the journal", [Target("web-01", "Affected.")],
+            mayRunCommands: false, TestContext.Current.CancellationToken);
+        first.Collated.ShouldContain("could not be written");
+
+        collator.Fails = null;
+        await orchestrator.Ask(
+            "try again", [Target("web-01", "Affected.")],
+            mayRunCommands: false, TestContext.Current.CancellationToken);
+
+        collator.Requests[1].Messages.ShouldHaveSingleItem();
     }
 
     /// <summary>
@@ -47,14 +104,14 @@ public class OrchestratorTests
         var collator = new ScriptedBackend(ScriptedBackend.Says("Summary."));
         await new Orchestrator(collator).Ask(
             "check the journal",
-            [Target("web-01", "Affected."), Target("bastion", "", connected: false)],
+            [Target("web-01", "Affected."), Unreachable("bastion", "No route to host.")],
             mayRunCommands: false,
             TestContext.Current.CancellationToken);
 
         var sent = collator.Requests.Single();
         sent.System.ShouldBe(AssistPrompts.Collator);
         sent.System.ShouldContain("no access to any server");
-        sent.Messages.Single().Text!.ShouldContain("## bastion (not asked)");
+        sent.Messages.Single().Text!.ShouldContain("## bastion (failed)");
         sent.Messages.Single().Text!.ShouldContain("## web-01 (reported)");
         // The same string on either operating system, as the context block is.
         sent.Messages.Single().Text!.ShouldNotContain("\r");
@@ -85,7 +142,7 @@ public class OrchestratorTests
         var targets = Enumerable.Range(1, 8).Select(number =>
         {
             var alias = $"host-{number}";
-            return new OrchestratorTarget(alias, true, () =>
+            return new OrchestratorTarget(alias, () =>
             {
                 var host = new FakeHost(alias);
                 var backend = new WatchingBackend(() =>
@@ -116,7 +173,7 @@ public class OrchestratorTests
         // Three hosts are in flight at once, so the record of them has to survive that.
         var ran = new System.Collections.Concurrent.ConcurrentDictionary<string, FakeHost>();
 
-        var targets = hosts.Select(alias => new OrchestratorTarget(alias, true, () =>
+        var targets = hosts.Select(alias => new OrchestratorTarget(alias, () =>
         {
             var host = new FakeHost(alias);
             ran[alias] = host;
@@ -139,7 +196,7 @@ public class OrchestratorTests
     [Fact]
     public async Task AHostThatFailedSaysSoInItsOwnRow()
     {
-        var target = new OrchestratorTarget("web-01", true, () => new HostAgent(
+        var target = new OrchestratorTarget("web-01", () => new HostAgent(
             new ScriptedBackend { Fails = new AssistException("The key was refused.") },
             new FakeHost("web-01"),
             Fixtures.Settings,
@@ -160,7 +217,7 @@ public class OrchestratorTests
         var collator = new ScriptedBackend(ScriptedBackend.Says("Should not be asked."));
 
         var run = await new Orchestrator(collator).Ask(
-            "look", [Target("bastion", "", connected: false)], mayRunCommands: false, TestContext.Current.CancellationToken);
+            "look", [Unreachable("bastion", "No route to host.")], mayRunCommands: false, TestContext.Current.CancellationToken);
 
         run.Collated.ShouldBe("No host reported, so there is nothing to collate.");
         collator.Requests.ShouldBeEmpty();
@@ -198,10 +255,14 @@ public class OrchestratorTests
         seen.ShouldBe(["web-01", "web-02"], ignoreOrder: true);
     }
 
-    private static OrchestratorTarget Target(string alias, string answer, bool connected = true) =>
-        new(alias, connected, () => new HostAgent(
+    private static OrchestratorTarget Target(string alias, string answer) =>
+        new(alias, () => new HostAgent(
             new ScriptedBackend(ScriptedBackend.Says(answer)),
             new FakeHost(alias),
             Fixtures.Settings,
             new StandingAnswer(true)));
+
+    /// <summary>A host the run cannot get an agent for -- no such host, or it will not connect.</summary>
+    private static OrchestratorTarget Unreachable(string alias, string why) =>
+        new(alias, () => throw new AssistException(why));
 }

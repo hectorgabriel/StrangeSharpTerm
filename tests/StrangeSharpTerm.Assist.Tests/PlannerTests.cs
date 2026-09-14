@@ -92,6 +92,72 @@ public class PlannerTests
         ]);
     }
 
+    /// <summary>
+    /// A plan is rarely right first time, and the second instruction is almost
+    /// always about the first. Without a history, "put it on the other one" is
+    /// read by something that has never seen the plan it is being asked to
+    /// change.
+    /// </summary>
+    [Fact]
+    public async Task ASecondPlanIsASecondTurnAndNotAFirstOne()
+    {
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Says(Answer),
+            ScriptedBackend.Says(Answer));
+        var planner = new Planner(backend);
+
+        await planner.Draft("install OpenClaw somewhere", ["web-01"], TestContext.Current.CancellationToken);
+        await planner.Draft("put it on the other one instead", ["web-01"], TestContext.Current.CancellationToken);
+
+        // The second request carries the first exchange and then the new ask.
+        var second = backend.Requests[1].Messages;
+        second.Count.ShouldBe(3);
+        second[0].Text.ShouldBe("install OpenClaw somewhere");
+        second[1].Role.ShouldBe(AssistRole.Assistant);
+        second[2].Text.ShouldBe("put it on the other one instead");
+        planner.Turns.ShouldBe(2);
+    }
+
+    /// <summary>
+    /// What is ticked changes between turns, so the host list is written fresh
+    /// each time rather than carried in the history.
+    /// </summary>
+    [Fact]
+    public async Task TheHostsAreSaidAgainEachTurnRatherThanRemembered()
+    {
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Says(Answer),
+            ScriptedBackend.Says(Answer));
+        var planner = new Planner(backend);
+
+        await planner.Draft("build a cluster", ["web-01"], TestContext.Current.CancellationToken);
+        await planner.Draft("add the others", ["web-01", "web-02"], TestContext.Current.CancellationToken);
+
+        backend.Requests[0].System.ShouldContain("web-01.");
+        backend.Requests[1].System.ShouldContain("web-01, web-02");
+    }
+
+    /// <summary>
+    /// A refusal is exactly the turn the next one needs to see, or it writes the
+    /// same unusable plan again.
+    /// </summary>
+    [Fact]
+    public async Task ARefusedPlanStaysInTheHistory()
+    {
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Says("""{"phases":[{"name":"Do it","hosts":["db-primary"],"commands":["true"]}]}"""),
+            ScriptedBackend.Says(Answer));
+        var planner = new Planner(backend);
+
+        var refused = await planner.Draft("do it", ["web-01"], TestContext.Current.CancellationToken);
+        refused.ShouldBeOfType<PlanReading.Refused>();
+
+        await planner.Draft("try again", ["web-01"], TestContext.Current.CancellationToken);
+
+        backend.Requests[1].Messages.Count.ShouldBe(3);
+        backend.Requests[1].Messages[1].Text.ShouldNotBeNull().ShouldContain("db-primary");
+    }
+
     [Fact]
     public async Task ThePlannerIsToldWhichHostsExistAndToUseNoOthers()
     {

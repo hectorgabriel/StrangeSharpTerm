@@ -207,7 +207,7 @@ public class AssistantPaneTests
     }
 
     [Fact]
-    public void EveryHostIsListedAboveTheCollatedAnswerIncludingTheOnesNotAsked()
+    public void EveryHostIsListedAboveTheCollatedAnswerIncludingTheOnesThatFailed()
     {
         Headless.Run(() =>
         {
@@ -234,7 +234,9 @@ public class AssistantPaneTests
             var shown = In<TextBlock>(window).Select(block => block.Text).ToArray();
             shown.ShouldContain("web-01");
             shown.ShouldContain("bastion");
-            shown.ShouldContain("not asked");
+            // A host the run cannot get an agent for is no longer skipped in
+            // silence: it gets a row of its own saying what went wrong.
+            shown.ShouldContain("failed");
             shown.ShouldContain("reported");
             // A summary that read as though it covered every host is the failure
             // this layout exists to prevent.
