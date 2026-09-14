@@ -154,6 +154,16 @@ says. Three things it took to get right:
   "which shell has the focus" unanswerable from a view model, and silently false
   in any test that substitutes the pane view. The shell opens the session, so the
   shell registers it.
+- **A constant being right is not the wiring being right.** Three kinds of
+  secret live in three keychain services on purpose — a connection passphrase, a
+  provider API key, a tool server's token. The constants said so, a test asserted
+  the three names differ, and the settings sheet wrote an API key to the right
+  one. The backend factory then read it from the *connection* store, so every
+  saved key was invisible and every pane said "No API key". The MCP tokens had
+  the same shape of mistake, consistent in both directions and therefore silent.
+  No test followed a secret from where it is written to where it is read; that is
+  the test that was missing, and asserting on the constants was what made it look
+  covered.
 - **A valid signature says nothing about the app starting.** An ad-hoc bundle
   signs, passes `codesign --verify --deep --strict`, satisfies its designated
   requirement — and then dies on launch, unable to open `libhostfxr`, because a

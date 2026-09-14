@@ -42,6 +42,8 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly Func<TerminalSession, TerminalPalette, Control> _view;
     private readonly IDialogService _dialogs;
     private readonly Lazy<ISecretStore> _secrets;
+    private readonly Lazy<ISecretStore> _assistKeys;
+    private readonly Lazy<ISecretStore> _toolTokens;
     private readonly AppTheme _theme;
     private readonly Func<AssistSettings, IAssistBackend?> _backends;
     private readonly string? _preferencesPath;
@@ -62,23 +64,31 @@ public sealed partial class ShellViewModel : ObservableObject
         AssistSettings? assist = null,
         Func<AssistSettings, IAssistBackend?>? backends = null,
         string? preferencesPath = null,
-        McpHub? tools = null)
+        McpHub? tools = null,
+        ISecretStore? assistKeys = null,
+        ISecretStore? toolTokens = null)
     {
         Inventory = inventory;
         _dialogs = dialogs ?? new ScriptedDialogService();
         // Opened when the library is, not when the window is: reaching for the
         // platform keychain costs a round trip and can refuse, and neither
         // belongs in the constructor of the thing that draws the sidebar.
-        _secrets = secrets is { } given
-            ? new Lazy<ISecretStore>(given)
-            : new Lazy<ISecretStore>(() => new PlatformSecretStore());
+        _secrets = Store(secrets, PlatformSecretStore.DefaultService);
+        // Three kinds of secret, three services, and each read from the one it
+        // was written to. They are separate because they are revoked, rotated
+        // and lost independently: an API key is not a server passphrase, and a
+        // tool server's token is neither.
+        _assistKeys = Store(assistKeys, AssistKeys.Service);
+        _toolTokens = Store(toolTokens, McpTokens.Service);
         _theme = theme ?? new AppTheme();
         _preferencesPath = preferencesPath;
         // The assistant's settings are the app's, not a pane's: the preview a
         // pane shows is of a choice made once, somewhere a person can find it.
         AssistantSettings = assist ?? (preferencesPath is { } path ? AssistPreferences.Load(path) : new AssistSettings());
-        // Substituted in tests, and the only place a provider is built.
-        _backends = backends ?? (settings => AssistBackends.For(settings, _secrets.Value));
+        // Substituted in tests, and the only place a provider is built. The
+        // store is the assistant's own -- reading it from the connection store
+        // is what made every saved key invisible.
+        _backends = backends ?? (settings => AssistBackends.For(settings, _assistKeys.Value));
         _tools = tools;
         Workspace = new WorkspaceViewModel(_terminals);
         _sessions = sessions ?? new HostSessions(() => Inventory.Tree);
@@ -133,7 +143,7 @@ public sealed partial class ShellViewModel : ObservableObject
         if (settings.Usable.Count == 0)
             return;
 
-        _tools ??= new McpHub(settings, saved => McpPreferences.Save(path, saved), _assistKeys.Value);
+        _tools ??= new McpHub(settings, saved => McpPreferences.Save(path, saved), _toolTokens.Value);
         try
         {
             await _tools.Connect();
@@ -309,20 +319,23 @@ public sealed partial class ShellViewModel : ObservableObject
             // constructs a hub -- and so the sheet is the place a first one can
             // be added.
             _tools ??= _preferencesPath is { } where
-                ? new McpHub(McpPreferences.Load(where), saved => McpPreferences.Save(where, saved), _assistKeys.Value)
+                ? new McpHub(McpPreferences.Load(where), saved => McpPreferences.Save(where, saved), _toolTokens.Value)
                 : null,
             _dialogs,
-            _assistKeys.Value);
+            _toolTokens.Value);
 
         await _dialogs.Manage(settings);
     }
 
     /// <summary>
-    /// Where API keys live. Opened when Settings is, for the same reason the
-    /// credential store is opened when the library is.
+    /// A store, opened when it is first used rather than when the window is:
+    /// reaching for the platform keychain costs a round trip and can refuse, and
+    /// neither belongs in the constructor of the thing that draws the sidebar.
     /// </summary>
-    private readonly Lazy<ISecretStore> _assistKeys =
-        new(() => new PlatformSecretStore(AssistKeys.Service));
+    private static Lazy<ISecretStore> Store(ISecretStore? given, string service) =>
+        given is { } substituted
+            ? new Lazy<ISecretStore>(substituted)
+            : new Lazy<ISecretStore>(() => new PlatformSecretStore(service));
 
     /// <summary>The snippet library: commands worth keeping, and where each is offered.</summary>
     [RelayCommand]
