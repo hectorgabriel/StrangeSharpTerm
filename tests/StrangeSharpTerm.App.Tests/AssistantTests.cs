@@ -182,7 +182,14 @@ public class AssistantTests
                 (_, _) => new Avalonia.Controls.Border(),
                 // No key is what a fresh install looks like, and the shell has
                 // to say so rather than open a pane that cannot answer.
-                backends: _ => hasKey ? answer : null);
+                backends: _ => hasKey ? answer : null,
+                // A stand-in for the orchestrator control, for the same reason the
+                // terminal gets one: building the real one runs its XAML, and
+                // these tests have no application around it to run it in. Done
+                // against the real control it raced Avalonia's weak-event
+                // bookkeeping and failed on Windows with a NullReferenceException
+                // in WeakHashList, on whichever test happened to build it first.
+                orchestratorView: model => new Avalonia.Controls.Border { DataContext = model });
         }
 
         internal Connection Host { get; }
@@ -201,10 +208,11 @@ public class AssistantTests
         internal OrchestratorViewModel Orchestrator()
         {
             Shell.AskSeveralHostsCommand.Execute(null);
-            return Shell.Panes.Select(pane => pane.View)
-                .OfType<Views.OrchestratorView>()
-                .Last()
-                .DataContext as OrchestratorViewModel
+            // By what the pane holds rather than by the control's type, so the
+            // stand-in above answers as the real control would.
+            return Shell.Panes.Select(pane => pane.View.DataContext)
+                .OfType<OrchestratorViewModel>()
+                .LastOrDefault()
                 ?? throw new InvalidOperationException("no orchestrator pane is open");
         }
     }
