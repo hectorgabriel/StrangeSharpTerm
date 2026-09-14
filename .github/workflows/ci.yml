@@ -5,6 +5,14 @@ on:
     branches: [main]
   pull_request:
 
+# A second push to a branch makes the first run's answer irrelevant, so it is
+# cancelled rather than finished. Not on main: a run there is validating what has
+# already landed, and cancelling it would leave the branch everyone builds on
+# with no answer at all.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   build:
     # Both targets, every time. The whole point of the move off Swift is that
