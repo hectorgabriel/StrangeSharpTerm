@@ -388,8 +388,19 @@ ours is what those cannot decide: a loopback port bound before the browser opens
 rather than a claimable URL scheme, the rule that a renewal never opens a
 browser, where the tokens live, and how a bare `npx` is found.
 
-**M8 — Packaging.** See below. Parity review against the Swift app, then archive the
-Swift `StrangeTerm` repo (it keeps its name; see Repository).
+**M8 — Packaging. Done, as far as an account allows.** `build/package.sh` builds
+the bundle and its disk image, transcribing the Swift script's sequence;
+`build/install.sh` is the personal-use path; `build/package.ps1` is Windows; CI
+packages both on every push. `docs/adr/0008` records it.
+
+What is unrun is the half that needs a paid Apple Developer account: a free
+Personal Team issues no Developer ID certificate and cannot notarise. Those steps
+are written and gated behind a credential check. The Windows counterpart is an
+Authenticode certificate, and MSIX is deliberately still not taken — it needs the
+same certificate plus a packaging identity, and a zip is what can be tested today.
+
+Still to do: the parity review against the Swift app, then archiving the Swift
+`StrangeTerm` repo (it keeps its name; see Repository).
 
 ## Packaging — what actually gets easier
 

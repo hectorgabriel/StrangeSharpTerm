@@ -46,3 +46,37 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./build/integration-test.ps1
+
+  # M8's gate: the packaging scripts themselves, on both platforms, every time.
+  #
+  # Unsigned and unnotarised, because those need credentials a pull request
+  # cannot have -- but everything up to them is exactly what a release does, and
+  # it is the part that breaks silently. The macOS script signs ad-hoc, verifies
+  # every one of ~245 nested files, and starts the bundle; a publish that cannot
+  # load its own runtime fails here rather than after notarisation.
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: ./build/package.sh
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./build/package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-unsigned
+          path: |
+            artifacts/**/*.dmg
+            artifacts/**/*.zip
+          if-no-files-found: error
+          retention-days: 7

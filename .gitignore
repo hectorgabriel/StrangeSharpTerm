@@ -12,3 +12,6 @@ Signing.local.props
 # Python bytecode, committed by accident with the theme sampler.
 __pycache__/
 *.pyc
+
+# Where build/package.sh and build/package.ps1 put what they make.
+artifacts/

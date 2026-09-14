@@ -10,6 +10,25 @@ Swift/SwiftUI app. No Swift code carries over; the design does.
 
 ## Status
 
+**M8 — packaging.** `build/package.sh` builds `StrangeSharpTerm.app` and a disk
+image around it; `build/install.sh` puts it in `/Applications` for your own Mac
+and needs no certificate at all. `build/package.ps1` does the Windows side.
+Both run in CI on every push, so a publish that cannot load its own runtime fails
+there rather than after notarisation.
+
+```sh
+./build/install.sh          # build, sign ad-hoc, install to /Applications
+./build/package.sh          # a disk image, for this machine
+./build/package.sh --notarize --sign-with "Developer ID Application: …"
+```
+
+Signing for *other* machines needs a paid Apple Developer account — a free
+Personal Team cannot issue a Developer ID certificate and cannot notarise. That
+half is written and gated, and has never run. `docs/adr/0008` records what is
+proven, what is not, and the three things that only showed up by running it: every
+file under `Contents/MacOS` is code to codesign, a valid signature says nothing
+about the app starting, and a timestamp is a network round trip per signature.
+
 **M7 — connected tools.** An assistant that can only reach the machine in front
 of it cannot answer "is this ours or the upstream's?" — that is usually in a
 dashboard, a tracker or somebody's runbook. **Settings → Connected tools**
