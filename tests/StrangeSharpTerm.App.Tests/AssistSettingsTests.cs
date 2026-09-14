@@ -122,6 +122,24 @@ public class AssistSettingsTests : IDisposable
     }
 
     [Fact]
+    public void TheTickMovesToTheProviderJustChosen()
+    {
+        var sheet = Sheet();
+
+        sheet.ChooseProviderCommand.Execute(sheet.Providers[1]);
+
+        // Saving it is not enough: the sheet in front of the user has to agree,
+        // and a card still marked chosen is one that cannot be chosen again.
+        sheet.Providers[0].IsChosen.ShouldBeFalse();
+        sheet.Providers[1].IsChosen.ShouldBeTrue();
+
+        sheet.ChooseProviderCommand.Execute(sheet.Providers[0]);
+
+        sheet.Providers[0].IsChosen.ShouldBeTrue();
+        sheet.Providers[1].IsChosen.ShouldBeFalse();
+    }
+
+    [Fact]
     public void AKeyGoesToTheStoreUnderTheChosenProvidersOwnAccount()
     {
         var keys = new InMemorySecretStore();
