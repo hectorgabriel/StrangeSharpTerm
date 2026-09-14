@@ -338,6 +338,11 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
                 Progress = $"{run.HostsAsked} hosts · {run.CommandsRun} commands";
                 IsThinkingOpen = false;
             });
+
+            // The summariser was handed these as its own question. The planner
+            // was not there at all, and a plan asked for next is about these
+            // hosts in the state this run left them.
+            _planner.Record(Reported(run));
         });
     }
 
@@ -426,8 +431,61 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         {
             var plan = new RunPlan([.. Phases.Select(row => row.Phase)]);
             var result = await runner.Run(plan, MayRunCommands, token);
-            Post(() => Progress = result.Stopped ? result.StoppedBecause ?? "The run stopped." : "Finished.");
+            Post(() =>
+            {
+                Progress = result.Stopped ? result.StoppedBecause ?? "The run stopped." : "Finished.";
+                OnPropertyChanged(nameof(Continuing));
+                OnPropertyChanged(nameof(IsContinuing));
+            });
+
+            // What the hosts reported goes back to the assistant that planned
+            // it. Without this the plan is written, the hosts carry it out, and
+            // the next question is answered by the one participant that never
+            // found out whether any of it worked.
+            var reported = Reported(result);
+            _planner.Record(reported);
+            _orchestrator.Record(reported);
         });
+    }
+
+    /// <summary>What a fan-out amounts to: what was asked, and what each host said.</summary>
+    private static string Reported(OrchestratedRun run) =>
+        string.Join('\n', [
+            $"# Asked across {run.Findings.Count} hosts: {run.Instruction}",
+            .. run.Findings.SelectMany(finding => new[]
+            {
+                $"## {finding.Alias} ({finding.Label})",
+                finding.Text,
+            }),
+        ]).Replace("\r", "").Trim();
+
+    /// <summary>
+    /// What a run amounts to, in the shape the summariser already reads: each
+    /// phase, what became of it, and what each of its hosts said.
+    /// </summary>
+    private static string Reported(PlanRunResult run)
+    {
+        List<string> lines = [];
+        foreach (var phase in run.Phases)
+        {
+            lines.Add($"# {phase.Phase.Name} ({Describe(phase.Outcome)})");
+            if (phase.Note is { Length: > 0 } note)
+                lines.Add(note);
+            if (phase is { CapturedName: { Length: > 0 } name, Captured: { Length: > 0 } value })
+                lines.Add($"{name} = {value}");
+            foreach (var finding in phase.Findings)
+            {
+                lines.Add($"## {finding.Alias} ({finding.Label})");
+                lines.Add(finding.Text);
+            }
+            lines.Add("");
+        }
+
+        if (run.Stopped && run.StoppedBecause is { Length: > 0 } because)
+            lines.Add($"The run stopped: {because}");
+
+        // The same string on either operating system, as the context block is.
+        return string.Join('\n', lines).Replace("\r", "").Trim();
     }
 
     private static string Describe(PhaseOutcome outcome) => outcome switch

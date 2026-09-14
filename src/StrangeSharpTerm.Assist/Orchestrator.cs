@@ -80,6 +80,22 @@ public sealed class Orchestrator(IAssistBackend collator)
     /// </summary>
     private readonly List<AssistMessage> _conversation = [];
 
+    /// <summary>
+    /// What happened somewhere this orchestrator did not itself ask -- a plan
+    /// run, whose hosts reported to the runner rather than to this. Folded into
+    /// the next report rather than sent alone, for the same reason the planner
+    /// does it: a conversation alternates.
+    /// </summary>
+    private string _reported = "";
+
+    /// <inheritdoc cref="Planner.Record"/>
+    public void Record(string whatHappened)
+    {
+        if (whatHappened.Trim().Length == 0)
+            return;
+        _reported = _reported.Length == 0 ? whatHappened : $"{_reported}\n\n{whatHappened}";
+    }
+
     /// <summary>A host finished, so a pane can fill its row in before the rest are done.</summary>
     public event EventHandler<HostFinding>? Reported;
 
@@ -188,7 +204,13 @@ public sealed class Orchestrator(IAssistBackend collator)
 
         var said = new StringBuilder();
         var thought = new StringBuilder();
-        var asked = new AssistMessage { Role = AssistRole.User, Text = string.Join('\n', report) };
+        var asked = new AssistMessage
+        {
+            Role = AssistRole.User,
+            Text = _reported.Length == 0
+                ? string.Join('\n', report)
+                : $"Since the last answer:\n\n{_reported}\n\n{string.Join('\n', report)}",
+        };
         try
         {
             await foreach (var streamed in collator.Stream(
@@ -222,6 +244,7 @@ public sealed class Orchestrator(IAssistBackend collator)
         // question in the history with nothing after it.
         _conversation.Add(asked);
         _conversation.Add(new AssistMessage { Role = AssistRole.Assistant, Text = said.ToString() });
+        _reported = "";
         return said.ToString();
     }
 }

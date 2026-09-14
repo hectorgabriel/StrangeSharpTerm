@@ -122,6 +122,46 @@ public class AssistantTests
         built.ShouldBe(["web-01"]);
     }
 
+    /// <summary>
+    /// The whole point of the plan running: what the hosts said comes back to
+    /// the assistant that planned it. It used to stop at the screen, so the next
+    /// plan was written by something that had never learned whether the last one
+    /// worked.
+    /// </summary>
+    [Fact]
+    public async Task WhatTheHostsReportedComesBackToTheNextPlan()
+    {
+        const string plan = """
+        {"phases":[{"name":"Install OpenClaw","hosts":["web-01"],"commands":["apt-get install -y openclaw"]}]}
+        """;
+        var collator = new Canned(Canned.Says(plan), Canned.Says(plan));
+        var model = new OrchestratorViewModel(
+            collator,
+            [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+            alias => new HostAgent(
+                new Canned(Canned.Says("E: Unable to locate package openclaw")),
+                new Silent(alias),
+                new AssistSettings(),
+                new StandingAnswer(true)));
+
+        model.Mode = OrchestratorMode.Plan;
+        model.Instruction = "install OpenClaw";
+        await model.RunCommand.ExecuteAsync(null);   // writes the plan
+        await model.RunCommand.ExecuteAsync(null);   // runs it
+
+        // With a plan on screen the button runs it, so planning again starts by
+        // throwing the old one away -- which drops the phases, not the memory.
+        model.DiscardCommand.Execute(null);
+        model.Instruction = "try something else";
+        await model.RunCommand.ExecuteAsync(null);   // plans again
+
+        // The second plan was asked with the first run's outcome in front of it.
+        var asked = collator.Requests[^1].Messages[^1].Text.ShouldNotBeNull();
+        asked.ShouldContain("Unable to locate package openclaw");
+        asked.ShouldContain("Install OpenClaw");
+        asked.ShouldContain("try something else");
+    }
+
     [Fact]
     public void TheOrchestratorOffersEveryHostAndSaysWhichAreConnected()
     {
@@ -282,6 +322,9 @@ public class AssistantTests
 
         public string Model => "canned-1";
 
+        /// <summary>Every request it was handed, in order.</summary>
+        internal List<AssistRequest> Requests { get; } = [];
+
         internal static IReadOnlyList<AssistEvent> Says(string text) =>
             [new AssistEvent.Say(text), new AssistEvent.Finished(AssistStop.EndTurn)];
 
@@ -289,6 +332,7 @@ public class AssistantTests
             AssistRequest request,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
+            Requests.Add(request);
             var turn = _turn < turns.Length ? turns[_turn] : Says("Nothing more.");
             _turn++;
             foreach (var streamed in turn)

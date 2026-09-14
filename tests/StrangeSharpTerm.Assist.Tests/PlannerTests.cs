@@ -119,6 +119,56 @@ public class PlannerTests
     }
 
     /// <summary>
+    /// The planner writes a plan, the hosts carry it out, and the results went
+    /// nowhere: the next question was answered by the one participant that never
+    /// found out whether any of it worked.
+    /// </summary>
+    [Fact]
+    public async Task WhatTheHostsReportedReachesTheNextQuestion()
+    {
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Says(Answer),
+            ScriptedBackend.Says(Answer));
+        var planner = new Planner(backend);
+
+        await planner.Draft("install OpenClaw", ["web-01"], TestContext.Current.CancellationToken);
+        planner.Record("## web-01 (failed)\nE: Unable to locate package openclaw");
+        await planner.Draft("try something else", ["web-01"], TestContext.Current.CancellationToken);
+
+        var asked = backend.Requests[1].Messages[^1].Text.ShouldNotBeNull();
+        asked.ShouldContain("Unable to locate package openclaw");
+        asked.ShouldContain("try something else");
+    }
+
+    /// <summary>
+    /// Folded into the next question rather than sent as a turn of its own: a
+    /// conversation alternates, and a report with nothing answering it is not a
+    /// turn. Carried once, because after that it is in the history.
+    /// </summary>
+    [Fact]
+    public async Task WhatWasReportedIsCarriedOnceAndNotAgain()
+    {
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Says(Answer),
+            ScriptedBackend.Says(Answer),
+            ScriptedBackend.Says(Answer));
+        var planner = new Planner(backend);
+
+        await planner.Draft("install it", ["web-01"], TestContext.Current.CancellationToken);
+        planner.Record("## web-01 (failed)\nNo such package.");
+        await planner.Draft("try again", ["web-01"], TestContext.Current.CancellationToken);
+        await planner.Draft("and again", ["web-01"], TestContext.Current.CancellationToken);
+
+        // Every message is still one side of an exchange.
+        backend.Requests[2].Messages.Select(message => message.Role).ShouldBe([
+            AssistRole.User, AssistRole.Assistant,
+            AssistRole.User, AssistRole.Assistant,
+            AssistRole.User,
+        ]);
+        backend.Requests[2].Messages[^1].Text.ShouldBe("and again");
+    }
+
+    /// <summary>
     /// What is ticked changes between turns, so the host list is written fresh
     /// each time rather than carried in the history.
     /// </summary>
