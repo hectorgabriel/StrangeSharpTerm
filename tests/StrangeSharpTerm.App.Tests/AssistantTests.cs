@@ -67,6 +67,27 @@ public class AssistantTests
         fixture.Shell.Workspace.Panes.ShouldHaveSingleItem().ConnectionId.ShouldBeNull();
     }
 
+    /// <summary>
+    /// The host detail shares its row with the panes and is drawn after them, so
+    /// whenever it is showing it covers whatever is open. That is deliberate for
+    /// a terminal belonging to a different host from the selected one. The
+    /// orchestrator belongs to no host, so "a different host" does not apply to
+    /// it, and treating null as different put the detail panel on top of it.
+    /// </summary>
+    [Fact]
+    public void TheHostDetailStandsAsideForTheOrchestrator()
+    {
+        var fixture = new Fixture();
+        fixture.Shell.Inventory.Selection = fixture.Host.Id;
+
+        // With nothing open, the selected host explains itself.
+        fixture.Shell.ShowsDetail.ShouldBeTrue();
+
+        fixture.Shell.AskSeveralHostsCommand.Execute(null);
+
+        fixture.Shell.ShowsDetail.ShouldBeFalse();
+    }
+
     [Fact]
     public void TheOrchestratorOffersEveryHostAndSaysWhichAreConnected()
     {

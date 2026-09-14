@@ -204,9 +204,17 @@ public sealed partial class ShellViewModel : ObservableObject
     /// Whether the right-hand side is showing the selected host rather than a
     /// terminal: either nothing is open, or the selection is a different host
     /// from the one the focused pane belongs to.
+    ///
+    /// The detail shares its row with the panes and is drawn after them, so
+    /// showing it covers whatever is open. A pane that belongs to no single host
+    /// -- the orchestrator, which is deliberately about several -- has no host to
+    /// differ from the selection, and reading its null as "a different host" is
+    /// what drew the detail panel on top of it.
     /// </summary>
     public bool ShowsDetail =>
-        Detail is not null && (Panes.Count == 0 || Workspace.ActivePane?.ConnectionId != Inventory.Selection);
+        Detail is not null
+        && (Panes.Count == 0
+            || (Workspace.ActivePane is { ConnectionId: { } host } && host != Inventory.Selection));
 
     /// <summary>
     /// Nothing selected and nothing open. Not simply "no detail": a terminal is
