@@ -235,6 +235,37 @@ public class ShellWindowTests
     private static double Left(Visual visual, Visual root) => visual.TranslatePoint(default, root)!.Value.X;
 
     /// <summary>The panes on screen: what the split view is actually holding.</summary>
+    /// <summary>
+    /// Opening a second tab must not take the first tab's panes out of the tree:
+    /// a terminal that leaves it loses its connection and comes back as a local
+    /// shell. This is also what proves the markup binds
+    /// OpenPanes -- the layout cannot tell a closed pane from a backgrounded one
+    /// without it, and a binding that silently failed would look exactly like the
+    /// bug it fixes.
+    /// </summary>
+    [Fact]
+    public void ASecondTabLeavesTheFirstTabsPaneInTheTree()
+    {
+        Headless.Run(() =>
+        {
+            var (window, model, host) = Open();
+            model.Inventory.Selection = host.Id;
+
+            Headless.Finish(model.ConnectSelectedCommand.ExecuteAsync(null));
+            Settle(window);
+            var first = model.Panes.ShouldHaveSingleItem().View;
+
+            Headless.Finish(model.ConnectSelectedCommand.ExecuteAsync(null));
+            Settle(window);
+
+            model.Tabs.Count.ShouldBe(2);
+            var layout = In<PaneSplitView>(window).ShouldHaveSingleItem();
+            layout.OpenPanes.ShouldNotBeNull().Count.ShouldBe(2);
+            first.GetSelfAndVisualAncestors().OfType<Window>().Any().ShouldBeTrue();
+            ((Border)first.Parent!).IsVisible.ShouldBeFalse();
+        });
+    }
+
     private static IReadOnlyList<Border> Panes(Visual window) =>
         [.. In<PaneSplitView>(window).SelectMany(In<Border>).Where(border => border.Classes.Contains("pane"))];
 }

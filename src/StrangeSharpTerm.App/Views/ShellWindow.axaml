@@ -194,6 +194,7 @@
 
             <views:PaneSplitView Grid.Row="3" Margin="8"
                                  Panes="{Binding Panes}"
+                                 OpenPanes="{Binding OpenPanes}"
                                  Axis="{Binding Axis}"
                                  FocusCommand="{Binding FocusPaneCommand}" />
 

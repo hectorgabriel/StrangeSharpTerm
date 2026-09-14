@@ -185,6 +185,18 @@ public sealed partial class ShellViewModel : ObservableObject
     [ObservableProperty]
     public partial IReadOnlyList<PaneSlot> Panes { get; private set; } = [];
 
+    /// <summary>
+    /// Every open pane, across every tab.
+    ///
+    /// The layout needs this to tell a pane that has closed from one that is
+    /// merely in another tab. Without it, switching tabs took the panes it was
+    /// leaving out of the visual tree, which is fatal to a terminal: the control
+    /// tears its connection down and relaunches a process of its own, so the tab
+    /// came back showing "Process exited with code: 0" and a local shell.
+    /// </summary>
+    [ObservableProperty]
+    public partial IReadOnlyList<NodeId> OpenPanes { get; private set; } = [];
+
     /// <summary>Which way the focused tab's panes are laid out.</summary>
     public SplitAxis Axis => Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal;
 
@@ -1001,6 +1013,9 @@ public sealed partial class ShellViewModel : ObservableObject
         PruneViews();
         RefreshTabs();
         RefreshCommands();
+        // Set before Panes: the layout reads it to decide what to drop, and a
+        // stale one would drop the panes of the tab being left.
+        OpenPanes = [.. Workspace.Panes.Select(pane => pane.Id).Where(_views.ContainsKey)];
         Panes = Workspace.ActiveTab is { } tab
             ?
             [
