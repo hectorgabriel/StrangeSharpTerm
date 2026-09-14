@@ -33,10 +33,35 @@ public sealed partial class AssistRow : ObservableObject
         _ => "",
     };
 
-    /// <summary>Summarised reasoning, shown only while there is nothing else to show.</summary>
+    /// <summary>Summarised reasoning, where the provider offers it.</summary>
     public string Reasoning => Entry is TranscriptEntry.Answer answer ? answer.Reasoning : "";
 
-    public bool ShowsReasoning => Reasoning.Length > 0 && Text.Length == 0;
+    /// <summary>
+    /// Whether there is reasoning to offer at all.
+    ///
+    /// It used to disappear the moment the answer started, which made it a
+    /// loading indicator rather than something to read: by the time you noticed
+    /// it had said something worth keeping, it was gone. It stays, folded once
+    /// the answer arrives.
+    /// </summary>
+    public bool HasReasoning => Reasoning.Length > 0;
+
+    /// <summary>Open while it is all there is, folded once the answer is on screen.</summary>
+    public bool ShowsReasoning => HasReasoning && (IsReasoningOpen || Text.Length == 0);
+
+    [ObservableProperty]
+    public partial bool IsReasoningOpen { get; set; }
+
+    public string ReasoningToggle => ShowsReasoning ? "hide" : "show";
+
+    [RelayCommand]
+    public void ToggleReasoning() => IsReasoningOpen = !IsReasoningOpen;
+
+    partial void OnIsReasoningOpenChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowsReasoning));
+        OnPropertyChanged(nameof(ReasoningToggle));
+    }
 
     /// <summary>
     /// The answer as prose and fenced blocks, each drawn as what it is.

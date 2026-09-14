@@ -100,7 +100,17 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
                 continue;
             }
 
-            var task = RunPlan.Fill(phase.Task, values);
+            // The commands are the instruction. They were read and approved as
+            // written, so they are handed over as written rather than described
+            // back to the model, which would invite it to write its own.
+            var commands = phase.Commands.Select(command => RunPlan.Fill(command, values)).ToArray();
+            var task = string.Join("\n", [
+                .. new[] { "Run these commands on this host, in order:", "" },
+                .. commands.Select(command => $"  {command}"),
+                "",
+                "Run them as they are written. If one fails, stop and report what happened"
+                    + " rather than trying something else.",
+            ]);
             var instruction = phase.Capture is { Length: > 0 } capture
                 ? $"{task}\n\nWhen you are done, end your answer with a line reading "
                     + $"{CaptureMarker} followed by the {capture} and nothing else."

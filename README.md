@@ -73,7 +73,14 @@ each.
 at a time, each with its own agent and its own gate, collated into one answer
 that is told which hosts never reported. Its second mode writes a **plan** —
 phases in order, different work per host, one value carried between them — and
-runs none of it until you have read it.
+runs none of it until you have read it. A phase names the **commands** each of
+its hosts will run and why it is those hosts, because "install Kubernetes" is
+not something anyone can check and `kubeadm init --pod-network-cidr=…` is. They
+are still only asked for: every one meets `CommandPolicy` and the gate when the
+phase runs. Where a provider offers its reasoning, that is on screen too —
+folded once there is a plan to read, because which of three identical servers
+gets the single-node install is the decision, and the plan alone shows only
+which one won.
 
 Both providers, Claude and DeepSeek, are reached through one seam; see
 `docs/adr/0006` for why one is an SDK and the other is not.

@@ -12,8 +12,8 @@ public class PlanRunnerTests
 
         var result = await runner.Run(
             Plan(
-                Phase("Initialise", ["web-01"], "Run kubeadm init.", capture: "join_command"),
-                Phase("Join", ["web-02"], "Join with: {{join_command}}")),
+                Phase("Initialise", ["web-01"], "kubeadm init", capture: "join_command"),
+                Phase("Join", ["web-02"], "{{join_command}}")),
             mayRunCommands: false,
             TestContext.Current.CancellationToken);
 
@@ -24,8 +24,38 @@ public class PlanRunnerTests
         result.Phases[0].Captured.ShouldBe("kubeadm join 10.0.0.1 --token abc");
         result.Phases[0].CapturedName.ShouldBe("join_command");
 
-        asked[1].ShouldContain("Join with: kubeadm join 10.0.0.1 --token abc");
+        // The captured value reaches the next phase inside the command itself.
+        asked[1].ShouldContain("kubeadm join 10.0.0.1 --token abc");
         asked[1].ShouldNotContain("{{join_command}}");
+    }
+
+    /// <summary>
+    /// The commands are handed over as written rather than described back to the
+    /// model. Paraphrasing them would invite it to write its own, and the plan on
+    /// screen would stop being the plan that runs.
+    /// </summary>
+    [Fact]
+    public async Task TheHostIsGivenTheCommandsAsTheyWereWritten()
+    {
+        var asked = new List<string>();
+        var phase = new PlanPhase
+        {
+            Name = "Install OpenClaw",
+            Hosts = ["web-01"],
+            Why = "It has the most memory.",
+            Commands = ["apt-get update", "apt-get install -y openclaw"],
+        };
+
+        await Runner(asked, "Done.").Run(
+            Plan(phase), mayRunCommands: true, TestContext.Current.CancellationToken);
+
+        var instruction = asked.ShouldHaveSingleItem();
+        instruction.ShouldContain("apt-get update");
+        instruction.ShouldContain("apt-get install -y openclaw");
+        // In order, and told to run them rather than improve on them.
+        instruction.IndexOf("apt-get update", StringComparison.Ordinal)
+            .ShouldBeLessThan(instruction.IndexOf("apt-get install -y openclaw", StringComparison.Ordinal));
+        instruction.ShouldContain("as they are written");
     }
 
     [Fact]
@@ -33,15 +63,17 @@ public class PlanRunnerTests
     {
         var asked = new List<string>();
         var plan = Plan(
-            Phase("One", ["web-01"], "do one"),
-            Phase("Two", ["web-01"], "do two"));
+            Phase("One", ["web-01"], "echo one"),
+            Phase("Two", ["web-01"], "echo two"));
         plan.Phases[0].IsEnabled = false;
 
         var result = await Runner(asked, "Done.", "Done.")
             .Run(plan, mayRunCommands: false, TestContext.Current.CancellationToken);
 
         result.Phases[0].Outcome.ShouldBe(PhaseOutcome.Disabled);
-        asked.ShouldBe(["do two"]);
+        // One host asked, once, and about the phase that was left on.
+        asked.ShouldHaveSingleItem().ShouldContain("echo two");
+        asked.Single().ShouldNotContain("echo one");
     }
 
     [Fact]
@@ -52,8 +84,8 @@ public class PlanRunnerTests
 
         var result = await runner.Run(
             Plan(
-                Phase("Initialise", ["web-01"], "Run kubeadm init."),
-                Phase("Join", ["web-02"], "Join the cluster.")),
+                Phase("Initialise", ["web-01"], "kubeadm init"),
+                Phase("Join", ["web-02"], "kubeadm join 10.0.0.1")),
             mayRunCommands: false,
             TestContext.Current.CancellationToken);
 
@@ -71,7 +103,7 @@ public class PlanRunnerTests
         var result = await Runner(asked, "I ran it, but I will not say what it printed.")
             .Run(
                 Plan(
-                    Phase("Initialise", ["web-01"], "Run kubeadm init.", capture: "join_command"),
+                    Phase("Initialise", ["web-01"], "kubeadm init", capture: "join_command"),
                     Phase("Join", ["web-02"], "Join with {{join_command}}")),
                 mayRunCommands: false,
                 TestContext.Current.CancellationToken);
@@ -88,7 +120,7 @@ public class PlanRunnerTests
     {
         var asked = new List<string>();
         var plan = Plan(
-            Phase("Initialise", ["web-01"], "Run kubeadm init.", capture: "join_command"),
+            Phase("Initialise", ["web-01"], "kubeadm init", capture: "join_command"),
             Phase("Join", ["web-02"], "Join with {{join_command}}"));
         // The first phase is switched off, so its value is never produced.
         plan.Phases[0].IsEnabled = false;
@@ -108,7 +140,7 @@ public class PlanRunnerTests
         var asked = new List<string>();
         await Runner(asked, "Done.\nCAPTURED: value")
             .Run(
-                Plan(Phase("Initialise", ["web-01"], "Run kubeadm init.", capture: "join_command")),
+                Plan(Phase("Initialise", ["web-01"], "kubeadm init", capture: "join_command")),
                 mayRunCommands: false,
                 TestContext.Current.CancellationToken);
 
@@ -127,7 +159,7 @@ public class PlanRunnerTests
             new StandingAnswer(true)));
 
         await runner.Run(
-            Plan(Phase("Check", ["web-01"], "check the uptime")),
+            Plan(Phase("Check", ["web-01"], "uptime")),
             mayRunCommands: true,
             TestContext.Current.CancellationToken);
 
@@ -146,7 +178,7 @@ public class PlanRunnerTests
             gate));
 
         await runner.Run(
-            Plan(Phase("Restart", ["web-02"], "restart the kubelet")),
+            Plan(Phase("Restart", ["web-02"], "systemctl restart kubelet")),
             mayRunCommands: true,
             TestContext.Current.CancellationToken);
 
@@ -161,7 +193,7 @@ public class PlanRunnerTests
         runner.Finished += (_, phase) => seen.Add(phase.Phase.Name);
 
         await runner.Run(
-            Plan(Phase("One", ["web-01"], "do one"), Phase("Two", ["web-01"], "do two")),
+            Plan(Phase("One", ["web-01"], "echo one"), Phase("Two", ["web-01"], "echo two")),
             mayRunCommands: false,
             TestContext.Current.CancellationToken);
 
@@ -178,8 +210,9 @@ public class PlanRunnerTests
 
     private static RunPlan Plan(params PlanPhase[] phases) => new(phases);
 
-    private static PlanPhase Phase(string name, string[] hosts, string task, string? capture = null) =>
-        new() { Name = name, Hosts = hosts, Task = task, Capture = capture };
+    /// <summary>One phase, one command -- enough for everything about order and carrying here.</summary>
+    private static PlanPhase Phase(string name, string[] hosts, string command, string? capture = null) =>
+        new() { Name = name, Hosts = hosts, Commands = [command], Capture = capture };
 
     /// <summary>Every host is reachable and answers with the next line of the script.</summary>
     private static PlanRunner Runner(List<string> asked, params string[] answers)
