@@ -88,6 +88,40 @@ public class AssistantTests
         fixture.Shell.ShowsDetail.ShouldBeFalse();
     }
 
+    /// <summary>
+    /// A fresh agent was built for every phase and every run, so on a given host
+    /// phase three had never heard of phase one -- the only thing that crossed
+    /// between them was the single captured value. One agent per host, held for
+    /// the life of the pane, is what makes a plan a sequence rather than a set of
+    /// separate errands.
+    /// </summary>
+    [Fact]
+    public async Task EachHostGetsOneAgentAndKeepsIt()
+    {
+        var built = new List<string>();
+        var model = new OrchestratorViewModel(
+            new Canned(Canned.Says("Summary."), Canned.Says("Summary again.")),
+            [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+            alias =>
+            {
+                built.Add(alias);
+                return new HostAgent(
+                    new Canned(Canned.Says($"{alias} says so."), Canned.Says($"{alias} still says so.")),
+                    new Silent(alias),
+                    new AssistSettings(),
+                    new StandingAnswer(true));
+            });
+
+        model.Instruction = "is the journal filling the disk?";
+        await model.RunCommand.ExecuteAsync(null);
+        model.Instruction = "and is it still?";
+        await model.RunCommand.ExecuteAsync(null);
+
+        // Asked twice, built once: the second question reached the same
+        // conversation as the first.
+        built.ShouldBe(["web-01"]);
+    }
+
     [Fact]
     public void TheOrchestratorOffersEveryHostAndSaysWhichAreConnected()
     {

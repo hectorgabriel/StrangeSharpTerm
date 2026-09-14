@@ -46,6 +46,12 @@
                 <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,4"
                            IsVisible="{Binding Asked.Length}" Text="{Binding Asked}" />
 
+                <!-- Says the next instruction will be read against the last plan
+                     rather than cold, which the screen cannot otherwise show:
+                     it holds one plan at a time. -->
+                <TextBlock Classes="muted" FontSize="11" IsVisible="{Binding IsContinuing}"
+                           Text="{Binding Continuing}" />
+
                 <!-- What the model was working out, where the provider offers it.
                      Above the answer rather than below it: while there is nothing
                      else on screen it is the only sign anything is happening, and

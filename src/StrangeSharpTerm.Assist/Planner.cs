@@ -24,6 +24,20 @@ public sealed class Planner(IAssistBackend backend)
     /// </summary>
     public event EventHandler<string>? Thought;
 
+    /// <summary>
+    /// Every plan this planner has been asked for, and every one it wrote.
+    ///
+    /// A plan is rarely right first time, and the second instruction is almost
+    /// always about the first: put OpenClaw on the other one, drop the third
+    /// phase, use containerd instead. Without this, each of those is read as a
+    /// fresh request by something that has never seen the plan it is being asked
+    /// to change.
+    /// </summary>
+    private readonly List<AssistMessage> _conversation = [];
+
+    /// <summary>How many exchanges are behind the next one. The pane says so.</summary>
+    public int Turns => _conversation.Count / 2;
+
     public async Task<PlanReading> Draft(
         string goal,
         IReadOnlyList<string> hosts,
@@ -34,13 +48,17 @@ public sealed class Planner(IAssistBackend backend)
 
         var said = new StringBuilder();
         var thought = new StringBuilder();
+        var asked = new AssistMessage { Role = AssistRole.User, Text = goal };
         try
         {
             await foreach (var streamed in backend.Stream(
                 new AssistRequest
                 {
+                    // The hosts are named in the system prompt, which is written
+                    // fresh each time: what is ticked changes between turns, and
+                    // an earlier turn's list must not outlive it.
                     System = AssistPrompts.Planner(hosts),
-                    Messages = [new AssistMessage { Role = AssistRole.User, Text = goal }],
+                    Messages = [.. _conversation, asked],
                 },
                 cancellationToken))
             {
@@ -61,7 +79,15 @@ public sealed class Planner(IAssistBackend backend)
             return new PlanReading.Refused(e.Message);
         }
 
-        return RunPlan.Read(said.ToString(), hosts);
+        var answer = said.ToString();
+        var reading = RunPlan.Read(answer, hosts);
+
+        // Kept whatever it says, refusals included. A plan refused for naming a
+        // host nobody selected is exactly the turn the next one needs to see, or
+        // it will write the same thing again.
+        _conversation.Add(asked);
+        _conversation.Add(new AssistMessage { Role = AssistRole.Assistant, Text = answer });
+        return reading;
     }
 }
 

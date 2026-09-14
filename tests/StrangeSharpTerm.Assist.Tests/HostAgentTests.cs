@@ -183,6 +183,32 @@ public class HostAgentTests
         host.Asked.ShouldBe((false, false, Fixtures.Settings.TerminalTailLines));
     }
 
+    /// <summary>
+    /// An agent with no terminal of its own carries none, whatever the switch
+    /// says. This is what an orchestrated run relies on: it is handed no pane,
+    /// so a run across eight hosts does not depend on which of them had a window
+    /// open and what was last printed in it.
+    /// </summary>
+    [Fact]
+    public async Task AnAgentWithNoTerminalOfItsOwnCarriesNoTail()
+    {
+        var host = new FakeHost("web-01")
+        {
+            Snapshot = new HostSnapshot("Linux 6.1.0", Fixtures.Metrics, TerminalTail: null),
+        };
+        var backend = new ScriptedBackend(ScriptedBackend.Says("."));
+        // The switch is on, and there is still nothing to send.
+        var agent = new HostAgent(backend, host, Fixtures.Settings, new StandingAnswer(true));
+
+        await agent.Ask("is it full?", cancellationToken: TestContext.Current.CancellationToken);
+
+        var sent = backend.Requests.Single().Messages.Single().Text!;
+        sent.ShouldContain("Host: web-01");
+        sent.ShouldContain("Linux 6.1.0");
+        sent.ShouldNotContain("Terminal");
+        agent.LastContext.ShouldNotBeNull().TerminalTail.ShouldBeNull();
+    }
+
     [Fact]
     public async Task ThePreviewIsTheRequestRatherThanADescriptionOfIt()
     {

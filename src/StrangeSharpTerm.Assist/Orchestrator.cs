@@ -24,7 +24,14 @@ public enum HostOutcome
 /// Built when the host is actually asked, so a run over eight hosts does not
 /// build eight conversations it will not use.
 /// </param>
-public sealed record OrchestratorTarget(string Alias, bool IsConnected, Func<HostAgent> Agent);
+/// <summary>
+/// A host a run may reach, and how to get an agent for it.
+///
+/// No "is it connected" any more: the run connects what it needs. A host that
+/// cannot be reached reports why in its own row, which is more use than being
+/// left out of a run silently.
+/// </summary>
+public sealed record OrchestratorTarget(string Alias, Func<HostAgent> Agent);
 
 /// <summary>What one host contributed.</summary>
 public sealed record HostFinding(string Alias, HostOutcome Outcome, string Text, int CommandsRun = 0)
@@ -62,6 +69,17 @@ public sealed record OrchestratedRun(
 /// </summary>
 public sealed class Orchestrator(IAssistBackend collator)
 {
+    /// <summary>
+    /// What this orchestrator has already been asked and already answered.
+    ///
+    /// The pane holds one of these for as long as it is open, so a second
+    /// instruction is a second turn rather than a first one: "and now the other
+    /// two" means something, and the answer can refer to what the last run
+    /// found. Each host's own conversation is its agent's; this is the
+    /// orchestrator's.
+    /// </summary>
+    private readonly List<AssistMessage> _conversation = [];
+
     /// <summary>A host finished, so a pane can fill its row in before the rest are done.</summary>
     public event EventHandler<HostFinding>? Reported;
 
@@ -84,13 +102,6 @@ public sealed class Orchestrator(IAssistBackend collator)
 
         await Task.WhenAll(targets.Select(async (target, index) =>
         {
-            if (!target.IsConnected)
-            {
-                findings[index] = Report(new HostFinding(
-                    target.Alias, HostOutcome.NotAsked, "Not connected — connect it and run again."));
-                return;
-            }
-
             await atOnce.WaitAsync(cancellationToken);
             try
             {
@@ -177,13 +188,14 @@ public sealed class Orchestrator(IAssistBackend collator)
 
         var said = new StringBuilder();
         var thought = new StringBuilder();
+        var asked = new AssistMessage { Role = AssistRole.User, Text = string.Join('\n', report) };
         try
         {
             await foreach (var streamed in collator.Stream(
                 new AssistRequest
                 {
                     System = AssistPrompts.Collator,
-                    Messages = [new AssistMessage { Role = AssistRole.User, Text = string.Join('\n', report) }],
+                    Messages = [.. _conversation, asked],
                 },
                 cancellationToken))
             {
@@ -206,6 +218,10 @@ public sealed class Orchestrator(IAssistBackend collator)
             return $"Each host reported, but the summary could not be written: {e.Message}";
         }
 
+        // Committed only once it answered, so a failed turn does not leave a
+        // question in the history with nothing after it.
+        _conversation.Add(asked);
+        _conversation.Add(new AssistMessage { Role = AssistRole.Assistant, Text = said.ToString() });
         return said.ToString();
     }
 }

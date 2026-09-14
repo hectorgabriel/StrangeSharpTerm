@@ -851,13 +851,17 @@ public sealed partial class ShellViewModel : ObservableObject
                 .Select(connection => new TargetRow
                 {
                     Alias = connection.Name,
-                    // Only connected hosts are asked. Connecting can raise a
-                    // host-key decision, and a fan-out that stopped on a dialog
-                    // per host would be worse than one that says which it left out.
+                    // Shown, not required. A ticked host that is not open is
+                    // connected when the run reaches it; this only says which
+                    // ones already are.
                     IsConnected = _sessions.IsOpen(connection),
                 }),
-            alias => Connected(alias) is { } target
-                ? Agent(target, Focused(target.Id), inARun: true)(() => model!)
+            alias => Known(alias) is { } target
+                // No terminal, deliberately. An orchestrated run is not about
+                // the pane you happen to have in front of you: reading one
+                // would make a run across eight hosts depend on which of them
+                // had a window open and what was last printed in it.
+                ? Agent(target, terminal: null, inARun: true)(() => model!)
                 : null);
 
         Workspace.Open(pane, splitting: null);
@@ -892,12 +896,18 @@ public sealed partial class ShellViewModel : ObservableObject
                 ToolsFor(inARun));
         };
 
-    /// <summary>A host by the name the inventory gives it, and only if it is connected.</summary>
-    private Connection? Connected(string alias) =>
-        Inventory.Tree.Connections.Values.FirstOrDefault(connection => connection.Name == alias) is { } target
-        && _sessions.IsOpen(target)
-            ? target
-            : null;
+    /// <summary>
+    /// A host by the name the inventory gives it, open or not.
+    ///
+    /// Not "and only if it is connected", which is what this was. The session
+    /// pool connects on first use, so a run reaches a ticked host whether or not
+    /// somebody opened a terminal on it first -- and a host that cannot be
+    /// reached says why, in its own row, rather than the run quietly leaving it
+    /// out. The cost is that connecting can still raise a host-key decision, and
+    /// that is a question only a person can answer.
+    /// </summary>
+    private Connection? Known(string alias) =>
+        Inventory.Tree.Connections.Values.FirstOrDefault(connection => connection.Name == alias);
 
     /// <summary>The host's focused shell, when one of its panes has the keyboard.</summary>
     private NodeId? Focused(NodeId host) =>

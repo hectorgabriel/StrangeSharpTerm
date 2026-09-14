@@ -119,6 +119,24 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 {
     private readonly Func<string, HostAgent?> _agentFor;
     private readonly IAssistBackend _backend;
+
+    /// <summary>
+    /// One agent per host, for as long as this pane is open.
+    ///
+    /// A fresh one was built for every phase, so on a given host phase three had
+    /// never heard of phase one -- the only thing that crossed between them was
+    /// the single captured value. Holding them means each host remembers its own
+    /// work, which is what makes a plan a sequence rather than three unrelated
+    /// errands.
+    /// </summary>
+    private readonly Dictionary<string, HostAgent> _agents = new(StringComparer.Ordinal);
+
+    private readonly Planner _planner;
+    private readonly Orchestrator _orchestrator;
+
+    /// <summary>Where each ticked host's row belongs, for the run in progress.</summary>
+    private Dictionary<string, int> _order = new(StringComparer.Ordinal);
+
     private CancellationTokenSource? _running;
     private TaskCompletionSource<bool>? _answering;
     private TaskCompletionSource<ToolApproval>? _answeringTool;
@@ -127,6 +145,13 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     {
         _backend = backend;
         _agentFor = agentFor;
+        // One of each, for the life of the pane rather than the life of a run:
+        // the conversation is the point of them.
+        _planner = new Planner(backend);
+        _planner.Thought += (_, thought) => Post(() => Thinking = thought);
+        _orchestrator = new Orchestrator(backend);
+        _orchestrator.Thought += (_, thought) => Post(() => Thinking = thought);
+        _orchestrator.Reported += (_, finding) => Post(() => Place(finding));
         foreach (var target in targets)
         {
             target.PropertyChanged += (_, _) => OnPropertyChanged(nameof(Chosen));
@@ -205,6 +230,23 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 
     public bool HasThinking => Thinking.Length > 0;
 
+    /// <summary>
+    /// What the orchestrator already remembers, said where the next instruction
+    /// is typed.
+    ///
+    /// The screen shows one plan at a time, so without this there is nothing to
+    /// tell you whether "put it on the other one" will be understood as a change
+    /// to the last plan or read cold.
+    /// </summary>
+    public string Continuing => _planner.Turns switch
+    {
+        0 => "",
+        1 => "continuing from 1 earlier plan",
+        var turns => $"continuing from {turns} earlier plans",
+    };
+
+    public bool IsContinuing => _planner.Turns > 0;
+
     /// <summary>Open while it is the only thing there is, and foldable afterwards.</summary>
     [ObservableProperty]
     public partial bool IsThinkingOpen { get; set; } = true;
@@ -280,24 +322,16 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         // run across a rack is read as a list, and a list that reorders itself
         // as each host finishes is one nobody can follow -- least of all on the
         // second reading, when it comes out differently.
-        var order = Chosen
+        _order = Chosen
             .Select((alias, index) => (alias, index))
             .ToDictionary(ticked => ticked.alias, ticked => ticked.index, StringComparer.Ordinal);
 
         Thinking = "";
         IsThinkingOpen = true;
 
-        var orchestrator = new Orchestrator(_backend);
-        orchestrator.Reported += (_, finding) => Post(() =>
-        {
-            Findings.Insert(Place(order, finding.Alias), new FindingRow(finding));
-            Progress = $"{Findings.Count} of {order.Count} reported";
-        });
-        orchestrator.Thought += (_, thought) => Post(() => Thinking = thought);
-
         await Working(async token =>
         {
-            var run = await orchestrator.Ask(instruction, Ticked(), MayRunCommands, token);
+            var run = await _orchestrator.Ask(instruction, Ticked(), MayRunCommands, token);
             Post(() =>
             {
                 Collated = run.Collated;
@@ -311,10 +345,12 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// Where a finding goes: after every finding whose host was ticked before
     /// it, whatever order they happen to answer in.
     /// </summary>
-    private int Place(IReadOnlyDictionary<string, int> order, string alias)
+    private void Place(HostFinding finding)
     {
-        var mine = order.GetValueOrDefault(alias, int.MaxValue);
-        return Findings.Count(placed => order.GetValueOrDefault(placed.Alias, int.MaxValue) < mine);
+        var mine = _order.GetValueOrDefault(finding.Alias, int.MaxValue);
+        var at = Findings.Count(placed => _order.GetValueOrDefault(placed.Alias, int.MaxValue) < mine);
+        Findings.Insert(at, new FindingRow(finding));
+        Progress = $"{Findings.Count} of {_order.Count} reported";
     }
 
     /// <summary>Asks for a plan and runs none of it.</summary>
@@ -335,9 +371,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 
         await Working(async token =>
         {
-            var planner = new Planner(_backend);
-            planner.Thought += (_, thought) => Post(() => Thinking = thought);
-            var reading = await planner.Draft(goal, Chosen, token);
+            var reading = await _planner.Draft(goal, Chosen, token);
             Post(() =>
             {
                 switch (reading)
@@ -360,6 +394,8 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
                 }
                 OnPropertyChanged(nameof(HasPlan));
                 OnPropertyChanged(nameof(RunLabel));
+                OnPropertyChanged(nameof(Continuing));
+                OnPropertyChanged(nameof(IsContinuing));
             });
         });
     }
@@ -373,7 +409,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             (row.Outcome, row.Captured, row.Note) = ("", null, null);
         }
 
-        var runner = new PlanRunner(_agentFor);
+        var runner = new PlanRunner(AgentFor);
         runner.Finished += (_, result) => Post(() =>
         {
             if (Phases.FirstOrDefault(row => row.Phase == result.Phase) is not { } row)
@@ -487,17 +523,27 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         _running?.Dispose();
     }
 
+    /// <summary>This host's agent, built on first use and kept for the life of the pane.</summary>
+    private HostAgent? AgentFor(string alias)
+    {
+        if (_agents.TryGetValue(alias, out var held))
+            return held;
+        if (_agentFor(alias) is not { } built)
+            return null;
+        return _agents[alias] = built;
+    }
+
     private IReadOnlyList<OrchestratorTarget> Ticked() =>
     [
         .. Targets
             .Where(target => target.IsChosen)
             .Select(target => new OrchestratorTarget(
                 target.Alias,
-                target.IsConnected,
-                // Only built for a host that is actually asked, so a run over
-                // eight hosts does not build eight conversations it will not use.
-                () => _agentFor(target.Alias)
-                    ?? throw new AssistException($"{target.Alias} is not connected."))),
+                // Still only built for a host that is actually asked, so a run
+                // over eight hosts does not open eight connections it will not
+                // use -- but built once and kept, so the host remembers.
+                () => AgentFor(target.Alias)
+                    ?? throw new AssistException($"{target.Alias} is not in the inventory."))),
     ];
 
     private async Task Working(Func<CancellationToken, Task> work)
