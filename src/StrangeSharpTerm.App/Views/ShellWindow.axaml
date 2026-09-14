@@ -193,6 +193,7 @@
             </Border>
 
             <views:PaneSplitView Grid.Row="3" Margin="8"
+                                 IsVisible="{Binding ShowsPanes}"
                                  Panes="{Binding Panes}"
                                  OpenPanes="{Binding OpenPanes}"
                                  Axis="{Binding Axis}"

@@ -108,6 +108,7 @@ public sealed partial class ShellViewModel : ObservableObject
             {
                 RefreshDetail();
                 OnPropertyChanged(nameof(ShowsDetail));
+                OnPropertyChanged(nameof(ShowsPanes));
                 OnPropertyChanged(nameof(ShowsEmptyState));
                 RefreshCommands();
             }
@@ -220,6 +221,23 @@ public sealed partial class ShellViewModel : ObservableObject
         Detail is not null
         && (Panes.Count == 0
             || (Workspace.ActivePane is { ConnectionId: { } host } && host != Inventory.Selection));
+
+    /// <summary>
+    /// Whether the panes are on screen at all.
+    ///
+    /// Exactly one of the three things sharing that row shows. Leaving the panes
+    /// drawn underneath and trusting the detail's own background to hide them is
+    /// what the first attempt did, and the two are inset by different margins --
+    /// so a ring of live terminal showed around the detail panel, its banner
+    /// along the top and its text down the side. A pane that is not being shown
+    /// should not be drawn.
+    ///
+    /// Hidden, not removed: the panes stay in the visual tree, because a
+    /// terminal control taken out of it loses the connection it was given. That
+    /// is the same rule the tab switch is built on -- see
+    /// <see cref="Views.PaneSplitView"/>.
+    /// </summary>
+    public bool ShowsPanes => Panes.Count > 0 && !ShowsDetail;
 
     /// <summary>
     /// Nothing selected and nothing open. Not simply "no detail": a terminal is
@@ -1041,6 +1059,7 @@ public sealed partial class ShellViewModel : ObservableObject
 
         OnPropertyChanged(nameof(Axis));
         OnPropertyChanged(nameof(ShowsDetail));
+        OnPropertyChanged(nameof(ShowsPanes));
         OnPropertyChanged(nameof(ShowsEmptyState));
         OnPropertyChanged(nameof(CanBroadcast));
 
