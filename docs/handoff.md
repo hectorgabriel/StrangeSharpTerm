@@ -14,11 +14,13 @@ means; this says only what is done, what is in flight, and what to do first.
 | **M3** terminal | `TerminalSession` binding an XTerm.NET engine to an SSH channel, the Avalonia control, broadcast, scrollback, and `stctl terminal` |
 | **M5** (part) | one authenticated session per host, at last: `HostSessions` over the M2 pool, which every pane goes through. The SFTP browser (`IRemoteFiles`, a pane, ⇧⌘B), tunnels (`ITunnels`, a pane that starts and stops a host's forwards and releases the ports), the dashboard (`IServerHealth` over the M2 probe, in the detail pane, asked for rather than assumed), the credential library (a key or password described once, pointed at from any host or folder, with the secret in the platform store and never in the inventory), and snippets (saved commands, scoped to a folder or offered everywhere, run from the palette into the focused shell), and the settings sheet (the theme, as cards you can see, and the way in to both libraries) |
 | **M4** done | the window (sidebar, tabs, host detail, splits, broadcast), the theme system, the host and folder editors, the menu bar, the command palette, and the headless UI driver. `docs/adr/0004` and `0005` record the decisions |
+| **M8** done, as far as an account allows | `build/package.sh` (bundle, ad-hoc or Developer ID, disk image, notarisation written and gated), `build/install.sh`, `build/package.ps1`, `build/make-icon.sh`, and a CI job that packages both platforms on every push. `docs/adr/0008` records what a free Apple account can and cannot do, and the three things that only showed up by running it |
 | **M7** done | `StrangeSharpTerm.Mcp`: both transports over the official SDK, tool namespacing, the grant rules, OAuth with a loopback redirect and platform-store tokens — then the Connected tools section, the server editor, `stctl mcp`, and `IExternalTools`, the seam that puts a connected tool through the assistant's own gate and budget. `docs/adr/0007` records what the SDK owns and what cannot be delegated |
 | **M6** done | `StrangeSharpTerm.Assist`: the two providers behind one seam, `CommandPolicy`, `Redaction`, the agent loop, the orchestrator and run plans — then the assistant pane (⌥⌘A), the orchestrator pane with its plan mode (⇧⌥⌘A), the settings section, `stctl ask`, and four `--demo-*` flags. `docs/adr/0006` records the one departure from the plan |
 
-882 tests. **M7 is done** on macOS; the Windows half is CI's to confirm, and
-a red Windows job is a failure rather than something to fix later.
+882 tests. **M8 is done** on macOS as far as a free Apple account allows; the
+Windows half is CI's to confirm, and a red Windows job is a failure rather than
+something to fix later.
 
 ## In flight
 
@@ -27,25 +29,28 @@ written. At the time of writing: nothing.
 
 ## What to do next, in order
 
-1. **M8, packaging.** See the plan: hand-built `.app` bundle, hardened runtime
-   with the two JIT entitlements, notarization, and an MSIX or signed installer
-   plus an Authenticode certificate on Windows. Then the parity review against
-   the Swift app, and archiving the Swift repo.
-2. **Two things still need an account.** M6's manual check — one real assistant
-   turn, `stctl ask user@host --question "…"` — and a hosted MCP server's
-   sign-in, `stctl mcp-signin --server "Name=https://host/mcp"`. Everything up to
-   the wire is checked: both providers against recorded streams, and a local MCP
-   server driven end to end for real. What is unchecked is a live provider and a
-   live OAuth server.
-3. **One shortcut is still unbound**: ⌃⌘X (disconnect), which cannot be
+1. **The parity review** against the Swift app, and then archiving the Swift
+   repo. That is what M8 has left, and it needs no account.
+2. **Three things need an account and nothing else.** A real assistant turn
+   (`stctl ask user@host --question "…"`), a hosted MCP server's sign-in
+   (`stctl mcp-signin --server "Name=https://host/mcp"`), and Developer ID
+   signing plus notarisation (`./build/package.sh --notarize`). Each is written,
+   each is gated behind a check that says what is missing, and none has run.
+   Everything up to the credential is exercised: both providers against recorded
+   streams, a local MCP server end to end for real, and an ad-hoc bundle built,
+   verified, mounted from its disk image and started.
+3. **There is no app icon.** The Swift app's `ssh_app_logo.svg` is not in this
+   repo. `build/make-icon.sh` takes one and writes both formats; until then the
+   bundle takes the system default.
+4. **One shortcut is still unbound**: ⌃⌘X (disconnect), which cannot be
    translated to Windows as it stands — `docs/adr/0005` says why.
-4. **What the panes do not do yet.** The browser has no rename and no
+5. **What the panes do not do yet.** The browser has no rename and no
    new-folder, though `IRemoteFiles` carries both calls, and no progress for a
    large transfer. Tunnels are read from the host's settings and cannot be added
    or edited there — the host editor deliberately leaves forwards alone and
    preserves them, so an editor for them is the missing half. The dashboard is
    asked for one probe at a time; the Swift app refreshed on a timer.
-5. **Screenshots**, the other half of what the plan's CI table asks for at
+6. **Screenshots**, the other half of what the plan's CI table asks for at
    M4-M5. The driver is in place (`tests/StrangeSharpTerm.App.WindowTests`);
    what is missing is rendering. `CaptureRenderedFrame` returns a bitmap, but
    only with Skia behind the headless platform (`UseHeadlessDrawing = false`
@@ -149,6 +154,19 @@ says. Three things it took to get right:
   "which shell has the focus" unanswerable from a view model, and silently false
   in any test that substitutes the pane view. The shell opens the session, so the
   shell registers it.
+- **A valid signature says nothing about the app starting.** An ad-hoc bundle
+  signs, passes `codesign --verify --deep --strict`, satisfies its designated
+  requirement — and then dies on launch, unable to open `libhostfxr`, because a
+  process loads only libraries whose Team ID matches its own and ad-hoc
+  signatures have none. `--version` exists so the packaging scripts can start the
+  runtime and exit without opening a window; the alternative was a smoke test
+  that launched the real app and hung the build.
+- **Everything under `Contents/MacOS` is code to codesign**, managed assemblies
+  and all — and codesign names the first unsigned *subcomponent* it reaches,
+  which was a `.dll` when the real problem was an unsigned Mach-O with no
+  extension. Two hundred and forty-five signatures, each with a network
+  timestamp, also took twenty minutes before they were batched and the pointless
+  timestamps dropped.
 - **A default interface method is a silent answer.** `ICommandGate` gained a
   second `Allow` for connected tool calls, defaulting to no, so that an
   implementation written before them could not accidentally approve one. Two

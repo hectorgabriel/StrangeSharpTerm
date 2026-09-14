@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Written by hand because the SDK does not build a bundle. @VERSION@ and
+        @ICON@ are substituted by build/package.sh; everything else is fixed.
+    -->
+    <key>CFBundleName</key>
+    <string>StrangeSharpTerm</string>
+    <key>CFBundleDisplayName</key>
+    <string>StrangeSharpTerm</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.strangeterm.StrangeSharpTerm</string>
+    <key>CFBundleExecutable</key>
+    <string>StrangeSharpTerm</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@VERSION@</string>
+    @ICON@
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <!--
+        A terminal that draws its own chrome. The window sets
+        ExtendClientAreaToDecorationsHint on macOS; see docs/adr/0005.
+    -->
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>StrangeSharpTerm</string>
+</dict>
+</plist>
