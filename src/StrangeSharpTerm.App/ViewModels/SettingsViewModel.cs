@@ -354,6 +354,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         // and the ones already open keep answering where they were.
         Apply(Assistant with { Provider = choice.Provider.Id, Model = null });
         Model = "";
+        // Each card carries its own IsChosen, so the list has to be rebuilt for
+        // the tick to move -- and for the one just left to be choosable again.
+        Providers = ProviderChoices();
         OnPropertyChanged(nameof(KnownModels));
         OnPropertyChanged(nameof(DefaultModel));
     }
