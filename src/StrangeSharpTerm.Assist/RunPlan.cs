@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 namespace StrangeSharpTerm.Assist;
 
 /// <summary>
-/// One phase of a plan: an order, the hosts it applies to, the words each of
+/// One phase of a plan: an order, the hosts it applies to, the commands each of
 /// them will be given, and at most one value it yields.
 /// </summary>
 public sealed record PlanPhase
@@ -13,8 +13,27 @@ public sealed record PlanPhase
 
     public required IReadOnlyList<string> Hosts { get; init; }
 
-    /// <summary>What an assistant on each of those hosts is asked to do, in the model's own words.</summary>
-    public required string Task { get; init; }
+    /// <summary>
+    /// Why this phase is these commands on these hosts, in one line, or null.
+    ///
+    /// A plan that says what without why is one a person can only check for
+    /// syntax. Which of three identical servers gets the single-node
+    /// installation is a decision, and the reason for it belongs beside the
+    /// phase rather than in reasoning that scrolls away.
+    /// </summary>
+    public string? Why { get; init; }
+
+    /// <summary>
+    /// The commands, in order, that each of this phase's hosts will be asked to
+    /// run.
+    ///
+    /// Named here rather than left to each host's assistant at run time: the
+    /// point of a plan is to be read before anything happens, and "install
+    /// Kubernetes" is not something anyone can check. They are still only asked
+    /// for -- every one of them meets <see cref="CommandPolicy"/> and the gate
+    /// when the phase runs, exactly as an unplanned command does.
+    /// </summary>
+    public required IReadOnlyList<string> Commands { get; init; }
 
     /// <summary>
     /// The one value this phase produces, by name, or null. Later phases refer
@@ -29,8 +48,8 @@ public sealed record PlanPhase
     /// </summary>
     public bool IsEnabled { get; set; } = true;
 
-    /// <summary>The <c>{{name}}</c> references in this phase's task.</summary>
-    public IReadOnlyList<string> Placeholders => RunPlan.PlaceholdersIn(Task);
+    /// <summary>The <c>{{name}}</c> references in this phase's commands.</summary>
+    public IReadOnlyList<string> Placeholders => RunPlan.PlaceholdersIn(Commands);
 }
 
 /// <summary>A plan, as written and before anything has run.</summary>
@@ -78,7 +97,12 @@ public sealed partial record RunPlan(IReadOnlyList<PlanPhase> Phases)
                 Hosts = phase.TryGetProperty("hosts", out var hosts) && hosts.ValueKind == JsonValueKind.Array
                     ? [.. hosts.EnumerateArray().Select(h => h.GetString() ?? "").Where(h => h.Length > 0)]
                     : [],
-                Task = Text(phase, "task"),
+                Why = Text(phase, "why") is { Length: > 0 } why ? why : null,
+                Commands = phase.TryGetProperty("commands", out var commands) && commands.ValueKind == JsonValueKind.Array
+                    ? [.. commands.EnumerateArray()
+                        .Select(command => (command.GetString() ?? "").Trim())
+                        .Where(command => command.Length > 0)]
+                    : [],
                 Capture = Text(phase, "capture") is { Length: > 0 } capture ? capture : null,
             });
         }
@@ -110,8 +134,8 @@ public sealed partial record RunPlan(IReadOnlyList<PlanPhase> Phases)
             if (phase.Hosts.Count == 0)
                 return $"Phase {number}, {phase.Name}, names no hosts.";
 
-            if (phase.Task.Trim().Length == 0)
-                return $"Phase {number}, {phase.Name}, says nothing for its hosts to do.";
+            if (phase.Commands.Count == 0)
+                return $"Phase {number}, {phase.Name}, names no commands for its hosts to run.";
 
             if (phase.Hosts.FirstOrDefault(host => !selected.Contains(host)) is { } stranger)
                 return $"Phase {number}, {phase.Name}, names {stranger}, which nobody selected.";
@@ -138,7 +162,11 @@ public sealed partial record RunPlan(IReadOnlyList<PlanPhase> Phases)
             ? []
             : [.. Placeholder().Matches(text).Select(match => match.Groups[1].Value).Distinct(StringComparer.Ordinal)];
 
-    /// <summary>Puts captured values into a task. A name with no value is left alone, and the caller refuses the phase.</summary>
+    /// <summary>The same, across every command in a phase, in the order they first appear.</summary>
+    internal static IReadOnlyList<string> PlaceholdersIn(IReadOnlyList<string> commands) =>
+        [.. commands.SelectMany(PlaceholdersIn).Distinct(StringComparer.Ordinal)];
+
+    /// <summary>Puts captured values into a command. A name with no value is left alone, and the caller refuses the phase.</summary>
     internal static string Fill(string task, IReadOnlyDictionary<string, string> values) =>
         Placeholder().Replace(task, match =>
             values.TryGetValue(match.Groups[1].Value, out var value) ? value : match.Value);

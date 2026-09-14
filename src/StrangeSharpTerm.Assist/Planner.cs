@@ -14,6 +14,16 @@ namespace StrangeSharpTerm.Assist;
 /// </summary>
 public sealed class Planner(IAssistBackend backend)
 {
+    /// <summary>
+    /// The model's reasoning, as it arrives, where the provider offers it.
+    ///
+    /// Worth more here than anywhere else in the app: deciding which of three
+    /// identical servers gets the single-node install is the whole of the work,
+    /// and the plan alone shows only which one was chosen. Carries the reasoning
+    /// so far rather than the newest piece, so a reader assigns it and is done.
+    /// </summary>
+    public event EventHandler<string>? Thought;
+
     public async Task<PlanReading> Draft(
         string goal,
         IReadOnlyList<string> hosts,
@@ -23,6 +33,7 @@ public sealed class Planner(IAssistBackend backend)
             return new PlanReading.Refused("No hosts are selected.");
 
         var said = new StringBuilder();
+        var thought = new StringBuilder();
         try
         {
             await foreach (var streamed in backend.Stream(
@@ -33,8 +44,16 @@ public sealed class Planner(IAssistBackend backend)
                 },
                 cancellationToken))
             {
-                if (streamed is AssistEvent.Say say)
-                    said.Append(say.Text);
+                switch (streamed)
+                {
+                    case AssistEvent.Say say:
+                        said.Append(say.Text);
+                        break;
+                    case AssistEvent.Reasoning reasoning:
+                        thought.Append(reasoning.Text);
+                        Thought?.Invoke(this, thought.ToString());
+                        break;
+                }
             }
         }
         catch (AssistException e)

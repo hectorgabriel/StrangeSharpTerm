@@ -62,6 +62,19 @@
                                      fence characters on screen, and a code block would read
                                      as part of the sentence above it. -->
                                 <StackPanel IsVisible="{Binding IsAnswer}" Spacing="6">
+                                    <!-- Reasoning stays once the answer arrives, folded. It
+                                         used to vanish the moment the first token landed,
+                                         which made it a spinner rather than something to
+                                         read. -->
+                                    <Button Background="Transparent" BorderThickness="0" Padding="0"
+                                            HorizontalAlignment="Left" IsVisible="{Binding HasReasoning}"
+                                            Command="{Binding ToggleReasoningCommand}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Classes="muted" FontSize="10" Text="THINKING" />
+                                            <TextBlock Classes="muted" FontSize="10"
+                                                       Text="{Binding ReasoningToggle}" />
+                                        </StackPanel>
+                                    </Button>
                                     <TextBlock Classes="muted" FontSize="11" FontStyle="Italic"
                                                TextWrapping="Wrap" IsVisible="{Binding ShowsReasoning}"
                                                Text="{Binding Reasoning}" />

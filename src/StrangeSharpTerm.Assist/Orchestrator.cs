@@ -65,6 +65,13 @@ public sealed class Orchestrator(IAssistBackend collator)
     /// <summary>A host finished, so a pane can fill its row in before the rest are done.</summary>
     public event EventHandler<HostFinding>? Reported;
 
+    /// <summary>
+    /// The collator's reasoning while it writes the answer, where the provider
+    /// offers it. Each host's own reasoning is on its own finding; this is the
+    /// step that decides what the run amounts to.
+    /// </summary>
+    public event EventHandler<string>? Thought;
+
     public async Task<OrchestratedRun> Ask(
         string instruction,
         IReadOnlyList<OrchestratorTarget> targets,
@@ -169,6 +176,7 @@ public sealed class Orchestrator(IAssistBackend collator)
         }
 
         var said = new StringBuilder();
+        var thought = new StringBuilder();
         try
         {
             await foreach (var streamed in collator.Stream(
@@ -179,8 +187,16 @@ public sealed class Orchestrator(IAssistBackend collator)
                 },
                 cancellationToken))
             {
-                if (streamed is AssistEvent.Say say)
-                    said.Append(say.Text);
+                switch (streamed)
+                {
+                    case AssistEvent.Say say:
+                        said.Append(say.Text);
+                        break;
+                    case AssistEvent.Reasoning reasoning:
+                        thought.Append(reasoning.Text);
+                        Thought?.Invoke(this, thought.ToString());
+                        break;
+                }
             }
         }
         catch (AssistException e)

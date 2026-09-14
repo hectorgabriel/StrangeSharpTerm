@@ -48,7 +48,18 @@ public sealed partial class PhaseRow(PlanPhase phase, int number) : ObservableOb
 
     public string Hosts => string.Join(", ", Phase.Hosts);
 
-    public string Task => Phase.Task;
+    /// <summary>Why this phase is on these hosts, where the planner said.</summary>
+    public string? Why => Phase.Why;
+
+    public bool Explains => Why is { Length: > 0 };
+
+    /// <summary>
+    /// The commands themselves, one per line, exactly as they will be sent.
+    ///
+    /// Not summarised and not counted: a plan is worth reviewing only to the
+    /// extent the thing reviewed is the thing that runs.
+    /// </summary>
+    public string Commands => string.Join("\n", Phase.Commands);
 
     public bool Yields => Phase.Capture is { Length: > 0 };
 
@@ -141,7 +152,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// <summary>What each mode does, said where the choice is made.</summary>
     public string ModeNote => IsAsking
         ? "one question, every selected host at once"
-        : "work in phases, in order — reviewed before it runs";
+        : "commands in phases, in order — read before any of them run";
 
     [ObservableProperty]
     public partial string Instruction { get; set; } = "";
@@ -180,6 +191,32 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 
     [ObservableProperty]
     public partial string Progress { get; private set; } = "";
+
+    /// <summary>
+    /// The model's reasoning, where the provider offers it.
+    ///
+    /// Kept rather than replaced by the answer: the plan says which host was
+    /// chosen and this says why, which is the half a reviewer needs and the half
+    /// that used to be thrown away. Collapsed once there is something to read,
+    /// because it is long and the plan is the point.
+    /// </summary>
+    [ObservableProperty]
+    public partial string Thinking { get; private set; } = "";
+
+    public bool HasThinking => Thinking.Length > 0;
+
+    /// <summary>Open while it is the only thing there is, and foldable afterwards.</summary>
+    [ObservableProperty]
+    public partial bool IsThinkingOpen { get; set; } = true;
+
+    partial void OnThinkingChanged(string value) => OnPropertyChanged(nameof(HasThinking));
+
+    partial void OnIsThinkingOpenChanged(bool value) => OnPropertyChanged(nameof(ThinkingToggle));
+
+    public string ThinkingToggle => IsThinkingOpen ? "hide" : "show";
+
+    [RelayCommand]
+    public void ToggleThinking() => IsThinkingOpen = !IsThinkingOpen;
 
     public IReadOnlyList<string> Chosen => [.. Targets.Where(target => target.IsChosen).Select(target => target.Alias)];
 
@@ -247,12 +284,16 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             .Select((alias, index) => (alias, index))
             .ToDictionary(ticked => ticked.alias, ticked => ticked.index, StringComparer.Ordinal);
 
+        Thinking = "";
+        IsThinkingOpen = true;
+
         var orchestrator = new Orchestrator(_backend);
         orchestrator.Reported += (_, finding) => Post(() =>
         {
             Findings.Insert(Place(order, finding.Alias), new FindingRow(finding));
             Progress = $"{Findings.Count} of {order.Count} reported";
         });
+        orchestrator.Thought += (_, thought) => Post(() => Thinking = thought);
 
         await Working(async token =>
         {
@@ -261,6 +302,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             {
                 Collated = run.Collated;
                 Progress = $"{run.HostsAsked} hosts · {run.CommandsRun} commands";
+                IsThinkingOpen = false;
             });
         });
     }
@@ -288,9 +330,14 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         // fleet, and reviewing a plan means reading it against what was asked.
         Asked = goal;
 
+        Thinking = "";
+        IsThinkingOpen = true;
+
         await Working(async token =>
         {
-            var reading = await new Planner(_backend).Draft(goal, Chosen, token);
+            var planner = new Planner(_backend);
+            planner.Thought += (_, thought) => Post(() => Thinking = thought);
+            var reading = await planner.Draft(goal, Chosen, token);
             Post(() =>
             {
                 switch (reading)
@@ -299,6 +346,9 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
                         foreach (var (phase, number) in plan.Phases.Select((phase, index) => (phase, index + 1)))
                             Phases.Add(new PhaseRow(phase, number));
                         Progress = $"{plan.Summary} · not run yet";
+                        // The plan is what to read now. The reasoning stays a
+                        // click away rather than pushing it off the screen.
+                        IsThinkingOpen = false;
                         break;
 
                     // A plan that would not be safe to run is refused rather

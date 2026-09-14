@@ -8,10 +8,13 @@ public class RunPlanTests
 
     private const string Cluster = """
     {"phases": [
-      {"name": "Prepare every node", "hosts": ["web-01", "web-02"], "task": "Disable swap and install containerd."},
-      {"name": "Initialise the control plane", "hosts": ["web-01"], "task": "Run kubeadm init.",
+      {"name": "Prepare every node", "hosts": ["web-01", "web-02"],
+       "why": "Both workers need the same runtime before either can join.",
+       "commands": ["swapoff -a", "apt-get install -y containerd"]},
+      {"name": "Initialise the control plane", "hosts": ["web-01"],
+       "commands": ["kubeadm init --pod-network-cidr=10.244.0.0/16"],
        "capture": "join_command"},
-      {"name": "Join the workers", "hosts": ["web-02"], "task": "Join this node with: {{join_command}}"}
+      {"name": "Join the workers", "hosts": ["web-02"], "commands": ["{{join_command}}"]}
     ]}
     """;
 
@@ -40,7 +43,7 @@ public class RunPlanTests
     [Fact]
     public void APhaseNamingAHostNobodySelectedIsRefused()
     {
-        var refusal = Refused("""{"phases":[{"name":"Do it","hosts":["db-primary"],"task":"x"}]}""");
+        var refusal = Refused("""{"phases":[{"name":"Do it","hosts":["db-primary"],"commands":["true"]}]}""");
 
         refusal.ShouldContain("Do it");
         refusal.ShouldContain("db-primary");
@@ -51,7 +54,7 @@ public class RunPlanTests
     public void CapturingOnSeveralHostsAtOnceIsRefused()
     {
         var refusal = Refused(
-            """{"phases":[{"name":"Init","hosts":["web-01","web-02"],"task":"x","capture":"token"}]}""");
+            """{"phases":[{"name":"Init","hosts":["web-01","web-02"],"commands":["true"],"capture":"token"}]}""");
 
         refusal.ShouldContain("Init");
         refusal.ShouldContain("token");
@@ -61,7 +64,7 @@ public class RunPlanTests
     [Fact]
     public void APlaceholderNoEarlierPhaseProducesIsRefused()
     {
-        var refusal = Refused("""{"phases":[{"name":"Join","hosts":["web-02"],"task":"use {{join_command}}"}]}""");
+        var refusal = Refused("""{"phases":[{"name":"Join","hosts":["web-02"],"commands":["{{join_command}}"]}]}""");
 
         refusal.ShouldContain("Join");
         refusal.ShouldContain("join_command");
@@ -72,7 +75,7 @@ public class RunPlanTests
     public void APhaseCannotUseItsOwnCapture()
     {
         var refusal = Refused(
-            """{"phases":[{"name":"Init","hosts":["web-01"],"task":"use {{t}}","capture":"t"}]}""");
+            """{"phases":[{"name":"Init","hosts":["web-01"],"commands":["echo {{t}}"],"capture":"t"}]}""");
 
         refusal.ShouldContain("no earlier phase");
     }
@@ -81,19 +84,19 @@ public class RunPlanTests
     public void MoreThanTwelvePhasesIsRefused()
     {
         var phases = string.Join(",", Enumerable.Range(1, 13).Select(number =>
-            $$"""{"name":"Phase {{number}}","hosts":["web-01"],"task":"do something"}"""));
+            $$"""{"name":"Phase {{number}}","hosts":["web-01"],"commands":["true"]}"""));
 
         Refused($$"""{"phases":[{{phases}}]}""").ShouldContain("not a plan anyone will read");
     }
 
     [Fact]
     public void APhaseWithNoHostsIsRefused() =>
-        Refused("""{"phases":[{"name":"Nowhere","hosts":[],"task":"x"}]}""").ShouldContain("names no hosts");
+        Refused("""{"phases":[{"name":"Nowhere","hosts":[],"commands":["true"]}]}""").ShouldContain("names no hosts");
 
     [Fact]
-    public void APhaseThatSaysNothingIsRefused() =>
-        Refused("""{"phases":[{"name":"Empty","hosts":["web-01"],"task":"   "}]}""")
-            .ShouldContain("says nothing");
+    public void APhaseWithNoCommandsIsRefused() =>
+        Refused("""{"phases":[{"name":"Empty","hosts":["web-01"],"commands":[]}]}""")
+            .ShouldContain("names no commands");
 
     [Theory]
     [InlineData("")]

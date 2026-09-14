@@ -243,6 +243,51 @@ public class AssistantPaneTests
         });
     }
 
+    /// <summary>
+    /// The reasoning used to be dropped between the provider and the pane. It is
+    /// the half that says why one of three identical servers was chosen, which is
+    /// the half worth reading -- so it goes on screen, and stays there folded once
+    /// the plan it explains has arrived.
+    /// </summary>
+    [Fact]
+    public void ThePlannersReasoningIsShownAndThenFoldedAway()
+    {
+        Headless.Run(() =>
+        {
+            const string plan = """
+            {"phases":[{"name":"Install OpenClaw","hosts":["web-01"],
+              "commands":["apt-get install -y openclaw"]}]}
+            """;
+            var model = new OrchestratorViewModel(
+                new Canned([
+                    new AssistEvent.Reasoning("web-01 has the most memory, so OpenClaw goes there."),
+                    new AssistEvent.Say(plan),
+                    new AssistEvent.Finished(AssistStop.EndTurn),
+                ]),
+                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+                _ => null);
+            var window = Show(new OrchestratorView(model));
+
+            model.Mode = OrchestratorMode.Plan;
+            model.Instruction = "where should OpenClaw go?";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+
+            model.Thinking.ShouldBe("web-01 has the most memory, so OpenClaw goes there.");
+            model.HasThinking.ShouldBeTrue();
+            // Folded, because the plan is what there is to read now.
+            model.IsThinkingOpen.ShouldBeFalse();
+            In<TextBlock>(window).Select(block => block.Text).ShouldContain("THINKING");
+
+            // And a click brings it back rather than having to ask again.
+            model.ToggleThinkingCommand.Execute(null);
+            Settle(window);
+            model.IsThinkingOpen.ShouldBeTrue();
+            In<TextBlock>(window).Select(block => block.Text)
+                .ShouldContain("web-01 has the most memory, so OpenClaw goes there.");
+        });
+    }
+
     [Fact]
     public void APlanIsShownInFullAndNothingRunsUntilItIsRun()
     {
@@ -250,9 +295,12 @@ public class AssistantPaneTests
         {
             const string plan = """
             {"phases":[
-              {"name":"Prepare every node","hosts":["web-01","web-02"],"task":"Install containerd."},
-              {"name":"Initialise the control plane","hosts":["web-01"],"task":"Run kubeadm init.","capture":"join_command"},
-              {"name":"Join the workers","hosts":["web-02"],"task":"Join with {{join_command}}"}
+              {"name":"Prepare every node","hosts":["web-01","web-02"],
+               "why":"Both need the runtime before either can join.",
+               "commands":["apt-get install -y containerd"]},
+              {"name":"Initialise the control plane","hosts":["web-01"],
+               "commands":["kubeadm init"],"capture":"join_command"},
+              {"name":"Join the workers","hosts":["web-02"],"commands":["{{join_command}}"]}
             ]}
             """;
             var asked = new List<string>();
@@ -274,10 +322,13 @@ public class AssistantPaneTests
             Headless.Finish(model.RunCommand.ExecuteAsync(null));
             Settle(window);
 
-            // Every phase, its hosts, and the words each host will be given.
+            // Every phase, its hosts, the reason for it, and the commands each
+            // host will be given -- as commands, because a plan is worth reading
+            // only to the extent the thing read is the thing that runs.
             var shown = In<TextBlock>(window).Select(block => block.Text).ToArray();
             shown.ShouldContain("Prepare every node");
-            shown.ShouldContain("Install containerd.");
+            shown.ShouldContain("apt-get install -y containerd");
+            shown.ShouldContain("Both need the runtime before either can join.");
             shown.ShouldContain("yields join_command");
             shown.ShouldContain("uses join_command");
             shown.ShouldContain("Run the plan");
@@ -295,7 +346,7 @@ public class AssistantPaneTests
         Headless.Run(() =>
         {
             var model = new OrchestratorViewModel(
-                new Canned(Canned.Says("""{"phases":[{"name":"Do it","hosts":["db-primary"],"task":"x"}]}""")),
+                new Canned(Canned.Says("""{"phases":[{"name":"Do it","hosts":["db-primary"],"commands":["true"]}]}""")),
                 [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
                 _ => null);
             var window = Show(new OrchestratorView(model));
