@@ -66,7 +66,8 @@ public sealed partial class ShellViewModel : ObservableObject
         string? preferencesPath = null,
         McpHub? tools = null,
         ISecretStore? assistKeys = null,
-        ISecretStore? toolTokens = null)
+        ISecretStore? toolTokens = null,
+        Func<OrchestratorViewModel, Control>? orchestratorView = null)
     {
         Inventory = inventory;
         _dialogs = dialogs ?? new ScriptedDialogService();
@@ -93,6 +94,10 @@ public sealed partial class ShellViewModel : ObservableObject
         Workspace = new WorkspaceViewModel(_terminals);
         _sessions = sessions ?? new HostSessions(() => Inventory.Tree);
         _view = view ?? ((session, palette) => new TerminalPaneView(session, palette, _terminals));
+        // Substituted for the same reason as _view: building the real control
+        // means running its XAML, and a unit test with no application around it
+        // races Avalonia's weak-event bookkeeping rather than testing anything.
+        _orchestratorView = orchestratorView ?? (model => new OrchestratorView(model));
 
         // Focusing a pane moves the sidebar with it, and deleting a host closes
         // whatever it had open. Neither half knows about the other.
@@ -843,7 +848,7 @@ public sealed partial class ShellViewModel : ObservableObject
     }
 
     /// <summary>How an orchestrator becomes something on screen. Replaced in tests.</summary>
-    private readonly Func<OrchestratorViewModel, Control> _orchestratorView = model => new OrchestratorView(model);
+    private readonly Func<OrchestratorViewModel, Control> _orchestratorView;
 
     /// <summary>
     /// Builds a conversation about one host.
