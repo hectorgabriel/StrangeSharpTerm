@@ -38,6 +38,30 @@ public sealed class Planner(IAssistBackend backend)
     /// <summary>How many exchanges are behind the next one. The pane says so.</summary>
     public int Turns => _conversation.Count / 2;
 
+    /// <summary>
+    /// What the hosts said, waiting to be carried into the next question.
+    ///
+    /// Folded into that question rather than sent as a turn of its own: a
+    /// conversation alternates, and a report with no answer after it is not a
+    /// turn. It also means a run nobody followed up on costs nothing.
+    /// </summary>
+    private string _reported = "";
+
+    /// <summary>
+    /// Tells the planner what happened when its plan ran.
+    ///
+    /// Without this the planner writes a plan, the hosts carry it out, and the
+    /// next question is answered by something that never learned whether any of
+    /// it worked -- so "that failed, try something else" is read by the one
+    /// participant with no idea what failed.
+    /// </summary>
+    public void Record(string whatHappened)
+    {
+        if (whatHappened.Trim().Length == 0)
+            return;
+        _reported = _reported.Length == 0 ? whatHappened : $"{_reported}\n\n{whatHappened}";
+    }
+
     public async Task<PlanReading> Draft(
         string goal,
         IReadOnlyList<string> hosts,
@@ -48,7 +72,13 @@ public sealed class Planner(IAssistBackend backend)
 
         var said = new StringBuilder();
         var thought = new StringBuilder();
-        var asked = new AssistMessage { Role = AssistRole.User, Text = goal };
+        var asked = new AssistMessage
+        {
+            Role = AssistRole.User,
+            Text = _reported.Length == 0
+                ? goal
+                : $"What happened when the last plan ran:\n\n{_reported}\n\n{goal}",
+        };
         try
         {
             await foreach (var streamed in backend.Stream(
@@ -87,6 +117,8 @@ public sealed class Planner(IAssistBackend backend)
         // it will write the same thing again.
         _conversation.Add(asked);
         _conversation.Add(new AssistMessage { Role = AssistRole.Assistant, Text = answer });
+        // Carried, so it is not carried twice. It is in the history now.
+        _reported = "";
         return reading;
     }
 }
