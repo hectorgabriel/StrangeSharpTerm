@@ -345,6 +345,92 @@ public class AssistantPaneTests
         });
     }
 
+    /// <summary>
+    /// What each host said to the model, and what the model said back, under the
+    /// row for that host. Until now a run showed only the sentence each host
+    /// ended on: the commands it ran and what came back were visible only if you
+    /// had an assistant pane open on that host.
+    /// </summary>
+    [Fact]
+    public void EachHostsExchangeIsThereToOpenUnderneathItsRow()
+    {
+        Headless.Run(() =>
+        {
+            var model = new OrchestratorViewModel(
+                new Canned(Canned.Says("Both are fine.")),
+                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+                alias => new HostAgent(
+                    new Canned(
+                        Canned.Runs("df -h", "to see the disk"),
+                        Canned.Says("Plenty of room.")),
+                    new Quiet(alias),
+                    new AssistSettings { AllowCommandsByDefault = true },
+                    new StandingAnswer(true)));
+            var window = Show(new OrchestratorView(model));
+
+            model.Instruction = "is the disk full?";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+
+            var host = model.Findings.ShouldHaveSingleItem();
+            host.Alias.ShouldBe("web-01");
+            host.HasExchange.ShouldBeTrue();
+
+            // The question it was given, the command it ran, and its answer.
+            host.Exchange.Select(row => row.Text).ShouldContain("is the disk full?");
+            host.Exchange.ShouldContain(row => row.Command == "df -h");
+            host.Exchange.Select(row => row.Text).ShouldContain("Plenty of room.");
+
+            // Folded until asked for, and the command is on screen once it is.
+            host.IsExchangeOpen.ShouldBeFalse();
+            In<TextBlock>(window).Select(block => block.Text).ShouldNotContain("df -h");
+
+            host.ToggleExchangeCommand.Execute(null);
+            Settle(window);
+            In<TextBlock>(window).Select(block => block.Text).ShouldContain("df -h");
+        });
+    }
+
+    /// <summary>
+    /// The row is there from the moment the host is asked, not from the moment it
+    /// answers: a phase can take minutes, and a list that stays empty until it is
+    /// over looks like nothing is happening.
+    /// </summary>
+    [Fact]
+    public void AHostHasARowWhileItIsStillWorking()
+    {
+        Headless.Run(() =>
+        {
+            var answering = new TaskCompletionSource();
+            var model = new OrchestratorViewModel(
+                new Canned(Canned.Says("Done.")),
+                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+                alias => new HostAgent(
+                    new Waiting(answering.Task, "Finished."),
+                    new Quiet(alias),
+                    new AssistSettings(),
+                    new StandingAnswer(true)));
+            var window = Show(new OrchestratorView(model));
+
+            model.Instruction = "is the disk full?";
+            var run = model.RunCommand.ExecuteAsync(null);
+            Settle(window);
+
+            // Asked, not answered.
+            var host = model.Findings.ShouldHaveSingleItem();
+            host.Alias.ShouldBe("web-01");
+            host.Label.ShouldBe("working");
+            In<TextBlock>(window).Select(block => block.Text).ShouldContain("web-01");
+
+            answering.SetResult();
+            Headless.Finish(run);
+            Settle(window);
+
+            host.Label.ShouldBe("reported");
+            host.Text.ShouldBe("Finished.");
+        });
+    }
+
     [Fact]
     public void APlanIsShownInFullAndNothingRunsUntilItIsRun()
     {
@@ -598,6 +684,23 @@ public class AssistantPaneTests
 
         public Task<CommandOutcome> Run(string command, TimeSpan timeout, CancellationToken cancellationToken = default) =>
             Task.FromResult(new CommandOutcome(0, Answers.GetValueOrDefault(command, "")));
+    }
+
+    /// <summary>A provider that says nothing until the test lets it, so a run can be caught mid-flight.</summary>
+    private sealed class Waiting(Task until, string answer) : IAssistBackend
+    {
+        public string ProviderName => "Waiting";
+
+        public string Model => "waiting-1";
+
+        public async IAsyncEnumerable<AssistEvent> Stream(
+            AssistRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await until;
+            yield return new AssistEvent.Say(answer);
+            yield return new AssistEvent.Finished(AssistStop.EndTurn);
+        }
     }
 
     private sealed class Canned(params IReadOnlyList<AssistEvent>[] turns) : IAssistBackend

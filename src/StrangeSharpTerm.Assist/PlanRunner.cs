@@ -64,6 +64,16 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
     /// <summary>A host inside the current phase finished.</summary>
     public event EventHandler<HostFinding>? Reported;
 
+    /// <summary>
+    /// A phase is about to be sent to its hosts.
+    ///
+    /// The pane needs the moment, not just the outcome: each host keeps one
+    /// conversation across the whole plan, so a row that showed "this host's
+    /// transcript" would show every phase at once. Knowing when a phase starts
+    /// is what lets a row show only its own.
+    /// </summary>
+    public event EventHandler<PlanPhase>? Starting;
+
     public async Task<PlanRunResult> Run(
         RunPlan plan,
         bool mayRunCommands,
@@ -116,6 +126,7 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
                     + $"{CaptureMarker} followed by the {capture} and nothing else."
                 : task;
 
+            Starting?.Invoke(this, phase);
             var findings = await Carry(phase, instruction, mayRunCommands, runBudget, cancellationToken);
             var completed = findings.Where(finding => finding.Outcome == HostOutcome.Reported).ToArray();
 
