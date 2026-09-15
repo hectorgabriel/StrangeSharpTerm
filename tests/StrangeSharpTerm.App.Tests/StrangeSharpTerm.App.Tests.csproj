@@ -15,4 +15,23 @@
   <ItemGroup>
     <ProjectReference Include="../../src/StrangeSharpTerm.App/StrangeSharpTerm.App.csproj" />
   </ItemGroup>
+
+  <!--
+    These tests build real Avalonia objects: a Border standing in for a pane, a
+    view model that is an AvaloniaObject, a control built from its XAML. Avalonia's
+    property store and its weak-event bookkeeping are not written to be touched
+    from several threads at once, so run in parallel the test classes take turns
+    corrupting a shared pool, surfacing as "Stack empty" out of
+    AvaloniaPropertyDictionaryPool, or a NullReferenceException inside
+    WeakHashList, on whichever test happened to be running rather than on the one
+    at fault.
+
+    It cost five red CI runs across four different tests before it was worth
+    naming. The window tests already serialise themselves for this reason; this
+    assembly runs in about three seconds, so doing the same costs nothing worth
+    measuring.
+  -->
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
