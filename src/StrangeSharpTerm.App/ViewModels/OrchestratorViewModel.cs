@@ -24,17 +24,107 @@ public sealed partial class TargetRow : ObservableObject
 }
 
 /// <summary>What one host reported, as its row draws it.</summary>
-public sealed record FindingRow(HostFinding Finding)
+/// <summary>
+/// One host's part in a run: the row that names it, what it ended up saying, and
+/// the exchange that got there.
+///
+/// The row exists from the moment the host is asked rather than from the moment
+/// it answers, because a phase can take minutes and a list that stays empty
+/// until it is over is a list that looks broken. The exchange underneath is the
+/// conversation itself -- what it was asked, what it was thinking, every command
+/// it ran and what came back -- which until now was visible only for a host you
+/// had opened an assistant pane on.
+/// </summary>
+public sealed partial class FindingRow : ObservableObject, IDisposable
 {
-    public string Alias => Finding.Alias;
+    private HostAgent? _watched;
 
-    public string Text => Finding.Text;
+    public FindingRow(string alias) => Alias = alias;
 
-    public string Label => Finding.Label;
+    public FindingRow(HostFinding finding)
+        : this(finding.Alias) => Finding = finding;
 
-    public bool Reported => Finding.Outcome == HostOutcome.Reported;
+    public string Alias { get; }
 
-    public bool NotAsked => Finding.Outcome == HostOutcome.NotAsked;
+    /// <summary>What it ended up saying, or null while it is still being asked.</summary>
+    [ObservableProperty]
+    public partial HostFinding? Finding { get; set; }
+
+    public string Text => Finding?.Text ?? "";
+
+    public string Label => Finding?.Label ?? "working";
+
+    public bool Reported => Finding?.Outcome == HostOutcome.Reported;
+
+    public bool NotAsked => Finding?.Outcome == HostOutcome.NotAsked;
+
+    /// <summary>The conversation with this host, as it happens.</summary>
+    public ObservableCollection<AssistRow> Exchange { get; } = [];
+
+    public bool HasExchange => Exchange.Count > 0;
+
+    [ObservableProperty]
+    public partial bool IsExchangeOpen { get; set; }
+
+    public string ExchangeToggle => IsExchangeOpen ? "hide exchange" : "show exchange";
+
+    [RelayCommand]
+    public void ToggleExchange() => IsExchangeOpen = !IsExchangeOpen;
+
+    /// <summary>
+    /// Follows this host's agent from now on.
+    ///
+    /// From now rather than from the beginning: the agent is kept for the life
+    /// of the pane, so its transcript holds every phase and every earlier run,
+    /// and this row is about one of them.
+    /// </summary>
+    public void Watch(HostAgent agent)
+    {
+        if (_watched is not null)
+            return;
+        _watched = agent;
+        agent.Added += OnAdded;
+        agent.Updated += OnUpdated;
+    }
+
+    public void Dispose()
+    {
+        if (_watched is null)
+            return;
+        _watched.Added -= OnAdded;
+        _watched.Updated -= OnUpdated;
+        _watched = null;
+    }
+
+    partial void OnFindingChanged(HostFinding? value)
+    {
+        OnPropertyChanged(nameof(Text));
+        OnPropertyChanged(nameof(Label));
+        OnPropertyChanged(nameof(Reported));
+        OnPropertyChanged(nameof(NotAsked));
+    }
+
+    partial void OnIsExchangeOpenChanged(bool value) => OnPropertyChanged(nameof(ExchangeToggle));
+
+    private void OnAdded(object? sender, TranscriptEntry entry) => Post(() =>
+    {
+        Exchange.Add(new AssistRow { Entry = entry });
+        OnPropertyChanged(nameof(HasExchange));
+    });
+
+    private void OnUpdated(object? sender, TranscriptEntry entry) => Post(() =>
+    {
+        if (Exchange.FirstOrDefault(row => row.Entry == entry) is { } row)
+            row.Refresh();
+    });
+
+    private static void Post(Action work)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+            work();
+        else
+            Dispatcher.UIThread.Post(work);
+    }
 }
 
 /// <summary>A phase of a plan, as the pane draws it and lets it be switched off.</summary>
@@ -312,7 +402,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// <summary>One question, every selected host, then one call to collate them.</summary>
     private async Task Fan()
     {
-        Findings.Clear();
+        Forget(Findings);
         Collated = "";
         Refusal = null;
         var instruction = Instruction.Trim();
@@ -325,6 +415,17 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         _order = Chosen
             .Select((alias, index) => (alias, index))
             .ToDictionary(ticked => ticked.alias, ticked => ticked.index, StringComparer.Ordinal);
+
+        // A row per ticked host before any of them answers, each following its
+        // own agent: a fan-out takes as long as its slowest host, and a list
+        // that stays empty until then looks like nothing is happening.
+        foreach (var alias in Chosen)
+        {
+            var row = new FindingRow(alias);
+            if (AgentFor(alias) is { } agent)
+                row.Watch(agent);
+            Findings.Add(row);
+        }
 
         Thinking = "";
         IsThinkingOpen = true;
@@ -350,19 +451,41 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// Where a finding goes: after every finding whose host was ticked before
     /// it, whatever order they happen to answer in.
     /// </summary>
+    /// <summary>
+    /// Empties a list of rows and lets go of the agents they were following.
+    ///
+    /// Clearing alone would leave every row still subscribed, so a second run
+    /// would be watched by the rows of the first as well as its own.
+    /// </summary>
+    private static void Forget(ObservableCollection<FindingRow> rows)
+    {
+        foreach (var row in rows)
+            row.Dispose();
+        rows.Clear();
+    }
+
     private void Place(HostFinding finding)
     {
-        var mine = _order.GetValueOrDefault(finding.Alias, int.MaxValue);
-        var at = Findings.Count(placed => _order.GetValueOrDefault(placed.Alias, int.MaxValue) < mine);
-        Findings.Insert(at, new FindingRow(finding));
-        Progress = $"{Findings.Count} of {_order.Count} reported";
+        // The row is already there, waiting, in the order the hosts were ticked.
+        if (Findings.FirstOrDefault(row => row.Alias == finding.Alias) is { } waiting)
+        {
+            waiting.Finding = finding;
+        }
+        else
+        {
+            var mine = _order.GetValueOrDefault(finding.Alias, int.MaxValue);
+            var at = Findings.Count(placed => _order.GetValueOrDefault(placed.Alias, int.MaxValue) < mine);
+            Findings.Insert(at, new FindingRow(finding));
+        }
+
+        Progress = $"{Findings.Count(row => row.Finding is not null)} of {_order.Count} reported";
     }
 
     /// <summary>Asks for a plan and runs none of it.</summary>
     private async Task Draft()
     {
         Phases.Clear();
-        Findings.Clear();
+        Forget(Findings);
         Refusal = null;
         Collated = "";
         var goal = Instruction.Trim();
@@ -410,11 +533,38 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     {
         foreach (var row in Phases)
         {
-            row.Findings.Clear();
+            Forget(row.Findings);
             (row.Outcome, row.Captured, row.Note) = ("", null, null);
         }
 
         var runner = new PlanRunner(AgentFor);
+
+        // A row per host the moment the phase is sent, each following its agent
+        // from now on -- the agent's transcript spans the whole plan, and this
+        // row is about this phase.
+        runner.Starting += (_, phase) => Post(() =>
+        {
+            if (Phases.FirstOrDefault(row => row.Phase == phase) is not { } row)
+                return;
+
+            foreach (var alias in phase.Hosts)
+            {
+                var finding = new FindingRow(alias);
+                if (AgentFor(alias) is { } agent)
+                    finding.Watch(agent);
+                row.Findings.Add(finding);
+            }
+        });
+
+        runner.Reported += (_, finding) => Post(() =>
+        {
+            if (Phases.SelectMany(phase => phase.Findings)
+                    .LastOrDefault(row => row.Alias == finding.Alias && row.Finding is null) is { } waiting)
+            {
+                waiting.Finding = finding;
+            }
+        });
+
         runner.Finished += (_, result) => Post(() =>
         {
             if (Phases.FirstOrDefault(row => row.Phase == result.Phase) is not { } row)
@@ -423,8 +573,17 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             row.Outcome = Describe(result.Outcome);
             row.Captured = result.Captured;
             row.Note = result.Note;
-            foreach (var finding in result.Findings)
-                row.Findings.Add(new FindingRow(finding));
+
+            // Anything that never came through Reported -- a phase that was
+            // skipped whole, so no host was ever asked.
+            foreach (var finding in result.Findings.Where(finding =>
+                row.Findings.All(placed => placed.Alias != finding.Alias || placed.Finding is null)))
+            {
+                if (row.Findings.FirstOrDefault(placed => placed.Alias == finding.Alias) is { } waiting)
+                    waiting.Finding = finding;
+                else
+                    row.Findings.Add(new FindingRow(finding));
+            }
         });
 
         await Working(async token =>

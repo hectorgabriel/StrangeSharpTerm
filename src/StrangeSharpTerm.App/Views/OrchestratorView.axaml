@@ -5,6 +5,63 @@
              xmlns:assist="clr-namespace:StrangeSharpTerm.Assist;assembly=StrangeSharpTerm.Assist"
              x:Class="StrangeSharpTerm.App.Views.OrchestratorView"
              x:DataType="vm:OrchestratorViewModel">
+    <UserControl.Resources>
+        <!--
+            One host's exchange: what it was asked, what it was working out, every
+            command it ran with what came back, and what it answered. Defined once
+            and used by both lists, because a fan-out row and a phase row are the
+            same thing seen from different sides.
+
+            Read-only, deliberately. The gate lives in the orchestrator, where one
+            person answers for the whole run; a second set of approve buttons per
+            host would be two gates for one decision.
+        -->
+        <DataTemplate x:Key="Exchange" x:DataType="vm:FindingRow">
+            <StackPanel Margin="0,6,0,0" Spacing="4" IsVisible="{Binding HasExchange}">
+                <Button Background="Transparent" BorderThickness="0" Padding="0"
+                        HorizontalAlignment="Left" Command="{Binding ToggleExchangeCommand}">
+                    <TextBlock Classes="muted" FontSize="10" Text="{Binding ExchangeToggle}" />
+                </Button>
+
+                <ItemsControl ItemsSource="{Binding Exchange}" IsVisible="{Binding IsExchangeOpen}"
+                              Margin="8,0,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AssistRow">
+                            <StackPanel Margin="0,0,0,4">
+                                <TextBlock Classes="muted" FontSize="10" TextWrapping="Wrap"
+                                           IsVisible="{Binding IsQuestion}" Text="{Binding Text}" />
+
+                                <TextBlock Classes="muted" FontSize="10" FontStyle="Italic"
+                                           TextWrapping="Wrap" IsVisible="{Binding HasReasoning}"
+                                           Text="{Binding Reasoning}" />
+
+                                <!-- A command is a row in the same list as the answer,
+                                     deliberately: what it actually ran should never
+                                     require looking somewhere else. -->
+                                <StackPanel IsVisible="{Binding IsStep}" Spacing="2">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock FontFamily="monospace" FontSize="10"
+                                                   TextWrapping="Wrap" Text="{Binding Command}" />
+                                        <TextBlock Classes="muted" FontSize="10" Text="{Binding State}" />
+                                    </StackPanel>
+                                    <TextBlock Classes="muted" FontFamily="monospace" FontSize="10"
+                                               TextWrapping="Wrap" IsVisible="{Binding HasOutput}"
+                                               Text="{Binding Output}" />
+                                </StackPanel>
+
+                                <TextBlock FontSize="11" TextWrapping="Wrap"
+                                           IsVisible="{Binding IsAnswer}" Text="{Binding Text}" />
+
+                                <TextBlock Classes="muted" FontSize="10" TextWrapping="Wrap"
+                                           IsVisible="{Binding IsNote}" Text="{Binding Text}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
     <!--
         One instruction across several hosts, and the plan mode beside it.
 
@@ -75,7 +132,7 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:FindingRow">
                             <Border Classes="chip" Padding="12,10" CornerRadius="6" Margin="0,0,0,6">
-                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
                                     <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Alias}"
                                                FontWeight="SemiBold" />
                                     <TextBlock Grid.Row="0" Grid.Column="1" Classes="muted" FontSize="11"
@@ -86,6 +143,8 @@
                                     <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" Classes="muted"
                                                TextWrapping="Wrap" FontSize="12" Text="{Binding Text}"
                                                IsVisible="{Binding !Reported}" />
+                                    <ContentControl Grid.Row="2" Grid.ColumnSpan="2" Content="{Binding}"
+                                                    ContentTemplate="{StaticResource Exchange}" />
                                 </Grid>
                             </Border>
                         </DataTemplate>
@@ -180,6 +239,8 @@
                                                             </StackPanel>
                                                             <TextBlock Classes="muted" FontSize="11"
                                                                        TextWrapping="Wrap" Text="{Binding Text}" />
+                                                            <ContentControl Content="{Binding}"
+                                                                            ContentTemplate="{StaticResource Exchange}" />
                                                         </StackPanel>
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
