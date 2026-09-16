@@ -259,7 +259,13 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         _orchestrator.Reported += (_, finding) => Post(() => Place(finding));
         foreach (var target in targets)
         {
-            target.PropertyChanged += (_, _) => OnPropertyChanged(nameof(Chosen));
+            // Everything that reads the ticks, not just the list of them.
+            // Notifying Chosen alone left the count beside the Hosts header
+            // reading "none selected" with two of them ticked, and the Run
+            // button disabled until the instruction was touched again -- so
+            // ticking a host last, which is the obvious order, gave you a
+            // button that did nothing.
+            target.PropertyChanged += (_, _) => Chose();
             Targets.Add(target);
         }
     }
@@ -401,6 +407,14 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     }
 
     partial void OnInstructionChanged(string value) => RunCommand.NotifyCanExecuteChanged();
+
+    /// <summary>The ticks changed, and with them everything derived from them.</summary>
+    private void Chose()
+    {
+        OnPropertyChanged(nameof(Chosen));
+        OnPropertyChanged(nameof(ChosenNote));
+        RunCommand.NotifyCanExecuteChanged();
+    }
 
     partial void OnIsRunningChanged(bool value) => RunCommand.NotifyCanExecuteChanged();
 
