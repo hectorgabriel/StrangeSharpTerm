@@ -134,6 +134,50 @@ public class AssistantTests
         built.ShouldBe(["web-01"]);
     }
 
+    /// <summary>
+    /// Ticking a host has to reach everything that reads the ticks.
+    ///
+    /// Only the list of them was announced, so the count beside the Hosts
+    /// header still read "none selected" with two ticked, and Run stayed
+    /// disabled until the instruction was touched again. Typing the question
+    /// and then choosing the hosts -- the obvious order -- left a button that
+    /// did nothing.
+    /// </summary>
+    [Fact]
+    public void ChoosingAHostAfterTypingStillArmsTheRunButton()
+    {
+        var model = new OrchestratorViewModel(
+            new Canned(Canned.Says("Summary.")),
+            [
+                new TargetRow { Alias = "web-01", IsConnected = true },
+                new TargetRow { Alias = "web-02", IsConnected = true },
+            ],
+            _ => null);
+
+        // The instruction first, as anyone would.
+        model.Instruction = "is the journal filling the disk?";
+        model.RunCommand.CanExecute(null).ShouldBeFalse();
+
+        // What the window is told, rather than what the properties return:
+        // both recompute on read, so a screen that is never told to read again
+        // keeps showing the answer from before.
+        var announced = new List<string>();
+        var rearmed = 0;
+        model.PropertyChanged += (_, e) => announced.Add(e.PropertyName ?? "");
+        model.RunCommand.CanExecuteChanged += (_, _) => rearmed++;
+
+        model.Targets[0].IsChosen = true;
+
+        announced.ShouldContain(nameof(OrchestratorViewModel.ChosenNote));
+        rearmed.ShouldBeGreaterThan(0);
+
+        model.ChosenNote.ShouldBe("1 host");
+        model.RunCommand.CanExecute(null).ShouldBeTrue();
+
+        model.Targets[1].IsChosen = true;
+        model.ChosenNote.ShouldBe("2 hosts");
+    }
+
     [Fact]
     public void TheOrchestratorOffersEveryHostAndSaysWhichAreConnected()
     {
