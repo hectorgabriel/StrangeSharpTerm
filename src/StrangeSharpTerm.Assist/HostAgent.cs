@@ -122,13 +122,18 @@ public sealed class HostAgent(
     }
 
     /// <summary>
-    /// Where the last question began, in both the conversation and the
-    /// transcript. What <see cref="Rewind"/> goes back to.
+    /// Where each question began, in both the conversation and the transcript.
+    ///
+    /// Two things need these. <see cref="Rewind"/> goes back to the last of
+    /// them, and <see cref="Compact"/> drops from the first: an exchange is the
+    /// only unit either can safely work in, because a turn that asked for
+    /// commands is followed by their results and a provider will not accept one
+    /// without the other.
     /// </summary>
-    private (int Messages, int Entries)? _lastQuestion;
+    private readonly List<(int Messages, int Entries)> _questions = [];
 
     /// <summary>Whether there is a question to take back.</summary>
-    public bool CanRewind => _lastQuestion is not null;
+    public bool CanRewind => _questions.Count > 0;
 
     /// <summary>
     /// Takes back the last question and everything it produced.
@@ -143,9 +148,11 @@ public sealed class HostAgent(
     /// </summary>
     public bool Rewind()
     {
-        if (_lastQuestion is not { } start)
+        if (_questions.Count == 0)
             return false;
 
+        var start = _questions[^1];
+        _questions.RemoveAt(_questions.Count - 1);
         _conversation.RemoveRange(start.Messages, _conversation.Count - start.Messages);
         for (var index = _entries.Count - 1; index >= start.Entries; index--)
         {
@@ -154,8 +161,43 @@ public sealed class HostAgent(
             Removed?.Invoke(this, entry);
         }
 
-        _lastQuestion = null;
         return true;
+    }
+
+    /// <summary>
+    /// Leaves the oldest exchanges out of the conversation once it is too large
+    /// to keep sending whole.
+    /// </summary>
+    /// <remarks>
+    /// Whole exchanges, oldest first, and never the newest one -- see
+    /// <see cref="AssistLimits.MaxConversationCharacters"/> for why that is
+    /// always possible. Dropping anything smaller would break the conversation:
+    /// an assistant turn asking for commands has to be followed by their
+    /// results, and a request that holds one without the other is refused.
+    ///
+    /// Only what is sent. The transcript is left alone, because it is what the
+    /// person is reading and scrolling back through, and the two have different
+    /// jobs: one is a record, the other is a request.
+    /// </remarks>
+    /// <returns>How many exchanges were left out.</returns>
+    private int Compact()
+    {
+        var dropped = 0;
+        while (_questions.Count > 1 && _conversation.Sum(message => message.Size) > AssistLimits.MaxConversationCharacters)
+        {
+            var from = _questions[0].Messages;
+            var count = _questions[1].Messages - from;
+            _conversation.RemoveRange(from, count);
+            _questions.RemoveAt(0);
+
+            // Everything after it moved up by what was taken out.
+            for (var index = 0; index < _questions.Count; index++)
+                _questions[index] = (_questions[index].Messages - count, _questions[index].Entries);
+
+            dropped++;
+        }
+
+        return dropped;
     }
 
     /// <summary>A row was taken back, so a pane can drop it.</summary>
@@ -170,7 +212,7 @@ public sealed class HostAgent(
         var ran = 0;
 
         // Noted before anything is added, so a retry goes back to exactly here.
-        _lastQuestion = (_conversation.Count, _entries.Count);
+        _questions.Add((_conversation.Count, _entries.Count));
 
         Append(new TranscriptEntry.Question(question));
 
@@ -186,6 +228,11 @@ public sealed class HostAgent(
         // each command is a turn, and the model gets a few more to read the last
         // result and say what it found.
         var ceiling = AssistLimits.CommandBudget + 4;
+
+        // Said once per question, not once per turn: a long conversation
+        // compacts on every request, and the note is about the conversation
+        // rather than about this round trip.
+        var noted = false;
 
         // The last turn that said anything, kept across turns. A question that
         // reaches the ceiling has usually spent twelve commands finding things
@@ -204,6 +251,18 @@ public sealed class HostAgent(
 
             try
             {
+                // Before the request rather than after the answer: the
+                // conversation grows during a turn, by a command's output at a
+                // time, and it is this turn's request that has to fit.
+                var dropped = Compact();
+                if (dropped > 0 && !noted)
+                {
+                    noted = true;
+                    Append(new TranscriptEntry.Note(dropped == 1
+                        ? "This conversation is long enough that its earliest question was left out of what was sent."
+                        : $"This conversation is long enough that its earliest {dropped} questions were left out of what was sent."));
+                }
+
                 var offered = Offered(how);
                 var request = new AssistRequest
                 {
