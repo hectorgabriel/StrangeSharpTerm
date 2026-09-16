@@ -409,9 +409,15 @@
         </StackPanel>
 
         <Grid Grid.Row="6" ColumnDefinitions="*,Auto,Auto,Auto" Margin="12,0,12,12">
-            <TextBox Grid.Column="0" AcceptsReturn="False" Text="{Binding Instruction}"
+            <!-- Return runs it here too. It did not before: the pane that
+                 reaches every host at once was the one you had to click. -->
+            <TextBox Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap"
+                     MinHeight="32" MaxHeight="160" VerticalContentAlignment="Center"
+                     Text="{Binding Instruction}" KeyDown="Typed"
                      Watermark="Ask every selected host…" IsVisible="{Binding IsAsking}" />
-            <TextBox Grid.Column="0" AcceptsReturn="False" Text="{Binding Instruction}"
+            <TextBox Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap"
+                     MinHeight="32" MaxHeight="160" VerticalContentAlignment="Center"
+                     Text="{Binding Instruction}" KeyDown="Typed"
                      Watermark="What should be done across these hosts?" IsVisible="{Binding IsPlanning}" />
 
             <Button Grid.Column="1" Margin="8,0,0,0" Padding="12,6" Command="{Binding DiscardCommand}"

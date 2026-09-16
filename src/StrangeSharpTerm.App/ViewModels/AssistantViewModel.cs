@@ -161,6 +161,16 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
                 row.Refresh();
             OnPropertyChanged(nameof(Waiting));
         });
+        // A retry takes the last question back, and the rows it produced go
+        // with it -- or the pane would show both attempts as though both had
+        // been asked.
+        _agent.Removed += (_, entry) => Post(() =>
+        {
+            if (!_rows.Remove(entry, out var row))
+                return;
+            Rows.Remove(row);
+            OnPropertyChanged(nameof(IsEmpty));
+        });
     }
 
     public string Alias => _agent.Alias;
@@ -232,7 +242,28 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
 
     partial void OnQuestionChanged(string value) => AskCommand.NotifyCanExecuteChanged();
 
-    partial void OnIsAskingChanged(bool value) => AskCommand.NotifyCanExecuteChanged();
+    partial void OnIsAskingChanged(bool value)
+    {
+        AskCommand.NotifyCanExecuteChanged();
+        RetryCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>The last answer as it was written, for the button that copies it.</summary>
+    [RelayCommand]
+    public void CopyAnswer(AssistRow? row)
+    {
+        if (row?.Text is { Length: > 0 } text)
+            Copied?.Invoke(this, text);
+    }
+
+    /// <summary>
+    /// Something wants to go on the clipboard.
+    ///
+    /// An event rather than a call, because reaching the clipboard needs a
+    /// visual to find the window from, and a view model that held one would be
+    /// a view model that could not be tested without one.
+    /// </summary>
+    public event EventHandler<string>? Copied;
 
     partial void OnRedactionsChanged(int value) => OnPropertyChanged(nameof(RedactionNote));
 
@@ -266,6 +297,35 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
             return;
 
         Question = "";
+        Remember(question);
+        await Put(question);
+    }
+
+    /// <summary>
+    /// Asks the last question again, from before it was asked.
+    ///
+    /// The conversation is wound back first, so this is another attempt rather
+    /// than a follow-up: asking again into a conversation that already holds
+    /// the question and its answer is asking the model to improve on itself,
+    /// which is a different thing and usually not what the button meant.
+    ///
+    /// What it ran on the host is not untaken. Nothing here reaches a server.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanRetry))]
+    public async Task Retry()
+    {
+        if (IsAsking || _asked.Count == 0)
+            return;
+
+        var question = _asked[^1];
+        _agent.Rewind();
+        await Put(question);
+    }
+
+    public bool CanRetry => !IsAsking && _agent.CanRewind && _asked.Count > 0;
+
+    private async Task Put(string question)
+    {
         IsAsking = true;
         _asking = new CancellationTokenSource();
 
@@ -279,7 +339,49 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
             IsAsking = false;
             _asking?.Dispose();
             _asking = null;
+            RetryCommand.NotifyCanExecuteChanged();
         }
+    }
+
+    /// <summary>
+    /// What has been asked here, oldest first, for the up arrow to walk back
+    /// through.
+    ///
+    /// The pane's own, not the agent's: the agent's transcript is what was
+    /// asked and answered, and this is what was typed -- which includes the
+    /// question you are part way through rewriting.
+    /// </summary>
+    private readonly List<string> _asked = [];
+
+    private int _walked;
+
+    private void Remember(string question)
+    {
+        // Not twice in a row: asking the same thing again is one entry to walk
+        // back to, not two.
+        if (_asked.Count == 0 || _asked[^1] != question)
+            _asked.Add(question);
+        _walked = 0;
+    }
+
+    /// <summary>
+    /// The question before this one, or the one after it.
+    ///
+    /// Returns false at either end so the view can leave the caret alone rather
+    /// than blanking the field at the bottom of the list.
+    /// </summary>
+    public bool Recall(int direction)
+    {
+        if (_asked.Count == 0)
+            return false;
+
+        var walked = Math.Clamp(_walked + direction, 0, _asked.Count);
+        if (walked == _walked)
+            return false;
+
+        _walked = walked;
+        Question = walked == 0 ? "" : _asked[^walked];
+        return true;
     }
 
     /// <summary>Stops the loop. What it already ran is already run; what it has not asked for, it will not.</summary>
