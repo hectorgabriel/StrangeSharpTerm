@@ -82,6 +82,34 @@ public class DeepSeekStreamTests
         decoder.Finish().OfType<AssistEvent.Finished>().Single().Reason.ShouldBe(AssistStop.EndTurn);
     }
 
+    /// <summary>
+    /// Ollama calls the same field <c>reasoning</c>, and it is what this app is
+    /// exercised against without an account: a local model, speaking the same
+    /// chat-completions format. Knowing only DeepSeek's name for it dropped the
+    /// thinking on the floor and said nothing about having done so.
+    /// </summary>
+    [Fact]
+    public void ThinkingIsReadUnderEitherNameTheServerGivesIt()
+    {
+        var deepSeek = new DeepSeekStream().Decode(
+            """{"choices":[{"delta":{"reasoning_content":"weighing it up"}}]}""");
+        Thought(deepSeek).ShouldBe("weighing it up");
+
+        var ollama = new DeepSeekStream().Decode(
+            """{"choices":[{"delta":{"content":"","reasoning":"let me run this"}}]}""");
+        Thought(ollama).ShouldBe("let me run this");
+    }
+
+    /// <summary>A server that sent both would be sending one thought twice.</summary>
+    [Fact]
+    public void AThoughtUnderBothNamesIsReportedOnce()
+    {
+        var events = new DeepSeekStream().Decode(
+            """{"choices":[{"delta":{"reasoning_content":"weighing it up","reasoning":"weighing it up"}}]}""");
+
+        events.OfType<AssistEvent.Reasoning>().ShouldHaveSingleItem().Text.ShouldBe("weighing it up");
+    }
+
     [Fact]
     public void ChunksWithNoChoicesAreSkipped() =>
         new DeepSeekStream().Decode("""{"id":"x","object":"chat.completion.chunk","choices":[]}""").ShouldBeEmpty();
