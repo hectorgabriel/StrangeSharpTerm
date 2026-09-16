@@ -109,10 +109,17 @@ optional — without it every signature stops verifying on renewal day.
   silently: a publish that cannot load its own runtime now fails in CI rather
   than after notarisation.
 - `artifacts/` is where builds land and is not in version control.
-- **There is no app icon.** The Swift app's `ssh_app_logo.svg` is not in this
-  repo. `build/make-icon.sh` turns one into both formats when it arrives; until
-  then the bundle takes the system default, which is a cosmetic gap and not a
-  broken build.
+- **The app icon is `build/mac/logo.svg`**, committed beside the `AppIcon.icns`
+  that `build/make-icon.sh` renders from it. The source lives in the repo rather
+  than in `artifacts/` for the reason above: that directory is not in version
+  control and is where builds land, so an asset left there is one nobody else
+  can rebuild from. The `.icns` is committed too, on the same reasoning as the
+  vendored icons in `src/StrangeSharpTerm.App/Icons`: a build needs no network
+  and no librsvg, and only regenerating it does.
+- **The Windows `.ico` is still missing.** `make-icon.sh` writes one only where
+  ImageMagick is installed, and skips it rather than faking it otherwise, so the
+  Windows bundle still takes the system default. A cosmetic gap, not a broken
+  build.
 - If a paid account is bought later, it is a certificate and two stored
   credentials, not a rewrite: `--sign-with` and `--notarize` are already there,
   and the sequence behind them is the Swift app's, which worked.
