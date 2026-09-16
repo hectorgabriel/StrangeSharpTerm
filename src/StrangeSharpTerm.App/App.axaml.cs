@@ -99,8 +99,10 @@ public partial class App : Application
 
     /// <summary>
     /// <c>--demo-assistant</c>, <c>--demo-orchestrator</c>,
-    /// <c>--demo-orchestrator-idle</c> and <c>--demo-plan</c>: the two assistant
-    /// panes over a fixture, with nothing reaching a network or a server.
+    /// <c>--demo-orchestrator-idle</c>, <c>--demo-plan</c> and
+    /// <c>--demo-tiles</c>: the two assistant panes over a fixture, and the
+    /// three-pane window they now sit in, with nothing reaching a network or a
+    /// server.
     ///
     /// The Swift app had the last three for the same reason. These panes only
     /// exist after a real connection <em>and</em> a real API key, and neither is
@@ -118,6 +120,11 @@ public partial class App : Application
             return Rehearsal.OrchestratorPane(finished: false);
         if (arguments.Contains("--demo-plan"))
             return Rehearsal.PlanPane();
+        // The three-pane window: four sessions tiled, with the dock beside them.
+        // Same reason as the panes above — it needs four servers and a key at
+        // once, so without a fixture it is a layout nobody can look at.
+        if (arguments.Contains("--demo-tiles"))
+            return Rehearsal.TiledWindow();
         return null;
     }
 

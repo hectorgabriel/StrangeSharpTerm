@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Media;
 using StrangeSharpTerm.App.ViewModels;
 using StrangeSharpTerm.Model;
 
@@ -51,18 +52,48 @@ public sealed class PaneSplitView : Decorator
     public static readonly StyledProperty<SplitAxis> AxisProperty =
         AvaloniaProperty.Register<PaneSplitView, SplitAxis>(nameof(Axis));
 
+    /// <summary>
+    /// Every pane at once, in a grid, rather than along one axis.
+    ///
+    /// Four sessions become two rows of two. The arithmetic is in
+    /// <see cref="Shape"/>; what matters here is that it is the same frames
+    /// moved into different cells, because a terminal control that leaves the
+    /// visual tree tears its connection down.
+    /// </summary>
+    public static readonly StyledProperty<bool> IsTiledProperty =
+        AvaloniaProperty.Register<PaneSplitView, bool>(nameof(IsTiled));
+
     /// <summary>Told which pane the pointer went into, so the keyboard can follow.</summary>
     public static readonly StyledProperty<ICommand?> FocusCommandProperty =
         AvaloniaProperty.Register<PaneSplitView, ICommand?>(nameof(FocusCommand));
 
+    /// <summary>
+    /// The narrowest a tile may be before the grid gives up a column.
+    ///
+    /// Eighty columns of a readable monospace font, near enough. Without this a
+    /// window at its minimum width answers "four sessions" with four slivers,
+    /// none of which can show a command and its output.
+    /// </summary>
+    private const double MinimumTileWidth = 260;
+
     private readonly Grid _grid = new();
     private readonly Dictionary<NodeId, Border> _frames = [];
+
+    /// <summary>Each frame's name strip, kept so tiling can show it and say what it says.</summary>
+    private readonly Dictionary<NodeId, (Border Strip, TextBlock Name)> _titles = [];
+
+    /// <summary>The grid last laid out, so a resize that changes nothing costs nothing.</summary>
+    private (int Rows, int Columns) _shape;
 
     static PaneSplitView()
     {
         PanesProperty.Changed.AddClassHandler<PaneSplitView>((view, _) => view.Arrange());
         OpenPanesProperty.Changed.AddClassHandler<PaneSplitView>((view, _) => view.Arrange());
         AxisProperty.Changed.AddClassHandler<PaneSplitView>((view, _) => view.Arrange());
+        IsTiledProperty.Changed.AddClassHandler<PaneSplitView>((view, _) => view.Arrange());
+        // A tiled grid is the only layout whose shape depends on how much room
+        // it has, so it is the only one a resize can invalidate.
+        BoundsProperty.Changed.AddClassHandler<PaneSplitView>((view, _) => view.Reflow());
     }
 
     public PaneSplitView() => Child = _grid;
@@ -83,6 +114,12 @@ public sealed class PaneSplitView : Decorator
     {
         get => GetValue(AxisProperty);
         set => SetValue(AxisProperty, value);
+    }
+
+    public bool IsTiled
+    {
+        get => GetValue(IsTiledProperty);
+        set => SetValue(IsTiledProperty, value);
     }
 
     public ICommand? FocusCommand
@@ -106,9 +143,16 @@ public sealed class PaneSplitView : Decorator
             .ToArray();
         foreach (var (id, frame) in closed)
         {
+            // Emptied from the inside out. Detaching the frame's child alone
+            // leaves the pane's own view still held by the layer between them,
+            // which is a session nothing on screen refers to and nothing will
+            // now dispose.
+            if (frame.Child is Panel contents)
+                contents.Children.Clear();
             frame.Child = null;
             _grid.Children.Remove(frame);
             _frames.Remove(id);
+            _titles.Remove(id);
         }
 
         // Whatever survives that belongs to some tab. The ones this tab is not
@@ -125,8 +169,15 @@ public sealed class PaneSplitView : Decorator
 
         _grid.ColumnDefinitions.Clear();
         _grid.RowDefinitions.Clear();
+        _shape = default;
         if (panes.Count == 0)
             return;
+
+        if (IsTiled)
+        {
+            Tile(panes);
+            return;
+        }
 
         for (var index = 0; index < panes.Count; index++)
         {
@@ -140,34 +191,20 @@ public sealed class PaneSplitView : Decorator
         for (var index = 0; index < panes.Count; index++)
         {
             var slot = panes[index];
-            var frame = Frame(slot);
-            frame.IsVisible = true;
+            var frame = Dress(slot);
 
-            // The focused pane is outlined. With one pane it says little; with
-            // three it is the only way to know where a keystroke goes.
-            frame.Classes.Set("active", slot.IsActive);
-
-            // Both are set every time: switching axis leaves the other one behind.
+            // All four are set every time: switching axis leaves the other
+            // position behind, and coming back from a tiled grid leaves a span
+            // behind that would swallow the pane beside this one.
             Grid.SetColumn(frame, sideBySide ? index * 2 : 0);
             Grid.SetRow(frame, sideBySide ? 0 : index * 2);
+            Grid.SetColumnSpan(frame, 1);
+            Grid.SetRowSpan(frame, 1);
 
             if (index == 0)
                 continue;
 
-            var divider = new GridSplitter
-            {
-                Classes = { "pane" },
-                ResizeDirection = sideBySide ? GridResizeDirection.Columns : GridResizeDirection.Rows,
-                HorizontalAlignment = sideBySide ? HorizontalAlignment.Center : HorizontalAlignment.Stretch,
-                VerticalAlignment = sideBySide ? VerticalAlignment.Stretch : VerticalAlignment.Center,
-            };
-            // Its own track is Auto, so it needs a size of its own: without one
-            // it measures to nothing and cannot be grabbed.
-            if (sideBySide)
-                divider.Width = 6;
-            else
-                divider.Height = 6;
-
+            var divider = Divider(sideBySide);
             Grid.SetColumn(divider, sideBySide ? index * 2 - 1 : 0);
             Grid.SetRow(divider, sideBySide ? 0 : index * 2 - 1);
             _grid.Children.Add(divider);
@@ -182,13 +219,174 @@ public sealed class PaneSplitView : Decorator
         }
     }
 
-    /// <summary>This pane's frame, made once and kept while the pane is open.</summary>
+    /// <summary>
+    /// Every pane at once, in as square a grid as the count allows.
+    ///
+    /// Four sessions are two rows of two, nine are three of three, and three are
+    /// two on top of one that spans the width — an empty cell would read as a
+    /// pane that failed to draw rather than as arithmetic.
+    /// </summary>
+    private void Tile(IReadOnlyList<PaneSlot> panes)
+    {
+        var (rows, columns) = _shape = Shape(panes.Count);
+
+        // Interleaved with Auto tracks for the dividers, as the single-axis
+        // layout does: a star track either side of a divider that sizes itself.
+        for (var column = 0; column < columns; column++)
+        {
+            if (column > 0)
+                _grid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+            _grid.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(1, GridUnitType.Star)));
+        }
+
+        for (var row = 0; row < rows; row++)
+        {
+            if (row > 0)
+                _grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            _grid.RowDefinitions.Add(new RowDefinition(new GridLength(1, GridUnitType.Star)));
+        }
+
+        for (var index = 0; index < panes.Count; index++)
+        {
+            var slot = panes[index];
+            var frame = Dress(slot);
+
+            var row = index / columns;
+            var column = index % columns;
+
+            Grid.SetRow(frame, row * 2);
+            Grid.SetColumn(frame, column * 2);
+            // The last tile takes whatever the last row has left over, so a
+            // count that does not divide leaves no hole.
+            Grid.SetColumnSpan(
+                frame,
+                index == panes.Count - 1 ? (columns - column) * 2 - 1 : 1);
+            Grid.SetRowSpan(frame, 1);
+        }
+
+        // One divider per interior boundary, spanning the whole grid: dragging
+        // it moves a whole column or a whole row, which is what makes a tiled
+        // window adjustable without becoming a puzzle.
+        for (var column = 1; column < columns; column++)
+        {
+            var divider = Divider(sideBySide: true);
+            Grid.SetColumn(divider, column * 2 - 1);
+            Grid.SetRow(divider, 0);
+            Grid.SetRowSpan(divider, rows * 2 - 1);
+            _grid.Children.Add(divider);
+        }
+
+        for (var row = 1; row < rows; row++)
+        {
+            var divider = Divider(sideBySide: false);
+            Grid.SetRow(divider, row * 2 - 1);
+            Grid.SetColumn(divider, 0);
+            Grid.SetColumnSpan(divider, columns * 2 - 1);
+            _grid.Children.Add(divider);
+        }
+    }
+
+    /// <summary>
+    /// How many rows and columns a count of panes wants.
+    ///
+    /// As square as it can be, then narrowed until each tile clears
+    /// <see cref="MinimumTileWidth"/>. Before the first layout pass there is no
+    /// width to go on, and a guess of one column there would show every session
+    /// stacked for a frame; an unmeasured grid is therefore left unconstrained.
+    /// </summary>
+    private (int Rows, int Columns) Shape(int count)
+    {
+        var columns = (int)Math.Ceiling(Math.Sqrt(count));
+        if (Bounds.Width > 0)
+            columns = Math.Min(columns, Math.Max(1, (int)(Bounds.Width / MinimumTileWidth)));
+        columns = Math.Clamp(columns, 1, count);
+        return ((int)Math.Ceiling(count / (double)columns), columns);
+    }
+
+    /// <summary>
+    /// Lays out again when a resize changes how many columns fit, and not
+    /// otherwise: every pointer move over a dragged splitter raises Bounds.
+    /// </summary>
+    private void Reflow()
+    {
+        if (!IsTiled || Panes is not { Count: > 0 } panes || Shape(panes.Count) == _shape)
+            return;
+        Arrange();
+    }
+
+    private static GridSplitter Divider(bool sideBySide) => new()
+    {
+        Classes = { "pane" },
+        ResizeDirection = sideBySide ? GridResizeDirection.Columns : GridResizeDirection.Rows,
+        HorizontalAlignment = sideBySide ? HorizontalAlignment.Center : HorizontalAlignment.Stretch,
+        VerticalAlignment = sideBySide ? VerticalAlignment.Stretch : VerticalAlignment.Center,
+        // Its own track is Auto, so it needs a size of its own: without one it
+        // measures to nothing and cannot be grabbed.
+        Width = sideBySide ? 6 : double.NaN,
+        Height = sideBySide ? double.NaN : 6,
+    };
+
+    /// <summary>
+    /// Puts a pane's frame on screen and says what it is.
+    ///
+    /// The focused pane is outlined. With one pane that says little; with four
+    /// in a grid it is the only way to know where a keystroke goes.
+    /// </summary>
+    private Border Dress(PaneSlot slot)
+    {
+        var frame = Frame(slot);
+        frame.IsVisible = true;
+        frame.Classes.Set("active", slot.IsActive);
+        frame.Classes.Set("tiled", IsTiled);
+
+        if (_titles.TryGetValue(slot.Id, out var title))
+        {
+            // Named only when tiled: the tab strip says it the rest of the
+            // time, and two labels for one pane is one too many.
+            title.Strip.IsVisible = IsTiled && slot.Title.Length > 0;
+            title.Name.Text = slot.Title;
+            title.Name.Classes.Set("muted", !slot.IsActive);
+        }
+
+        return frame;
+    }
+
+    /// <summary>
+    /// This pane's frame, made once and kept while the pane is open.
+    ///
+    /// The name above it is built with it rather than added when the window is
+    /// tiled, and hidden the rest of the time: rebuilding the frame's contents
+    /// would take the pane out of the visual tree, which is the one thing this
+    /// class exists to avoid.
+    /// </summary>
     private Border Frame(PaneSlot slot)
     {
         if (_frames.TryGetValue(slot.Id, out var existing))
             return existing;
 
-        var frame = new Border { Classes = { "pane" }, Child = slot.View };
+        var name = new TextBlock
+        {
+            Text = slot.Title,
+            FontSize = 11,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+
+        var header = new Border
+        {
+            Classes = { "tilename" },
+            IsVisible = false,
+            Child = name,
+        };
+
+        var contents = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(new GridLength(1, GridUnitType.Star)) } };
+        Grid.SetRow(header, 0);
+        Grid.SetRow(slot.View, 1);
+        contents.Children.Add(header);
+        contents.Children.Add(slot.View);
+
+        var frame = new Border { Classes = { "pane" }, Child = contents };
+        _titles[slot.Id] = (header, name);
 
         // Tunnelling, so the click reaches here before the terminal takes it: the
         // terminal wants the keyboard, and this wants to know which pane asked.

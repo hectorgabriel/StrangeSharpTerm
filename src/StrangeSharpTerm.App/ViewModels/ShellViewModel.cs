@@ -24,7 +24,29 @@ public sealed record TabItem(NodeId Id, string Title, bool IsActive);
 /// One pane as the window needs it: what to draw, and whether the keyboard is
 /// in it. A split tab is a list of these along one axis.
 /// </summary>
-public sealed record PaneSlot(NodeId Id, Control View, bool IsActive);
+/// <param name="Title">
+/// What to call it when the layout has to say so itself. Tiled there is no tab
+/// strip naming the sessions, and a grid of four terminals that are only told
+/// apart by reading their prompts is a grid nobody can navigate.
+/// </param>
+public sealed record PaneSlot(NodeId Id, Control View, bool IsActive, string Title = "");
+
+/// <summary>What the dock down the right-hand side is showing.</summary>
+public enum DockView
+{
+    /// <summary>
+    /// A conversation about one host: whichever session has the keyboard.
+    ///
+    /// It follows the focus rather than being pinned, because the dock is beside
+    /// every session at once and an assistant that stayed on the host you opened
+    /// it from would, in a tiled window, be talking about a terminal you are no
+    /// longer looking at.
+    /// </summary>
+    Assistant,
+
+    /// <summary>One instruction across several hosts, which belongs to none of them.</summary>
+    Orchestrator,
+}
 
 /// <summary>
 /// What the window binds to: the inventory on the left, the workspace on the
@@ -67,7 +89,8 @@ public sealed partial class ShellViewModel : ObservableObject
         McpHub? tools = null,
         ISecretStore? assistKeys = null,
         ISecretStore? toolTokens = null,
-        Func<OrchestratorViewModel, Control>? orchestratorView = null)
+        Func<OrchestratorViewModel, Control>? orchestratorView = null,
+        Func<AssistantViewModel, Control>? assistantView = null)
     {
         Inventory = inventory;
         _dialogs = dialogs ?? new ScriptedDialogService();
@@ -98,6 +121,10 @@ public sealed partial class ShellViewModel : ObservableObject
         // means running its XAML, and a unit test with no application around it
         // races Avalonia's weak-event bookkeeping rather than testing anything.
         _orchestratorView = orchestratorView ?? (model => new OrchestratorView(model));
+        // Substituted for the same reason, and newly so: the assistant is in the
+        // dock now, which a test of the layout builds without an application
+        // around it to run the control's XAML in.
+        _assistantView = assistantView ?? (model => new AssistantView(model));
 
         // Focusing a pane moves the sidebar with it, and deleting a host closes
         // whatever it had open. Neither half knows about the other.
@@ -207,6 +234,81 @@ public sealed partial class ShellViewModel : ObservableObject
     public SplitAxis Axis => Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal;
 
     /// <summary>
+    /// Whether the middle of the window is showing every session at once.
+    ///
+    /// The workspace owns the answer, because it also decides where a broadcast
+    /// goes; this is the window's way of asking.
+    /// </summary>
+    public bool IsTiled => Workspace.IsTiled;
+
+    /// <summary>
+    /// Every session in a grid, or one tab at a time.
+    ///
+    /// The tabs are not thrown away by tiling, and nothing is opened or closed
+    /// by it: the same panes are laid out differently, which is why this only
+    /// has to ask for them again.
+    /// </summary>
+    [RelayCommand]
+    public void ToggleTiles()
+    {
+        Workspace.IsTiled = !Workspace.IsTiled;
+        OnPropertyChanged(nameof(IsTiled));
+        Show();
+    }
+
+    /// <summary>
+    /// Whether the inventory is showing down the left.
+    ///
+    /// Collapsible because three panes do not fit a small window otherwise: at
+    /// the 720 the window will shrink to, a fixed sidebar and a docked assistant
+    /// leave less room for the sessions than one terminal needs.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsSidebarOpen { get; set; } = true;
+
+    [RelayCommand]
+    public void ToggleSidebar() => IsSidebarOpen = !IsSidebarOpen;
+
+    /// <summary>Which of the two conversations the right-hand dock is showing.</summary>
+    [ObservableProperty]
+    public partial DockView DockShows { get; private set; } = DockView.Assistant;
+
+    public bool DockShowsAssistant => DockShows == DockView.Assistant;
+
+    public bool DockShowsOrchestrator => DockShows == DockView.Orchestrator;
+
+    partial void OnDockShowsChanged(DockView value)
+    {
+        OnPropertyChanged(nameof(DockShowsAssistant));
+        OnPropertyChanged(nameof(DockShowsOrchestrator));
+    }
+
+    /// <summary>Whether the dock has a column of its own at all.</summary>
+    [ObservableProperty]
+    public partial bool IsDockOpen { get; private set; }
+
+    /// <summary>
+    /// What the dock is drawing: one host's assistant, or the orchestrator.
+    ///
+    /// A control rather than a view model, for the same reason a pane is: which
+    /// of the two views this is depends on the kind of conversation, and the
+    /// window should not have to know.
+    /// </summary>
+    [ObservableProperty]
+    public partial Control? Dock { get; private set; }
+
+    /// <summary>
+    /// The name above the dock: the host whose assistant it is showing.
+    ///
+    /// Empty for the orchestrator, which is deliberately about several.
+    /// </summary>
+    [ObservableProperty]
+    public partial string DockTitle { get; private set; } = "";
+
+    [RelayCommand]
+    public void CloseDock() => IsDockOpen = false;
+
+    /// <summary>
     /// Whether the right-hand side is showing the selected host rather than a
     /// terminal: either nothing is open, or the selection is a different host
     /// from the one the focused pane belongs to.
@@ -217,10 +319,19 @@ public sealed partial class ShellViewModel : ObservableObject
     /// differ from the selection, and reading its null as "a different host" is
     /// what drew the detail panel on top of it.
     /// </summary>
+    /// <remarks>
+    /// Tiled, the rule is different, because the panes are no longer one host's
+    /// business: covering every session on screen because the sidebar selection
+    /// moved would hide seven servers to describe one. So a tiled window shows
+    /// the detail only for a host with nothing open — which is the state the
+    /// detail is for, since it is where a session is started from.
+    /// </remarks>
     public bool ShowsDetail =>
         Detail is not null
         && (Panes.Count == 0
-            || (Workspace.ActivePane is { ConnectionId: { } host } && host != Inventory.Selection));
+            || (Workspace.IsTiled
+                ? Workspace.Panes.All(pane => pane.ConnectionId != Inventory.Selection)
+                : Workspace.ActivePane is { ConnectionId: { } host } && host != Inventory.Selection));
 
     /// <summary>
     /// Whether the panes are on screen at all.
@@ -766,12 +877,12 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly Func<TunnelsViewModel, Control> _tunnelsView = model => new TunnelsView(model);
 
     /// <summary>
-    /// Opens an assistant on the selected host, beside the session it is about.
+    /// Shows the assistant in the dock, on the selected host.
     ///
-    /// Beside rather than in a tab of its own: the pane is a conversation about
-    /// what the terminal is showing, and a conversation that hides its subject
-    /// is a worse one. It carries the tail of whichever shell has the focus, so
-    /// which pane was focused when it opened is the thing it is about.
+    /// Docked rather than split into the sessions: the middle of the window is
+    /// for the servers, and a conversation that took a tile from them would make
+    /// every session smaller to say one thing about one of them. It still sits
+    /// beside its subject, because in a tiled window every session is beside it.
     /// </summary>
     [RelayCommand(CanExecute = nameof(HasSelectedHost))]
     public void OpenAssistant()
@@ -780,56 +891,91 @@ public sealed partial class ShellViewModel : ObservableObject
             return;
 
         Failure = null;
-        if (_backends(AssistantSettings) is not { } backend)
+        if (_backends(AssistantSettings) is null)
         {
             // No key is an ordinary state on a fresh install. It deserves a
-            // sentence offering Settings, not a pane that fails when asked.
+            // sentence offering Settings, not a dock that fails when asked.
             Failure = AssistBackends.NoKey(AssistantSettings);
             return;
         }
 
-        var connection = detail.Connection;
-        var beside = Workspace.ActivePane is { IsTerminal: true, ConnectionId: var host, Id: var focused }
-            && host == connection.Id
-                ? focused
-                : (NodeId?)null;
+        DockShows = DockView.Assistant;
+        IsDockOpen = true;
+        ShowInDock(detail.Connection);
+    }
 
-        var agent = Agent(connection, beside);
-        var pane = new Pane
+    /// <summary>
+    /// This host's conversation, built on first use and kept for as long as the
+    /// window is open.
+    ///
+    /// Kept rather than rebuilt, because the dock follows the focus: clicking
+    /// back to a session you asked about ten minutes ago has to find what it
+    /// said, or the dock would be a conversation that forgets every time you
+    /// look at another server.
+    /// </summary>
+    private readonly Dictionary<NodeId, Control> _assistants = [];
+
+    private void ShowInDock(Connection connection)
+    {
+        if (!_assistants.TryGetValue(connection.Id, out var view))
         {
-            Title = $"{connection.Name} assistant",
-            Kind = new PaneKind.Assistant(),
-            ConnectionId = connection.Id,
-        };
+            AssistantViewModel? model = null;
+            model = new AssistantViewModel(
+                // Whichever of this host's shells has the keyboard now, asked
+                // each time rather than captured: the dock outlives the pane it
+                // was opened from.
+                Agent(connection, () => Focused(connection.Id))(() => model!),
+                AssistantSettings,
+                // Typed into the shell it is about, and not run. Sent rather
+                // than written, so a broadcast group fans it out as it fans out
+                // typing.
+                text => (Focused(connection.Id) is { } id ? _terminals.Session(id) : ActiveTerminal())?.Send(text))
+            {
+                // The dock's own header names the host, and at this width two
+                // labels for it leave neither any room.
+                ShowsAlias = false,
+            };
 
-        // The pane is its own gate: the command is already a row in the
-        // transcript by the time a person is asked, with its reason beside it.
-        AssistantViewModel? model = null;
-        model = new AssistantViewModel(
-            agent(() => model!),
-            AssistantSettings,
-            // Typed into the shell it is beside, and not run. Sent rather than
-            // written, so a broadcast group fans it out as it fans out typing.
-            text => (beside is { } id ? _terminals.Session(id) : ActiveTerminal())?.Send(text));
+            _assistants[connection.Id] = view = _assistantView(model);
 
-        Workspace.Open(pane, Panes.Count > 0 ? Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal : null);
-        _views[pane.Id] = _assistantView(model);
-        Show();
+            // The disclosure is filled in before anything is typed: every
+            // question shows exactly what it will carry before you ask it.
+            _ = model.LookCommand.ExecuteAsync(null);
+        }
 
-        // The disclosure is filled in before anything is typed: every question
-        // shows exactly what it will carry before you ask it.
-        _ = model.LookCommand.ExecuteAsync(null);
+        Dock = view;
+        DockTitle = connection.Name;
+    }
+
+    /// <summary>
+    /// Points the dock at whatever now has the focus.
+    ///
+    /// Only while it is open and showing an assistant: the orchestrator is about
+    /// several hosts and has no focus to follow, and building a conversation for
+    /// every session someone clicks through would be a provider call each time.
+    /// </summary>
+    private void RefreshDock()
+    {
+        if (!IsDockOpen || DockShows != DockView.Assistant)
+            return;
+        if (Workspace.ActivePane?.ConnectionId is not { } host)
+            return;
+        if (Inventory.Tree.Connections.GetValueOrDefault(host) is not { } connection)
+            return;
+        if (_backends(AssistantSettings) is null)
+            return;
+        ShowInDock(connection);
     }
 
     /// <summary>How an assistant becomes something on screen. Replaced in tests.</summary>
-    private readonly Func<AssistantViewModel, Control> _assistantView = model => new AssistantView(model);
+    private readonly Func<AssistantViewModel, Control> _assistantView;
 
     /// <summary>
-    /// Opens the orchestrator: one instruction across several hosts.
+    /// Shows the orchestrator in the dock: one instruction across several hosts.
     ///
-    /// In a tab of its own and belonging to no host, because disconnecting a
-    /// host closes the panes belonging to it and a fan-out across eight servers
-    /// should not vanish because one was disconnected.
+    /// Built once and kept, and belonging to no host, because disconnecting a
+    /// host closes what belongs to it and a fan-out across eight servers should
+    /// not vanish because one was disconnected.
     /// </summary>
     [RelayCommand]
     public void AskSeveralHosts()
@@ -841,7 +987,15 @@ public sealed partial class ShellViewModel : ObservableObject
             return;
         }
 
-        var pane = new Pane { Title = "Orchestrator", Kind = new PaneKind.Orchestrator() };
+        DockShows = DockView.Orchestrator;
+        IsDockOpen = true;
+        DockTitle = "";
+
+        if (_orchestrator is not null)
+        {
+            Dock = _orchestrator;
+            return;
+        }
 
         OrchestratorViewModel? model = null;
         model = new OrchestratorViewModel(
@@ -861,13 +1015,14 @@ public sealed partial class ShellViewModel : ObservableObject
                 // the pane you happen to have in front of you: reading one
                 // would make a run across eight hosts depend on which of them
                 // had a window open and what was last printed in it.
-                ? Agent(target, terminal: null, inARun: true)(() => model!)
+                ? Agent(target, () => null, inARun: true)(() => model!)
                 : null);
 
-        Workspace.Open(pane, splitting: null);
-        _views[pane.Id] = _orchestratorView(model);
-        Show();
+        Dock = _orchestrator = _orchestratorView(model);
     }
+
+    /// <summary>The fan-out, once someone has asked for it. One per window.</summary>
+    private Control? _orchestrator;
 
     /// <summary>How an orchestrator becomes something on screen. Replaced in tests.</summary>
     private readonly Func<OrchestratorViewModel, Control> _orchestratorView;
@@ -878,7 +1033,12 @@ public sealed partial class ShellViewModel : ObservableObject
     /// The gate is passed in late because a pane is its own gate and cannot be
     /// built before the agent it holds.
     /// </summary>
-    private Func<Func<ICommandGate>, HostAgent> Agent(Connection connection, NodeId? terminal, bool inARun = false) =>
+    /// <param name="terminal">
+    /// Which shell's tail the question carries, asked for at the time rather
+    /// than passed in: a docked assistant follows the focus, so the pane it is
+    /// about is not known when it is built.
+    /// </param>
+    private Func<Func<ICommandGate>, HostAgent> Agent(Connection connection, Func<NodeId?> terminal, bool inARun = false) =>
         gate =>
         {
             var access = new SshHostAccess(
@@ -1057,17 +1217,32 @@ public sealed partial class ShellViewModel : ObservableObject
         // Set before Panes: the layout reads it to decide what to drop, and a
         // stale one would drop the panes of the tab being left.
         OpenPanes = [.. Workspace.Panes.Select(pane => pane.Id).Where(_views.ContainsKey)];
-        Panes = Workspace.ActiveTab is { } tab
+        // Tiled, every session is on screen at once, in the order they were
+        // opened; otherwise it is the focused tab's panes, as it has always
+        // been. Either way these are the same views, moved rather than remade.
+        Panes = Workspace.IsTiled
             ?
             [
-                .. tab.PaneIds
-                    .Select(id => (Id: id, View: _views.GetValueOrDefault(id)))
+                .. Workspace.Panes
+                    .Select(pane => (pane.Id, pane.Title, View: _views.GetValueOrDefault(pane.Id)))
                     .Where(pane => pane.View is not null)
-                    .Select(pane => new PaneSlot(pane.Id, pane.View!, pane.Id == tab.ActivePaneId)),
+                    .Select(pane => new PaneSlot(
+                        pane.Id, pane.View!, pane.Id == Workspace.ActivePaneId, pane.Title)),
             ]
-            : [];
+            : Workspace.ActiveTab is { } tab
+                ?
+                [
+                    .. tab.PaneIds
+                        .Select(id => (Id: id, View: _views.GetValueOrDefault(id)))
+                        .Where(pane => pane.View is not null)
+                        .Select(pane => new PaneSlot(pane.Id, pane.View!, pane.Id == tab.ActivePaneId)),
+                ]
+                : [];
+
+        RefreshDock();
 
         OnPropertyChanged(nameof(Axis));
+        OnPropertyChanged(nameof(IsTiled));
         OnPropertyChanged(nameof(ShowsDetail));
         OnPropertyChanged(nameof(ShowsPanes));
         OnPropertyChanged(nameof(ShowsEmptyState));

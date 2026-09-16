@@ -155,19 +155,45 @@ public sealed partial class WorkspaceViewModel(TerminalRegistry? terminals = nul
             FocusTab(Tabs[index].Id);
     }
 
-    /// <summary>Whether typing goes to every terminal pane in the focused tab.</summary>
+    /// <summary>
+    /// Whether every session is on screen at once, in a grid, rather than one
+    /// tab's worth.
+    ///
+    /// It lives here rather than in the window because it decides what "every
+    /// pane" means, and two things depend on that answer: what the layout draws,
+    /// and where a broadcast goes.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsTiled { get; set; }
+
+    partial void OnIsTiledChanged(bool value)
+    {
+        // The group is "what is on screen", so changing what is on screen
+        // changes it. Without this, tiling while broadcasting kept typing into
+        // the tab that was showing a moment ago.
+        SyncBroadcastGroup();
+        OnPropertyChanged(nameof(CanBroadcast));
+    }
+
+    /// <summary>Whether typing goes to every terminal pane on screen.</summary>
     [ObservableProperty]
     public partial bool IsBroadcasting { get; set; }
 
     partial void OnIsBroadcastingChanged(bool value) => SyncBroadcastGroup();
 
-    /// <summary>True when the focused tab has enough terminals for broadcasting to mean anything.</summary>
-    public bool CanBroadcast => TerminalsInActiveTab().Count > 1;
+    /// <summary>True when enough terminals are on screen for broadcasting to mean anything.</summary>
+    public bool CanBroadcast => TerminalsOnScreen().Count > 1;
 
-    /// <summary>Keeps the registry's group in step with the tab and the toggle.</summary>
+    /// <summary>Keeps the registry's group in step with what is showing and the toggle.</summary>
     public void SyncBroadcastGroup() =>
-        _terminals?.SetBroadcastGroup(IsBroadcasting ? TerminalsInActiveTab() : []);
+        _terminals?.SetBroadcastGroup(IsBroadcasting ? TerminalsOnScreen() : []);
 
-    private List<NodeId> TerminalsInActiveTab() =>
-        ActiveTab is { } tab ? [.. tab.PaneIds.Where(id => Pane(id)?.IsTerminal == true)] : [];
+    /// <summary>
+    /// The terminals a keystroke could reach: every one of them when tiled,
+    /// otherwise the focused tab's.
+    /// </summary>
+    private List<NodeId> TerminalsOnScreen() =>
+        IsTiled
+            ? [.. Panes.Where(pane => pane.IsTerminal).Select(pane => pane.Id)]
+            : ActiveTab is { } tab ? [.. tab.PaneIds.Where(id => Pane(id)?.IsTerminal == true)] : [];
 }

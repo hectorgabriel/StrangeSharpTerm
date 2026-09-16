@@ -166,6 +166,16 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
     public string Alias => _agent.Alias;
 
     /// <summary>
+    /// Whether the header names the host itself.
+    ///
+    /// Docked it does not: the dock has a header of its own that names the host,
+    /// and at the width a third column can afford, the two labels and the
+    /// provider between them leave the name a few characters wide. Split beside
+    /// a terminal there is nothing else to say it, so it stays.
+    /// </summary>
+    public bool ShowsAlias { get; init; } = true;
+
+    /// <summary>
     /// Which provider and model is answering, in the header.
     ///
     /// It decides where this conversation's terminal output is being sent, and

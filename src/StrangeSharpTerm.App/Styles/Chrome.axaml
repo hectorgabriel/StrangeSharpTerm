@@ -127,8 +127,23 @@
         <Setter Property="ClipToBounds" Value="True" />
     </Style>
 
+    <!-- Tiled, every pane is outlined rather than only the focused one: with
+         four of them in a grid and no tab strip above, an unoutlined tile reads
+         as part of the one beside it. -->
+    <Style Selector="Border.pane.tiled">
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+    </Style>
+
     <Style Selector="Border.pane.active">
         <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <!-- The name above a tile. Quiet, and the accent once it has the keyboard:
+         in a window showing eight servers, which one a keystroke reaches is the
+         thing that has to be obvious. -->
+    <Style Selector="Border.tilename">
+        <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+        <Setter Property="Padding" Value="8,3" />
     </Style>
 
     <!-- The divider between two panes: the background between them until it is

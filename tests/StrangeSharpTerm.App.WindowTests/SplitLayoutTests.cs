@@ -50,8 +50,7 @@ public class SplitLayoutTests
             view.Panes = [one];
             Settle(window);
 
-            var frame = first.Parent;
-            frame.ShouldNotBeNull();
+            var frame = Frames.Of(first);
             InTheTree(first).ShouldBeTrue();
 
             view.Panes = [one with { IsActive = false }, Slot(new Border(), active: true)];
@@ -59,7 +58,7 @@ public class SplitLayoutTests
 
             // The same frame, still in the tree: not a new one that happens to
             // hold the same view.
-            first.Parent.ShouldBeSameAs(frame);
+            Frames.Of(first).ShouldBeSameAs(frame);
             InTheTree(first).ShouldBeTrue();
         });
     }
@@ -78,12 +77,12 @@ public class SplitLayoutTests
             var two = Slot(new Border());
             view.Panes = [one, two];
             Settle(window);
-            var frame = first.Parent;
+            var frame = Frames.Of(first);
 
             view.Axis = SplitAxis.Vertical;
             Settle(window);
 
-            first.Parent.ShouldBeSameAs(frame);
+            Frames.Of(first).ShouldBeSameAs(frame);
             InTheTree(first).ShouldBeTrue();
         });
     }
@@ -125,8 +124,8 @@ public class SplitLayoutTests
             Settle(window);
 
             // Equal shares, give or take the divider between them.
-            var leftFrame = (Border)left.Parent!;
-            var rightFrame = (Border)right.Parent!;
+            var leftFrame = Frames.Of(left);
+            var rightFrame = Frames.Of(right);
             leftFrame.Bounds.Width.ShouldBe(rightFrame.Bounds.Width, tolerance: 1);
             leftFrame.Bounds.Height.ShouldBe(rightFrame.Bounds.Height, tolerance: 1);
 
@@ -170,6 +169,131 @@ public class SplitLayoutTests
             asked.ShouldBe(right.Id);
         });
     }
+
+    /// <summary>
+    /// Four sessions are two rows of two, which is the whole request: a window
+    /// that shows everything it is connected to at once.
+    /// </summary>
+    [Fact]
+    public void FourPanesTileIntoTwoRowsOfTwo()
+    {
+        Headless.Run(() =>
+        {
+            var view = new PaneSplitView { IsTiled = true };
+            var window = new Window { Content = view, Width = 1000, Height = 700 };
+            window.Show();
+
+            var panes = Enumerable.Range(0, 4).Select(_ => new Border()).ToArray();
+            view.Panes = [.. panes.Select(pane => Slot(pane))];
+            Settle(window);
+
+            var frames = panes.Select(Frames.Of).ToArray();
+
+            // Two across and two down, each the same size as the others.
+            frames[0].Bounds.Width.ShouldBe(frames[1].Bounds.Width, tolerance: 1);
+            frames[0].Bounds.Height.ShouldBe(frames[2].Bounds.Height, tolerance: 1);
+            Left(frames[1], window).ShouldBeGreaterThan(Left(frames[0], window));
+            Left(frames[2], window).ShouldBe(Left(frames[0], window), tolerance: 1);
+            Top(frames[2], window).ShouldBeGreaterThan(Top(frames[0], window));
+            Top(frames[1], window).ShouldBe(Top(frames[0], window), tolerance: 1);
+        });
+    }
+
+    /// <summary>
+    /// A count that does not divide leaves no hole: the last tile takes what the
+    /// row has left, because an empty cell reads as a pane that failed to draw.
+    /// </summary>
+    [Fact]
+    public void ThreePanesLeaveNoEmptyCell()
+    {
+        Headless.Run(() =>
+        {
+            var view = new PaneSplitView { IsTiled = true };
+            var window = new Window { Content = view, Width = 1000, Height = 700 };
+            window.Show();
+
+            var panes = Enumerable.Range(0, 3).Select(_ => new Border()).ToArray();
+            view.Panes = [.. panes.Select(pane => Slot(pane))];
+            Settle(window);
+
+            var frames = panes.Select(Frames.Of).ToArray();
+
+            // Two above, and the third spanning the width beneath them.
+            Top(frames[2], window).ShouldBeGreaterThan(Top(frames[0], window));
+            frames[2].Bounds.Width.ShouldBeGreaterThan(frames[0].Bounds.Width);
+        });
+    }
+
+    /// <summary>
+    /// A tile too narrow to read is not a tile. In a window with room for one
+    /// column, four sessions are four rows rather than four slivers.
+    /// </summary>
+    [Fact]
+    public void ANarrowWindowGivesUpColumnsRatherThanLegibility()
+    {
+        Headless.Run(() =>
+        {
+            var view = new PaneSplitView { IsTiled = true };
+            var window = new Window { Content = view, Width = 300, Height = 900 };
+            window.Show();
+
+            var panes = Enumerable.Range(0, 4).Select(_ => new Border()).ToArray();
+            view.Panes = [.. panes.Select(pane => Slot(pane))];
+            Settle(window);
+
+            var frames = panes.Select(Frames.Of).ToArray();
+
+            foreach (var frame in frames)
+                Left(frame, window).ShouldBe(Left(frames[0], window), tolerance: 1);
+            Top(frames[3], window).ShouldBeGreaterThan(Top(frames[0], window));
+        });
+    }
+
+    /// <summary>
+    /// Tiling moves panes between cells; it must never take one out of the tree.
+    /// The same rule the split was built on, and the same consequence if it is
+    /// broken: a terminal that leaves the tree loses its connection.
+    /// </summary>
+    [Fact]
+    public void TilingDoesNotDetachAnything()
+    {
+        Headless.Run(() =>
+        {
+            var view = new PaneSplitView();
+            var window = new Window { Content = view, Width = 1000, Height = 700 };
+            window.Show();
+
+            var panes = Enumerable.Range(0, 4).Select(_ => new Border()).ToArray();
+            view.Panes = [.. panes.Select(pane => Slot(pane))];
+            Settle(window);
+            var frames = panes.Select(Frames.Of).ToArray();
+
+            view.IsTiled = true;
+            Settle(window);
+
+            for (var index = 0; index < panes.Length; index++)
+            {
+                Frames.Of(panes[index]).ShouldBeSameAs(frames[index]);
+                InTheTree(panes[index]).ShouldBeTrue();
+            }
+
+            // And back again, with the spans it was given along the way undone.
+            view.IsTiled = false;
+            Settle(window);
+
+            for (var index = 0; index < panes.Length; index++)
+            {
+                Frames.Of(panes[index]).ShouldBeSameAs(frames[index]);
+                InTheTree(panes[index]).ShouldBeTrue();
+            }
+
+            Frames.Of(panes[0]).Bounds.Width.ShouldBe(Frames.Of(panes[1]).Bounds.Width, tolerance: 1);
+        });
+    }
+
+    private static double Left(Visual visual, Visual root) => visual.TranslatePoint(default, root)!.Value.X;
+
+    private static double Top(Visual visual, Visual root) => visual.TranslatePoint(default, root)!.Value.Y;
 
     /// <summary>An ICommand that records what it was asked to do.</summary>
     private sealed class Command(Action<object?> run) : System.Windows.Input.ICommand

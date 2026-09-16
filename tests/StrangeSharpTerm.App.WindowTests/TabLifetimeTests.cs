@@ -223,7 +223,7 @@ public class TabLifetimeTests
             view.OpenPanes = [first];
             view.Panes = [Slot(first, firstView, active: true)];
             Settle(window);
-            var frame = firstView.Parent;
+            var frame = Frames.Of(firstView);
 
             // A second tab opens: both panes are open, but only the new tab's is
             // shown.
@@ -232,8 +232,8 @@ public class TabLifetimeTests
             Settle(window);
 
             InTheTree(firstView).ShouldBeTrue();
-            firstView.Parent.ShouldBeSameAs(frame);
-            ((Border)firstView.Parent!).IsVisible.ShouldBeFalse();
+            Frames.Of(firstView).ShouldBeSameAs(frame);
+            Frames.Of(firstView).IsVisible.ShouldBeFalse();
         });
     }
 
@@ -251,7 +251,7 @@ public class TabLifetimeTests
             view.OpenPanes = [first, second];
             view.Panes = [Slot(first, firstView, active: true)];
             Settle(window);
-            var frame = (Border)firstView.Parent!;
+            var frame = Frames.Of(firstView);
 
             view.Panes = [Slot(second, new Border(), active: true)];
             Settle(window);
@@ -261,7 +261,7 @@ public class TabLifetimeTests
             Settle(window);
 
             frame.IsVisible.ShouldBeTrue();
-            firstView.Parent.ShouldBeSameAs(frame);
+            Frames.Of(firstView).ShouldBeSameAs(frame);
             frame.Bounds.Width.ShouldBeGreaterThan(0);
         });
     }

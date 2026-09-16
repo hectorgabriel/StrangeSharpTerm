@@ -222,11 +222,18 @@ public class ShellWindowTests
         {
             var (window, _, _) = Open();
 
-            // Split, close and broadcast act on a tab; with none open they are
-            // not offered.
-            var toolbar = In<ToggleButton>(window).FirstOrDefault();
-            toolbar.ShouldNotBeNull();
-            toolbar.GetSelfAndVisualAncestors().OfType<StackPanel>().First().IsVisible.ShouldBeFalse();
+            // Split, close and broadcast act on a session; with none open they
+            // are not offered. The dock beside them is not like that: asking
+            // across every host is the one thing worth doing before anything is
+            // connected, so its buttons are there from the start.
+            var broadcast = In<ToggleButton>(window).FirstOrDefault();
+            broadcast.ShouldNotBeNull();
+            broadcast.IsVisible.ShouldBeFalse();
+
+            // The strip itself stays, because the dock's own buttons live at the
+            // end of it and asking across every host is the one thing worth
+            // doing before anything is connected.
+            broadcast.GetSelfAndVisualAncestors().OfType<StackPanel>().First().IsVisible.ShouldBeTrue();
         });
     }
 
@@ -262,7 +269,7 @@ public class ShellWindowTests
             var layout = In<PaneSplitView>(window).ShouldHaveSingleItem();
             layout.OpenPanes.ShouldNotBeNull().Count.ShouldBe(2);
             first.GetSelfAndVisualAncestors().OfType<Window>().Any().ShouldBeTrue();
-            ((Border)first.Parent!).IsVisible.ShouldBeFalse();
+            Frames.Of(first).IsVisible.ShouldBeFalse();
         });
     }
 

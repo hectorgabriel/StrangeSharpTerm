@@ -109,6 +109,13 @@ public static class CommandCatalogue
 
             new("view.palette", "Command Palette…", CommandGroup.View, shell.OpenPaletteCommand,
                 Gesture: new KeyGesture(Key.K, command)),
+            // ⌘\ for the grid and ⌘B for the sidebar: neither is in the Swift
+            // app's table, because neither existed there. ⌘B is what every
+            // editor uses for a sidebar, and ⌥⌘B is already broadcasting.
+            new("view.tiles", "Tile Every Session", CommandGroup.View, shell.ToggleTilesCommand,
+                Gesture: new KeyGesture(Key.OemBackslash, command)),
+            new("view.sidebar", "Show Hosts", CommandGroup.View, shell.ToggleSidebarCommand,
+                Gesture: new KeyGesture(Key.B, command)),
         ];
 
         // ⌘1–⌘9, as the Swift app's ForEach(1...9) generated them. Nine items
