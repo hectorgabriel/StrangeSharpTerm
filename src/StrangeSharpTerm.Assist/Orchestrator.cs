@@ -41,7 +41,23 @@ public enum HostOutcome
 /// cannot be reached reports why in its own row, which is more use than being
 /// left out of a run silently.
 /// </summary>
-public sealed record OrchestratorTarget(string Alias, Func<HostAgent> Agent);
+/// <param name="Agent">
+/// Built when the host is actually asked, so a run over eight hosts does not
+/// build eight conversations it will not use. Null when there is nothing to
+/// build one from -- a host the caller can no longer resolve.
+/// </param>
+/// <param name="Missing">
+/// What to say when <paramref name="Agent"/> comes back with nothing.
+///
+/// Supplied by the caller because only the caller knows why. This used to be an
+/// exception thrown from inside the func, which the run caught and reported as
+/// a failure -- so a host that was merely gone was accused of breaking, and the
+/// developer's own sentence was what the user read.
+/// </param>
+public sealed record OrchestratorTarget(
+    string Alias,
+    Func<HostAgent?> Agent,
+    string Missing = "It could not be asked.");
 
 /// <summary>What one host contributed.</summary>
 public sealed record HostFinding(string Alias, HostOutcome Outcome, string Text, int CommandsRun = 0)
@@ -166,7 +182,16 @@ public sealed class Orchestrator(IAssistBackend collator)
             {
                 await atOnce.WaitAsync(cancellationToken);
                 held = true;
-                var agent = target.Agent();
+
+                if (target.Agent() is not { } agent)
+                {
+                    // Not asked rather than failed: nothing went wrong on the
+                    // host, there was simply nothing here to ask it with.
+                    findings[index] = Report(
+                        new HostFinding(target.Alias, HostOutcome.NotAsked, target.Missing));
+                    return;
+                }
+
                 var answer = await agent.Ask(
                     instruction,
                     new AskOptions

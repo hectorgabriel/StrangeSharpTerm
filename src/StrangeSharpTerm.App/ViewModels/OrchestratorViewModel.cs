@@ -870,8 +870,11 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
                 // Still only built for a host that is actually asked, so a run
                 // over eight hosts does not open eight connections it will not
                 // use -- but built once and kept, so the host remembers.
-                () => AgentFor(target.Alias)
-                    ?? throw new AssistException($"{target.Alias} is not in the inventory."))),
+                () => AgentFor(target.Alias),
+                // The ticks were taken from the inventory when this pane opened,
+                // so a host that will not resolve now is one that has been
+                // deleted since.
+                "It is not in the inventory any more.")),
     ];
 
     private async Task Working(Func<CancellationToken, Task> work)
