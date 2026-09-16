@@ -90,6 +90,23 @@
                                     <views:MarkdownView
                                         Text="{Binding Text}"
                                         StageCommand="{Binding $parent[UserControl].((vm:AssistantViewModel)DataContext).StageCommand}" />
+
+                                    <!-- Copy takes the answer as it was written,
+                                         Markdown and all, because that is what
+                                         goes into a ticket. Retry takes the
+                                         question back and asks it again. -->
+                                    <StackPanel Classes="answered" Orientation="Horizontal" Spacing="4"
+                                                HorizontalAlignment="Right" Margin="0,2,0,0">
+                                        <Button Classes="row" Padding="8,2"
+                                                Command="{Binding $parent[UserControl].((vm:AssistantViewModel)DataContext).CopyAnswerCommand}"
+                                                CommandParameter="{Binding}">
+                                            <TextBlock Text="Copy" FontSize="11" />
+                                        </Button>
+                                        <Button Classes="row" Padding="8,2"
+                                                Command="{Binding $parent[UserControl].((vm:AssistantViewModel)DataContext).RetryCommand}">
+                                            <TextBlock Text="Retry" FontSize="11" />
+                                        </Button>
+                                    </StackPanel>
                                 </StackPanel>
 
                                 <!-- A command, in the same list as the answer. -->
@@ -204,8 +221,14 @@
         </Expander>
 
         <Grid Grid.Row="4" ColumnDefinitions="*,Auto" Margin="12,0,12,12">
-            <TextBox Grid.Column="0" Watermark="Ask about this host…" AcceptsReturn="False"
-                     Text="{Binding Question}" KeyDown="Send" />
+            <!-- Grows with what is typed, up to a point, then scrolls. A
+                 question about a server is sometimes a paragraph and an error
+                 pasted under it, and a field one line tall says it should not
+                 be. -->
+            <TextBox Grid.Column="0" Watermark="Ask about this host…"
+                     AcceptsReturn="True" TextWrapping="Wrap"
+                     MinHeight="32" MaxHeight="160" VerticalContentAlignment="Center"
+                     Text="{Binding Question}" KeyDown="Typed" />
             <Button Grid.Column="1" Margin="8,0,0,0" Padding="12,6"
                     Theme="{StaticResource PrimaryButton}"
                     IsVisible="{Binding !IsAsking}" Command="{Binding AskCommand}">

@@ -127,6 +127,17 @@
         <Setter Property="ClipToBounds" Value="True" />
     </Style>
 
+    <!-- What can be done with an answer: there while you are reading it, and
+         out of the way while you are not. Opacity rather than IsVisible, so the
+         row keeps its space and nothing below it jumps as the pointer moves. -->
+    <Style Selector="StackPanel.answered">
+        <Setter Property="Opacity" Value="0" />
+    </Style>
+
+    <Style Selector="StackPanel:pointerover StackPanel.answered">
+        <Setter Property="Opacity" Value="1" />
+    </Style>
+
     <!-- Tiled, every pane is outlined rather than only the focused one: with
          four of them in a grid and no tab strip above, an unoutlined tile reads
          as part of the one beside it. -->

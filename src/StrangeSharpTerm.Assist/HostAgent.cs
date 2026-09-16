@@ -121,6 +121,46 @@ public sealed class HostAgent(
         };
     }
 
+    /// <summary>
+    /// Where the last question began, in both the conversation and the
+    /// transcript. What <see cref="Rewind"/> goes back to.
+    /// </summary>
+    private (int Messages, int Entries)? _lastQuestion;
+
+    /// <summary>Whether there is a question to take back.</summary>
+    public bool CanRewind => _lastQuestion is not null;
+
+    /// <summary>
+    /// Takes back the last question and everything it produced.
+    ///
+    /// Asking again without this appends a second copy of the question to a
+    /// conversation that already holds the first, and the model answers the
+    /// pair -- which is a follow-up, not another attempt. A retry has to leave
+    /// the conversation as it was before the question was put.
+    ///
+    /// The commands it ran are not untaken. Nothing here reaches a server; what
+    /// already happened on one, happened.
+    /// </summary>
+    public bool Rewind()
+    {
+        if (_lastQuestion is not { } start)
+            return false;
+
+        _conversation.RemoveRange(start.Messages, _conversation.Count - start.Messages);
+        for (var index = _entries.Count - 1; index >= start.Entries; index--)
+        {
+            var entry = _entries[index];
+            _entries.RemoveAt(index);
+            Removed?.Invoke(this, entry);
+        }
+
+        _lastQuestion = null;
+        return true;
+    }
+
+    /// <summary>A row was taken back, so a pane can drop it.</summary>
+    public event EventHandler<TranscriptEntry>? Removed;
+
     /// <summary>Asks one question and runs the loop until the model stops asking for things.</summary>
     public async Task<AgentAnswer> Ask(string question, AskOptions? options = null, CancellationToken cancellationToken = default)
     {
@@ -128,6 +168,9 @@ public sealed class HostAgent(
         var budget = how.Budget ?? new CommandBudget(AssistLimits.CommandBudget);
         var timeout = how.CommandTimeout ?? AssistLimits.CommandTimeout;
         var ran = 0;
+
+        // Noted before anything is added, so a retry goes back to exactly here.
+        _lastQuestion = (_conversation.Count, _entries.Count);
 
         Append(new TranscriptEntry.Question(question));
 
