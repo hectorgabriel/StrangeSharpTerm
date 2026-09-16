@@ -34,7 +34,19 @@ public sealed record AskOptions
 }
 
 /// <summary>What a question produced.</summary>
-public sealed record AgentAnswer(string Text, int CommandsRun, bool Failed = false, string? Failure = null)
+/// <param name="Stopped">
+/// Whether a person interrupted it rather than it finishing or failing.
+///
+/// Its own flag rather than an empty answer, because an empty answer already
+/// means something else — a provider that returned nothing — and a caller that
+/// cannot tell the two apart reports a stopped run as a broken one.
+/// </param>
+public sealed record AgentAnswer(
+    string Text,
+    int CommandsRun,
+    bool Failed = false,
+    string? Failure = null,
+    bool Stopped = false)
 {
     public static AgentAnswer Broken(string failure) => new("", 0, Failed: true, Failure: failure);
 }
@@ -132,6 +144,12 @@ public sealed class HostAgent(
         // result and say what it found.
         var ceiling = AssistLimits.CommandBudget + 4;
 
+        // The last turn that said anything, kept across turns. A question that
+        // reaches the ceiling has usually spent twelve commands finding things
+        // out, and its last words are a far better account of that than the
+        // empty string this used to hand back.
+        var found = "";
+
         for (var turn = 0; turn < ceiling; turn++)
         {
             var answer = new TranscriptEntry.Answer();
@@ -183,7 +201,10 @@ public sealed class HostAgent(
             catch (OperationCanceledException)
             {
                 Append(new TranscriptEntry.Note("Stopped."));
-                return new AgentAnswer(said.ToString(), ran);
+                // Said so, rather than left to look like a provider that
+                // answered with nothing: the caller renders the two differently
+                // and only one of them is anybody's fault.
+                return new AgentAnswer(Latest(said, thought, found), ran, Stopped: true);
             }
             catch (AssistException e)
             {
@@ -203,8 +224,10 @@ public sealed class HostAgent(
             else if (stop == AssistStop.Length)
                 Append(new TranscriptEntry.Note("The answer was cut short; it reached the length limit."));
 
+            found = Latest(said, thought, found);
+
             if (calls.Count == 0)
-                return new AgentAnswer(said.ToString(), ran);
+                return new AgentAnswer(found, ran);
 
             var results = new List<AssistToolResult>();
             foreach (var call in calls)
@@ -230,10 +253,37 @@ public sealed class HostAgent(
         }
 
         // The ceiling, which the budget should have reached first. Saying so is
-        // better than a pane that simply stops.
+        // better than a pane that simply stops -- and what it found on the way
+        // goes back with it, because twelve commands of investigation reported
+        // as "It returned nothing" is the worst possible summary of the most
+        // work a host ever does.
         Append(new TranscriptEntry.Note("This question went on long enough that the assistant stopped."));
-        return new AgentAnswer("", ran);
+        return new AgentAnswer(found, ran);
     }
+
+    /// <summary>
+    /// The most recent thing this conversation actually told us.
+    ///
+    /// A turn that only asks for a command says nothing, so the answer to "what
+    /// has this conversation told me" is the most recent turn that spoke rather
+    /// than the most recent turn.
+    ///
+    /// Falling back to the thinking is the third case, and it is not
+    /// hypothetical: a model can end its last turn with reasoning and no answer
+    /// -- <c>finish_reason: stop</c>, no content, the conclusion sitting in the
+    /// reasoning field. Reading it back as nothing lost the answer entirely, and
+    /// downstream a host that had concluded was reported as one that returned
+    /// nothing. First person and a little rough is worth a great deal more than
+    /// blank.
+    ///
+    /// This turn before older turns, thinking included: on a question that ran
+    /// long, what it was working out a moment ago is a better account of where
+    /// it got to than what it announced several commands back.
+    /// </summary>
+    private static string Latest(StringBuilder said, StringBuilder thought, string found) =>
+        said.Length > 0 ? said.ToString()
+        : thought.Length > 0 ? thought.ToString()
+        : found;
 
     /// <summary>
     /// One tool call: judged, maybe asked about, maybe run.

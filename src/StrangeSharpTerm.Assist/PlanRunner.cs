@@ -179,9 +179,14 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
                 return;
             }
 
-            await atOnce.WaitAsync(cancellationToken);
+            var held = false;
             try
             {
+                // Inside the try, as the fan-out has it: cancelling a host that
+                // is still queued must leave a row saying so, not throw out of
+                // the phase and lose what the other hosts did.
+                await atOnce.WaitAsync(cancellationToken);
+                held = true;
                 var answer = await agent.Ask(
                     instruction,
                     new AskOptions
@@ -201,13 +206,11 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
                     },
                     cancellationToken);
 
-                findings[index] = Say(answer.Failed || answer.Text.Length == 0
-                    ? new HostFinding(alias, HostOutcome.Failed, answer.Failure ?? "It returned nothing.", answer.CommandsRun)
-                    : new HostFinding(alias, HostOutcome.Reported, answer.Text, answer.CommandsRun));
+                findings[index] = Say(HostFinding.From(alias, answer));
             }
             catch (OperationCanceledException)
             {
-                findings[index] = Say(new HostFinding(alias, HostOutcome.NotAsked, "Stopped."));
+                findings[index] = Say(new HostFinding(alias, HostOutcome.Stopped, "Stopped."));
             }
             catch (Exception e)
             {
@@ -215,7 +218,8 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
             }
             finally
             {
-                atOnce.Release();
+                if (held)
+                    atOnce.Release();
             }
         }));
 

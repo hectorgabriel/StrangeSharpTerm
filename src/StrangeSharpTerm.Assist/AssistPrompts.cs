@@ -91,7 +91,9 @@ public static class AssistPrompts
         "differs, and which hosts are urgent.",
         "",
         "Never make a claim about a host that did not report. A host listed as not asked or",
-        "failed was not looked at, and saying so is part of the answer.",
+        "failed was not looked at, and a host listed as stopped was interrupted before it",
+        "finished -- whatever it had found by then is not an answer. Saying which is part of",
+        "the answer.",
         "",
         "You may show a command that would fix something, but it applies to hosts, plural --",
         "do not address it to one of them.");

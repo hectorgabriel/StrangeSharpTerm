@@ -17,6 +17,16 @@ public enum HostOutcome
     /// host would be worse than one that says plainly which hosts it left out.
     /// </summary>
     NotAsked,
+
+    /// <summary>
+    /// A person stopped the run before it finished with this host.
+    ///
+    /// Its own outcome rather than one of the three above, because it is none of
+    /// them: it did not fail, it was not skipped, and whatever it had found by
+    /// then is not an answer to the question. Folding it into "failed" accused
+    /// every host in the run of breaking whenever somebody pressed Stop.
+    /// </summary>
+    Stopped,
 }
 
 /// <summary>A host a run may reach.</summary>
@@ -36,11 +46,34 @@ public sealed record OrchestratorTarget(string Alias, Func<HostAgent> Agent);
 /// <summary>What one host contributed.</summary>
 public sealed record HostFinding(string Alias, HostOutcome Outcome, string Text, int CommandsRun = 0)
 {
-    /// <summary>The word the row shows on the right: "reported", "failed", "not asked".</summary>
+    /// <summary>
+    /// What a host's answer amounts to, in the words its row shows.
+    ///
+    /// Here rather than in each caller because there are two of them -- a
+    /// fan-out and a planned run -- and they disagreed: the same stopped host
+    /// read as "failed" in one and "not asked" in the other.
+    ///
+    /// A stopped host says only that. Whatever it had said before the
+    /// interruption is in its transcript, where the exchange can be opened; it
+    /// is not an answer to the question, and putting it in the row would read
+    /// like one.
+    /// </summary>
+    public static HostFinding From(string alias, AgentAnswer answer) => answer switch
+    {
+        { Stopped: true } => new HostFinding(alias, HostOutcome.Stopped, "Stopped.", answer.CommandsRun),
+        { Failed: true } => new HostFinding(
+            alias, HostOutcome.Failed, answer.Failure ?? "It did not answer.", answer.CommandsRun),
+        { Text.Length: 0 } => new HostFinding(
+            alias, HostOutcome.Failed, "It returned nothing.", answer.CommandsRun),
+        _ => new HostFinding(alias, HostOutcome.Reported, answer.Text, answer.CommandsRun),
+    };
+
+    /// <summary>The word the row shows on the right: "reported", "failed", "stopped", "not asked".</summary>
     public string Label => Outcome switch
     {
         HostOutcome.Reported => "reported",
         HostOutcome.Failed => "failed",
+        HostOutcome.Stopped => "stopped",
         _ => "not asked",
     };
 }
@@ -52,6 +85,10 @@ public sealed record OrchestratedRun(
     string Collated,
     int CommandsRun)
 {
+    /// <summary>
+    /// How many were actually put a question. A stopped host counts: it was
+    /// asked, and interrupting it does not unask it.
+    /// </summary>
     public int HostsAsked => Findings.Count(finding => finding.Outcome != HostOutcome.NotAsked);
 }
 
@@ -118,9 +155,17 @@ public sealed class Orchestrator(IAssistBackend collator)
 
         await Task.WhenAll(targets.Select(async (target, index) =>
         {
-            await atOnce.WaitAsync(cancellationToken);
+            // Inside the try, not before it. Waiting for a slot is the longest
+            // a host spends in this method -- five hosts at a concurrency of
+            // three means two of them are only ever queued -- and cancelling
+            // there used to throw straight out of the fan-out, taking the whole
+            // run with it: the hosts that had already answered were on screen,
+            // but nothing was collated and the planner was never told.
+            var held = false;
             try
             {
+                await atOnce.WaitAsync(cancellationToken);
+                held = true;
                 var agent = target.Agent();
                 var answer = await agent.Ask(
                     instruction,
@@ -138,18 +183,11 @@ public sealed class Orchestrator(IAssistBackend collator)
                     },
                     cancellationToken);
 
-                findings[index] = Report(answer switch
-                {
-                    { Failed: true } => new HostFinding(
-                        target.Alias, HostOutcome.Failed, answer.Failure ?? "It did not answer.", answer.CommandsRun),
-                    { Text.Length: 0 } => new HostFinding(
-                        target.Alias, HostOutcome.Failed, "It returned nothing.", answer.CommandsRun),
-                    _ => new HostFinding(target.Alias, HostOutcome.Reported, answer.Text, answer.CommandsRun),
-                });
+                findings[index] = Report(HostFinding.From(target.Alias, answer));
             }
             catch (OperationCanceledException)
             {
-                findings[index] = Report(new HostFinding(target.Alias, HostOutcome.NotAsked, "Stopped."));
+                findings[index] = Report(new HostFinding(target.Alias, HostOutcome.Stopped, "Stopped."));
             }
             catch (Exception e)
             {
@@ -157,7 +195,12 @@ public sealed class Orchestrator(IAssistBackend collator)
             }
             finally
             {
-                atOnce.Release();
+                // Only what was taken. A host cancelled while queued never got a
+                // slot, and releasing one it does not hold would raise the
+                // concurrency limit for the rest of the run -- which is the one
+                // number standing between a fan-out and eight servers at once.
+                if (held)
+                    atOnce.Release();
             }
         }));
 
