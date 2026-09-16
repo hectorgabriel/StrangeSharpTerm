@@ -41,6 +41,38 @@ public class OrchestratorTests
     }
 
     /// <summary>
+    /// A host there is nothing to ask with was not asked, and did not fail.
+    ///
+    /// It used to be an exception thrown from inside the target's own func,
+    /// which the run caught like any other and reported as a failure -- so a
+    /// host that had merely been deleted was accused of breaking, in a sentence
+    /// written for a developer. Nothing went wrong on that host. Nothing
+    /// happened to it at all.
+    /// </summary>
+    [Fact]
+    public async Task AHostWithNothingToAskItWithWasNotAskedRatherThanFailed()
+    {
+        var collator = new ScriptedBackend(ScriptedBackend.Says("Summary."));
+        var run = await new Orchestrator(collator).Ask(
+            "check the journal",
+            [
+                Target("web-01", "Affected."),
+                new OrchestratorTarget("bastion", () => null, "It is not in the inventory any more."),
+            ],
+            mayRunCommands: false,
+            TestContext.Current.CancellationToken);
+
+        var bastion = run.Findings.Single(finding => finding.Alias == "bastion");
+        bastion.Outcome.ShouldBe(HostOutcome.NotAsked);
+        bastion.Label.ShouldBe("not asked");
+        bastion.Text.ShouldBe("It is not in the inventory any more.");
+
+        // And it is not counted among the hosts that were put a question.
+        run.HostsAsked.ShouldBe(1);
+        run.Findings.Single(finding => finding.Alias == "web-01").Outcome.ShouldBe(HostOutcome.Reported);
+    }
+
+    /// <summary>
     /// The orchestrator keeps its own conversation, so a second instruction is a
     /// second turn: "and now the other two" means something, and the answer can
     /// refer to what the last run found.
