@@ -58,6 +58,19 @@ public sealed partial class FindingRow : ObservableObject, IDisposable
 
     public bool NotAsked => Finding?.Outcome == HostOutcome.NotAsked;
 
+    /// <summary>
+    /// Something went wrong on this host, which is the one outcome that wants
+    /// a colour.
+    ///
+    /// A failed host used to be the same small grey word as one that reported,
+    /// in the same place -- and this list exists precisely so that a summary
+    /// cannot read as though it covered hosts it never reached.
+    /// </summary>
+    public bool Failed => Finding?.Outcome == HostOutcome.Failed;
+
+    /// <summary>Interrupted rather than broken: worth marking, but not as alarming.</summary>
+    public bool Stopped => Finding?.Outcome == HostOutcome.Stopped;
+
     /// <summary>The conversation with this host, as it happens.</summary>
     public ObservableCollection<AssistRow> Exchange { get; } = [];
 
@@ -102,6 +115,8 @@ public sealed partial class FindingRow : ObservableObject, IDisposable
         OnPropertyChanged(nameof(Label));
         OnPropertyChanged(nameof(Reported));
         OnPropertyChanged(nameof(NotAsked));
+        OnPropertyChanged(nameof(Failed));
+        OnPropertyChanged(nameof(Stopped));
     }
 
     partial void OnIsExchangeOpenChanged(bool value) => OnPropertyChanged(nameof(ExchangeToggle));

@@ -23,7 +23,21 @@ namespace StrangeSharpTerm.App.Theming;
 /// <param name="Border">A hairline or a progress track — the line between two surfaces.</param>
 /// <param name="Selection">Behind the selected row: the accent, laid over the sidebar.</param>
 /// <param name="Text">What ordinary text is.</param>
-/// <param name="Muted">A label, a hostname, a caption: present, and not the point.</param>
+/// <param name="Muted">
+/// A label, a hostname, a caption: present, and not the point.
+///
+/// Present enough to read, which it was not. Both themes took this from
+/// Dracula's comment colour, and a comment colour is chosen to recede behind
+/// code -- against a chip it reached 2.51:1, under even the 3:1 floor for large
+/// text. Almost everything wearing it in the assistant panes is content rather
+/// than decoration: command output, the reason a command stopped at the gate,
+/// what each host reported.
+///
+/// Each theme's is now its measured colour with every channel scaled by one
+/// factor, so the hue is exactly what it was and only the brightness moved,
+/// scaled until it clears 4.5:1 against that theme's surface -- the worst
+/// background it appears on. See docs/adr/0004.
+/// </param>
 /// <param name="OnAccent">Text drawn on the accent, which is dark because the accent is not.</param>
 public sealed record AppPalette(
     string Id,
@@ -57,7 +71,7 @@ public sealed record AppPalette(
         Border: 0x2A2E35,
         Selection: 0x19302E,
         Text: 0xE7EAF0,
-        Muted: 0x67738B,
+        Muted: 0x7D8CA9,
         Accent: 0x2ED3A0,
         OnAccent: 0x111216,
         Success: Green,
@@ -77,7 +91,7 @@ public sealed record AppPalette(
         Border: 0x424450,
         Selection: 0x353147,
         Text: 0xF8F8F2,
-        Muted: 0x6272A4,
+        Muted: 0x889EE3,
         Accent: 0xBD93F9,
         OnAccent: 0x191A21,
         Success: Green,

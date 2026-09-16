@@ -152,7 +152,11 @@
                                 <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
                                     <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Alias}"
                                                FontWeight="SemiBold" />
+                                    <!-- The one word that says what became of this
+                                         host, in the colour that says it too. -->
                                     <TextBlock Grid.Row="0" Grid.Column="1" Classes="muted" FontSize="11"
+                                               Classes.danger="{Binding Failed}"
+                                               Classes.warning="{Binding Stopped}"
                                                Text="{Binding Label}" />
                                     <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0"
                                                TextWrapping="Wrap" FontSize="12" Text="{Binding Text}"
@@ -254,6 +258,8 @@
                                                                 <TextBlock FontSize="11" FontWeight="SemiBold"
                                                                            Text="{Binding Alias}" />
                                                                 <TextBlock Classes="muted" FontSize="11"
+                                                                           Classes.danger="{Binding Failed}"
+                                                                           Classes.warning="{Binding Stopped}"
                                                                            Text="{Binding Label}" />
                                                             </StackPanel>
                                                             <TextBlock Classes="muted" FontSize="11"
@@ -282,6 +288,7 @@
              a binding that logs when nothing is wrong is a binding nobody reads. -->
         <Border Grid.Row="2" Classes="banner" Margin="12,0,12,8" Padding="12,10"
                 DataContext="{Binding Waiting}"
+                Classes.caution="{Binding !IsDestructive}"
                 IsVisible="{Binding $self.DataContext, Converter={x:Static ObjectConverters.IsNotNull}}">
             <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto"
                   x:DataType="assist:PendingCommand">
@@ -295,8 +302,13 @@
                 </StackPanel>
                 <TextBlock Grid.Row="1" Grid.Column="0" FontFamily="monospace" FontSize="12"
                            TextWrapping="Wrap" Margin="0,2,0,0" Text="{Binding Command}" />
-                <TextBlock Grid.Row="2" Grid.Column="0" Classes="muted" FontSize="11" TextWrapping="Wrap"
-                           Margin="0,2,0,0" Text="{Binding Reason}" />
+                <!-- Why you are being asked, in the colour of what it would do.
+                     The assistant pane has always drawn this distinction; the
+                     pane that asks on behalf of several hosts did not. -->
+                <TextBlock Grid.Row="2" Grid.Column="0" FontSize="11" TextWrapping="Wrap"
+                           Margin="0,2,0,0" Text="{Binding Reason}"
+                           Classes.warning="{Binding !IsDestructive}"
+                           Classes.danger="{Binding IsDestructive}" />
 
                 <Button Grid.Row="1" Grid.Column="1" Padding="12,4" Margin="8,0,6,0"
                         Command="{Binding $parent[UserControl].((vm:OrchestratorViewModel)DataContext).AllowCommand}">
