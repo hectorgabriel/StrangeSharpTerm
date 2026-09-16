@@ -84,9 +84,17 @@ internal static class Rehearsal
             RehearsedBackend.Runs("df -h /", "how full, and which device", "c1"),
             RehearsedBackend.Runs("du -xh /var --max-depth=2 | sort -rh | head -10", "where the space went", "c2"),
             RehearsedBackend.Runs("journalctl --disk-usage", "confirm the journal", "c3"),
+            // Bold, a list and inline code, because that is what answers
+            // actually look like: a model asked about a disk writes **37G** and
+            // `journald.conf` without being asked to.
             RehearsedBackend.Says(
-                "The journal is the whole of it: 37G of a 49G filesystem, and journald.conf sets no size cap.\n\n"
-                + "Reclaim it now, then cap it so it does not come back:\n\n"
+                "The journal is **the whole of it**.\n\n"
+                + "- `/var/log/journal` is **37G** of a 49G filesystem\n"
+                + "- `journald.conf` sets no `SystemMaxUse`, so it grows without limit\n"
+                + "- nothing else under `/var` is above 1.1G\n\n"
+                + "## What to do\n\n"
+                + "1. Reclaim the space now\n"
+                + "2. Cap it so it does not come back\n\n"
                 + "```sh\njournalctl --vacuum-size=1G\n```"));
 
         var settings = new AssistSettings { AllowCommandsByDefault = true };

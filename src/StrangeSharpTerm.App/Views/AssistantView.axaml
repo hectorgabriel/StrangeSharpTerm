@@ -40,7 +40,9 @@
                        Text="{Binding Answering}" />
         </Grid>
 
-        <ScrollViewer Grid.Row="1">
+        <!-- Follows the answer as it streams, and lets go as soon as you
+             scroll up to read something further back. -->
+        <ScrollViewer Grid.Row="1" views:Follows.TheEnd="True">
             <StackPanel Margin="12,0,12,8" Spacing="10">
 
                 <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding IsEmpty}"
@@ -55,7 +57,7 @@
                                 <!-- What was asked. -->
                                 <StackPanel IsVisible="{Binding IsQuestion}" Spacing="4">
                                     <TextBlock Classes="section" Text="YOU" />
-                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                                    <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" />
                                 </StackPanel>
 
                                 <!-- What came back: prose and fenced blocks, each drawn as
@@ -80,43 +82,20 @@
                                                TextWrapping="Wrap" IsVisible="{Binding ShowsReasoning}"
                                                Text="{Binding Reasoning}" />
 
-                                    <ItemsControl ItemsSource="{Binding Blocks}">
-                                        <ItemsControl.DataTemplates>
-                                            <DataTemplate DataType="{x:Type assist:AnswerBlock+Prose}">
-                                                <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
-                                                           Margin="0,0,0,6" />
-                                            </DataTemplate>
-
-                                            <DataTemplate DataType="{x:Type assist:AnswerBlock+Code}">
-                                                <Border Classes="chip" Padding="10,8" CornerRadius="6"
-                                                        Margin="0,0,0,6">
-                                                    <Grid ColumnDefinitions="*,Auto">
-                                                        <TextBlock Grid.Column="0" FontFamily="monospace" FontSize="12"
-                                                                   TextWrapping="Wrap" VerticalAlignment="Center"
-                                                                   Text="{Binding Text}" />
-                                                        <!-- Only a block the model tagged as shell gets the
-                                                             button, and the button types rather than runs.
-                                                             The pane, not $parent[ItemsControl]: this template
-                                                             is inside a second ItemsControl and the nearest
-                                                             one is that one. -->
-                                                        <Button Grid.Column="1" Padding="10,3" Margin="8,0,0,0"
-                                                                VerticalAlignment="Center"
-                                                                IsVisible="{Binding IsShell}"
-                                                                Command="{Binding $parent[UserControl].((vm:AssistantViewModel)DataContext).StageCommand}"
-                                                                CommandParameter="{Binding}">
-                                                            <TextBlock Text="Type it" FontSize="11" />
-                                                        </Button>
-                                                    </Grid>
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.DataTemplates>
-                                    </ItemsControl>
+                                    <!-- The answer, with its bold, its lists and its
+                                         fenced blocks drawn as what they are. Every
+                                         block can be copied; only one the model
+                                         tagged as shell gets the button that types
+                                         it into the terminal. -->
+                                    <views:MarkdownView
+                                        Text="{Binding Text}"
+                                        StageCommand="{Binding $parent[UserControl].((vm:AssistantViewModel)DataContext).StageCommand}" />
                                 </StackPanel>
 
                                 <!-- A command, in the same list as the answer. -->
                                 <Border Classes="chip" Padding="12,9" CornerRadius="6" IsVisible="{Binding IsStep}">
                                     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
-                                        <TextBlock Grid.Row="0" Grid.Column="0" FontFamily="monospace" FontSize="12"
+                                        <SelectableTextBlock Grid.Row="0" Grid.Column="0" FontFamily="monospace" FontSize="12"
                                                    TextWrapping="Wrap" Text="{Binding Command}" />
                                         <TextBlock Grid.Row="0" Grid.Column="1" Classes="muted" FontSize="11"
                                                    Margin="10,0,0,0" VerticalAlignment="Top" Text="{Binding State}" />
@@ -146,7 +125,7 @@
                                         <Border Grid.Row="3" Grid.ColumnSpan="2" Margin="0,8,0,0"
                                                 Padding="8" CornerRadius="4" IsVisible="{Binding HasOutput}"
                                                 Background="{DynamicResource BackgroundBrush}">
-                                            <TextBlock FontFamily="monospace" FontSize="11" TextWrapping="Wrap"
+                                            <SelectableTextBlock FontFamily="monospace" FontSize="11" TextWrapping="Wrap"
                                                        Text="{Binding Output}" />
                                         </Border>
                                     </Grid>
