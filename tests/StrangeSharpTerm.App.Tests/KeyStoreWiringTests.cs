@@ -58,9 +58,9 @@ public class KeyStoreWiringTests
         shell.Inventory.Selection = Host.Id;
         shell.OpenAssistantCommand.Execute(null);
 
-        // The pane opened, which it cannot do without a backend.
+        // The conversation was built, which it cannot be without a backend.
         shell.Failure.ShouldBeNull();
-        shell.Panes.ShouldHaveSingleItem();
+        shell.Dock.ShouldNotBeNull();
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public class KeyStoreWiringTests
         shell.OpenAssistantCommand.Execute(null);
 
         shell.Failure.ShouldNotBeNull().ShouldContain("DeepSeek");
-        shell.Panes.ShouldBeEmpty();
+        shell.Dock.ShouldBeNull();
     }
 
     [Fact]

@@ -19,6 +19,23 @@ public partial class ShellWindow : Window
     public static Thickness HeaderMargin { get; } =
         OperatingSystem.IsMacOS() ? new Thickness(14, 34, 10, 8) : new Thickness(14, 12, 10, 8);
 
+    /// <summary>
+    /// The same clearance for the dock's own header.
+    ///
+    /// It is against the right edge, where macOS puts nothing, so only the
+    /// height of the extended title bar applies — but it does apply, or the
+    /// first row of the dock sits level with the traffic lights on the far side
+    /// and reads as part of the window chrome.
+    /// </summary>
+    public static Thickness DockHeaderMargin { get; } =
+        OperatingSystem.IsMacOS() ? new Thickness(10, 34, 10, 8) : new Thickness(10, 12, 10, 8);
+
+    /// <summary>
+    /// How wide the dock was when it was last open, so closing and reopening it
+    /// does not forget a width someone dragged.
+    /// </summary>
+    private double _dockWidth = 380;
+
     public ShellWindow() : this(new ShellViewModel(new InventoryViewModel()))
     {
     }
@@ -55,6 +72,17 @@ public partial class ShellWindow : Window
         if (Application.Current is { } application)
             NativeMenu.SetMenu(application, menu);
 
+        // A hidden control collapses an Auto column on its own; a pixel column
+        // has to be told, or a closed dock leaves 380 points of background
+        // beside the sessions. It is pixels rather than Auto because only a
+        // sized column can be dragged.
+        ShowDock(model.IsDockOpen);
+        model.PropertyChanged += (_, changed) =>
+        {
+            if (changed.PropertyName == nameof(ShellViewModel.IsDockOpen))
+                ShowDock(model.IsDockOpen);
+        };
+
         // The field takes the keyboard each time the palette opens.
         //
         // Not when it is attached, which is what this did first: the palette is
@@ -69,6 +97,28 @@ public partial class ShellWindow : Window
                 () => this.FindControl<TextBox>("PaletteQuery")?.Focus(),
                 DispatcherPriority.Input);
         };
+    }
+
+    /// <summary>Gives the dock its column back, or takes it away.</summary>
+    private void ShowDock(bool open)
+    {
+        if (this.FindControl<Grid>("Columns")?.ColumnDefinitions is not { Count: 4 } columns)
+            return;
+
+        var dock = columns[3];
+        if (!open)
+        {
+            // Remembered before it goes, so a width someone dragged survives
+            // closing the dock and opening it again.
+            if (dock.Width.IsAbsolute && dock.Width.Value > 0)
+                _dockWidth = dock.Width.Value;
+            dock.MinWidth = 0;
+            dock.Width = new GridLength(0);
+            return;
+        }
+
+        dock.MinWidth = 300;
+        dock.Width = new GridLength(_dockWidth);
     }
 
     /// <summary>

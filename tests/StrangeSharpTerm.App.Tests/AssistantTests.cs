@@ -19,17 +19,20 @@ public class AssistantTests
     [Fact]
     public async Task AnAssistantOpensBesideTheSessionItIsAbout()
     {
-        // The reason it is a pane and not a window: a conversation about what
-        // the terminal is showing, beside the terminal.
+        // Beside rather than among: the dock is a column of its own, so asking
+        // about a host does not take a tile away from the sessions. What it is
+        // about is still the session with the keyboard.
         var fixture = new Fixture();
         fixture.Shell.Inventory.Selection = fixture.Host.Id;
         await fixture.Shell.ConnectSelectedCommand.ExecuteAsync(null);
 
         fixture.Shell.OpenAssistantCommand.Execute(null);
 
-        fixture.Shell.Tabs.ShouldHaveSingleItem();
-        fixture.Shell.Panes.Count.ShouldBe(2);
-        fixture.Shell.Panes[^1].IsActive.ShouldBeTrue();
+        fixture.Shell.IsDockOpen.ShouldBeTrue();
+        fixture.Shell.DockShows.ShouldBe(DockView.Assistant);
+        fixture.Shell.DockTitle.ShouldBe("web-01");
+        // The session is still the only pane: the conversation cost it nothing.
+        fixture.Shell.Panes.ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -40,7 +43,8 @@ public class AssistantTests
 
         fixture.Shell.OpenAssistantCommand.Execute(null);
 
-        fixture.Shell.Panes.ShouldBeEmpty();
+        fixture.Shell.IsDockOpen.ShouldBeFalse();
+        fixture.Shell.Dock.ShouldBeNull();
         fixture.Shell.Failure.ShouldNotBeNull().ShouldContain("Settings");
     }
 
@@ -56,26 +60,31 @@ public class AssistantTests
     }
 
     [Fact]
-    public void TheOrchestratorBelongsToNoHost()
+    public async Task TheOrchestratorBelongsToNoHost()
     {
-        // Disconnecting a host closes the panes belonging to it, and a fan-out
-        // across eight servers should not vanish because one was disconnected.
+        // Disconnecting a host closes what belongs to it, and a fan-out across
+        // eight servers should not vanish because one was disconnected. In the
+        // dock it belongs to nothing that can be closed out from under it.
         var fixture = new Fixture();
+        fixture.Shell.Inventory.Selection = fixture.Host.Id;
+        await fixture.Shell.ConnectSelectedCommand.ExecuteAsync(null);
 
-        fixture.Shell.AskSeveralHostsCommand.Execute(null);
+        var orchestrator = fixture.Orchestrator();
+        fixture.Shell.Workspace.ClosePane(fixture.Shell.Workspace.Panes[0].Id);
 
-        fixture.Shell.Workspace.Panes.ShouldHaveSingleItem().ConnectionId.ShouldBeNull();
+        fixture.Shell.IsDockOpen.ShouldBeTrue();
+        fixture.Shell.Dock?.DataContext.ShouldBe(orchestrator);
     }
 
     /// <summary>
-    /// The host detail shares its row with the panes and is drawn after them, so
-    /// whenever it is showing it covers whatever is open. That is deliberate for
-    /// a terminal belonging to a different host from the selected one. The
-    /// orchestrator belongs to no host, so "a different host" does not apply to
-    /// it, and treating null as different put the detail panel on top of it.
+    /// The host detail shares its row with the panes, so whatever is showing
+    /// there covers what is open. The orchestrator used to be a pane, and being
+    /// about no host it was the one thing the detail should never have covered.
+    /// In a column of its own the question no longer arises: asking across every
+    /// host leaves the middle of the window exactly as it was.
     /// </summary>
     [Fact]
-    public void TheHostDetailStandsAsideForTheOrchestrator()
+    public void TheOrchestratorTakesNothingFromTheSessions()
     {
         var fixture = new Fixture();
         fixture.Shell.Inventory.Selection = fixture.Host.Id;
@@ -85,7 +94,10 @@ public class AssistantTests
 
         fixture.Shell.AskSeveralHostsCommand.Execute(null);
 
-        fixture.Shell.ShowsDetail.ShouldBeFalse();
+        fixture.Shell.ShowsDetail.ShouldBeTrue();
+        fixture.Shell.Panes.ShouldBeEmpty();
+        fixture.Shell.IsDockOpen.ShouldBeTrue();
+        fixture.Shell.DockShows.ShouldBe(DockView.Orchestrator);
     }
 
     /// <summary>
@@ -232,22 +244,21 @@ public class AssistantTests
 
         internal ShellViewModel Shell { get; }
 
+        /// <summary>
+        /// The conversation the dock is showing. Both of them live there now
+        /// rather than in a pane, so both are found the same way.
+        /// </summary>
         internal AssistantViewModel Assistant() =>
-            Shell.Panes.Select(pane => pane.View)
-                .OfType<Views.AssistantView>()
-                .Last()
-                .DataContext as AssistantViewModel
-            ?? throw new InvalidOperationException("no assistant pane is open");
+            (Shell.Dock as Views.AssistantView)?.DataContext as AssistantViewModel
+            ?? throw new InvalidOperationException("the dock is not showing an assistant");
 
         internal OrchestratorViewModel Orchestrator()
         {
             Shell.AskSeveralHostsCommand.Execute(null);
-            // By what the pane holds rather than by the control's type, so the
-            // stand-in above answers as the real control would.
-            return Shell.Panes.Select(pane => pane.View.DataContext)
-                .OfType<OrchestratorViewModel>()
-                .LastOrDefault()
-                ?? throw new InvalidOperationException("no orchestrator pane is open");
+            // By what the control holds rather than by its type, so the stand-in
+            // above answers as the real control would.
+            return Shell.Dock?.DataContext as OrchestratorViewModel
+                ?? throw new InvalidOperationException("the dock is not showing the orchestrator");
         }
     }
 

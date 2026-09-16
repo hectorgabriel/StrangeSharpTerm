@@ -34,10 +34,31 @@
     </Window.Resources>
 
     <Panel>
-    <Grid ColumnDefinitions="260,*">
+    <!--
+        Three panes: what you have, what you are connected to, and what you are
+        asking about it.
+
+        The outer two collapse, which is not decoration. The window shrinks to
+        720, and a fixed sidebar plus a docked assistant would leave the sessions
+        less room than one terminal needs; being able to put either away is what
+        makes a third column affordable at all.
+    -->
+    <Grid x:Name="Columns">
+        <Grid.ColumnDefinitions>
+            <!-- Auto, so hiding the sidebar collapses the column with it. -->
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" MinWidth="240" />
+            <ColumnDefinition Width="Auto" />
+            <!-- Pixels, because a GridSplitter can only resize what has a size.
+                 Closed, the code-behind sets it to zero; a ColumnDefinition
+                 takes no name, so it finds this one by being the last. -->
+            <ColumnDefinition Width="380" MinWidth="300" />
+        </Grid.ColumnDefinitions>
 
         <!-- What you have, and what you are looking for. -->
-        <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*,Auto" Background="{DynamicResource SidebarBrush}">
+        <Grid Grid.Column="0" Width="260" RowDefinitions="Auto,Auto,*,Auto"
+              IsVisible="{Binding IsSidebarOpen}"
+              Background="{DynamicResource SidebarBrush}">
             <!-- On macOS the traffic lights float over this corner, so the
                  header starts below them; on Windows the inset is nothing. -->
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto"
@@ -49,16 +70,23 @@
                     </Border>
                 </StackPanel>
 
-                <Button Grid.Column="1" Classes="row" Padding="6" ToolTip.Tip="Add">
-                    <Button.Flyout>
-                        <MenuFlyout>
-                            <MenuItem Header="New host…" Command="{Binding NewHostCommand}" />
-                            <MenuItem Header="New folder…" Command="{Binding NewFolderCommand}" />
-                        </MenuFlyout>
-                    </Button.Flyout>
-                    <Path Classes="icon" Width="14" Height="14"
-                          Data="{Binding Source=IconPlus, Converter={StaticResource Icon}}" />
-                </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
+                    <Button Classes="row" Padding="6" ToolTip.Tip="Add">
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <MenuItem Header="New host…" Command="{Binding NewHostCommand}" />
+                                <MenuItem Header="New folder…" Command="{Binding NewFolderCommand}" />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                        <Path Classes="icon" Width="14" Height="14"
+                              Data="{Binding Source=IconPlus, Converter={StaticResource Icon}}" />
+                    </Button>
+                    <Button Classes="row" Padding="6" ToolTip.Tip="Hide the hosts"
+                            Command="{Binding ToggleSidebarCommand}">
+                        <Path Classes="icon" Width="14" Height="14"
+                              Data="{Binding Source=IconPanelLeft, Converter={StaticResource Icon}}" />
+                    </Button>
+                </StackPanel>
             </Grid>
 
             <TextBox Grid.Row="1" Margin="12,0,12,8" PlaceholderText="Search"
@@ -126,32 +154,81 @@
             <!-- Splitting, closing and broadcasting act on the focused tab, so
                  they sit at the end of its strip rather than in the pane. -->
             <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="2"
-                        HorizontalAlignment="Right" Margin="8,8,8,0"
-                        IsVisible="{Binding Panes.Count}">
+                        HorizontalAlignment="Right" Margin="8,8,8,0">
+                <!-- Tabs or tiles, said in words rather than a glyph: the two do
+                     visibly different things to a window full of servers, and
+                     the same pair of buttons says which mode the orchestrator is
+                     in. -->
+                <Button Classes="row" Classes.selected="{Binding !IsTiled}" Padding="8,3"
+                        IsVisible="{Binding Panes.Count}"
+                        Command="{Binding ToggleTilesCommand}">
+                    <TextBlock Text="Tabs" FontSize="12" />
+                </Button>
+                <Button Classes="row" Classes.selected="{Binding IsTiled}" Padding="8,3"
+                        Margin="0,0,6,0" IsVisible="{Binding Panes.Count}"
+                        Command="{Binding ToggleTilesCommand}">
+                    <TextBlock Text="Tiles" FontSize="12" />
+                </Button>
+
                 <ToggleButton Classes="row" Padding="6" ToolTip.Tip="Type into every pane"
+                              IsVisible="{Binding Panes.Count}"
                               IsChecked="{Binding IsBroadcasting, Mode=TwoWay}"
                               IsEnabled="{Binding CanBroadcast}">
                     <Path Classes="icon" Width="14" Height="14"
                           Data="{Binding Source=IconRadioTower, Converter={StaticResource Icon}}" />
                 </ToggleButton>
+                <!-- Splitting arranges one tab's panes, so it has nothing to say
+                     about a window that is showing all of them at once. -->
                 <Button Classes="row" Padding="6" ToolTip.Tip="Split side by side"
+                        IsVisible="{Binding !IsTiled}"
                         Command="{Binding SplitRightCommand}">
                     <Path Classes="icon" Width="14" Height="14"
                           Data="{Binding Source=IconColumns2, Converter={StaticResource Icon}}" />
                 </Button>
                 <Button Classes="row" Padding="6" ToolTip.Tip="Split stacked"
+                        IsVisible="{Binding !IsTiled}"
                         Command="{Binding SplitDownCommand}">
                     <Path Classes="icon" Width="14" Height="14"
                           Data="{Binding Source=IconRows2, Converter={StaticResource Icon}}" />
                 </Button>
                 <Button Classes="row" Padding="6" ToolTip.Tip="Close this pane"
+                        IsVisible="{Binding Panes.Count}"
                         Command="{Binding ClosePaneCommand}">
                     <Path Classes="icon" Width="14" Height="14"
                           Data="{Binding Source=IconCircleX, Converter={StaticResource Icon}}" />
                 </Button>
+
+                <!-- The dock, from the side it opens on. Two buttons rather than
+                     one, because which conversation you want is the choice: one
+                     host's, or all of them at once. -->
+                <Border Width="1" Margin="6,2" Background="{DynamicResource BorderBrush}" />
+                <Button Classes="row" Padding="6" ToolTip.Tip="Assistant"
+                        Classes.selected="{Binding DockShowsAssistant}"
+                        Command="{Binding OpenAssistantCommand}">
+                    <Path Classes="icon" Width="14" Height="14"
+                          Data="{Binding Source=IconSparkles, Converter={StaticResource Icon}}" />
+                </Button>
+                <Button Classes="row" Padding="6" ToolTip.Tip="Ask several hosts"
+                        Classes.selected="{Binding DockShowsOrchestrator}"
+                        Command="{Binding AskSeveralHostsCommand}">
+                    <Path Classes="icon" Width="14" Height="14"
+                          Data="{Binding Source=IconLayers, Converter={StaticResource Icon}}" />
+                </Button>
             </StackPanel>
 
-            <ItemsControl Grid.Row="1" ItemsSource="{Binding Tabs}" Margin="8,8,8,0">
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="4"
+                        HorizontalAlignment="Left" Margin="8,8,8,0">
+            <!-- The way back to the hosts, and only while they are away. -->
+            <Button Classes="row" Padding="6" VerticalAlignment="Center"
+                    ToolTip.Tip="Show the hosts" IsVisible="{Binding !IsSidebarOpen}"
+                    Command="{Binding ToggleSidebarCommand}">
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconPanelLeft, Converter={StaticResource Icon}}" />
+            </Button>
+
+            <!-- Tiled, every session is on screen at once and a strip naming one
+                 of them is a control with nothing to do. -->
+            <ItemsControl ItemsSource="{Binding Tabs}" IsVisible="{Binding !IsTiled}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <StackPanel Orientation="Horizontal" Spacing="4" />
@@ -181,6 +258,7 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+            </StackPanel>
 
             <!-- A failed connection says why, where the user was looking. -->
             <Border Grid.Row="2" Classes="banner" Margin="8,8,8,0"
@@ -197,6 +275,7 @@
                                  Panes="{Binding Panes}"
                                  OpenPanes="{Binding OpenPanes}"
                                  Axis="{Binding Axis}"
+                                 IsTiled="{Binding IsTiled}"
                                  FocusCommand="{Binding FocusPaneCommand}" />
 
             <TextBlock Grid.Row="3" Classes="muted" Margin="24" TextWrapping="Wrap"
@@ -377,6 +456,58 @@
                     </StackPanel>
                 </StackPanel>
             </ScrollViewer>
+        </Grid>
+
+        <!--
+            The dock, and the handle that sizes it.
+
+            Both hidden together: a splitter beside a column of nothing is a
+            handle that resizes nothing, and the code-behind takes the column's
+            width to zero at the same time.
+        -->
+        <GridSplitter Grid.Column="2" Width="6" Classes="pane"
+                      IsVisible="{Binding IsDockOpen}"
+                      ResizeDirection="Columns"
+                      HorizontalAlignment="Center" VerticalAlignment="Stretch" />
+
+        <Grid Grid.Column="3" RowDefinitions="Auto,*" IsVisible="{Binding IsDockOpen}"
+              Background="{DynamicResource BackgroundBrush}">
+            <!-- Which conversation this is, and the host it is about. The name
+                 matters: the dock follows the focus, so what it is talking about
+                 changes under you as you move between sessions. -->
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto"
+                  Margin="{x:Static views:ShellWindow.DockHeaderMargin}">
+                <!-- "One host" rather than "Assistant": the pane below says
+                     what it is, and the choice being made here is which of the
+                     two conversations this is — one server, or all of them. -->
+                <Button Grid.Column="0" Classes="row" Classes.selected="{Binding DockShowsAssistant}"
+                        Padding="8,3" Margin="0,0,4,0"
+                        Command="{Binding OpenAssistantCommand}">
+                    <TextBlock Text="One host" FontSize="12" />
+                </Button>
+                <Button Grid.Column="1" Classes="row" Classes.selected="{Binding DockShowsOrchestrator}"
+                        Padding="8,3" Command="{Binding AskSeveralHostsCommand}">
+                    <TextBlock Text="Every host" FontSize="12" />
+                </Button>
+                <TextBlock Grid.Column="2" Classes="muted" FontSize="11" Margin="8,0,0,0"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           Text="{Binding DockTitle}" />
+                <Button Grid.Column="3" Classes="row" Padding="4" ToolTip.Tip="Close the dock"
+                        Command="{Binding CloseDockCommand}">
+                    <Path Classes="icon" Width="12" Height="12" Opacity="0.7"
+                          Data="{Binding Source=IconX, Converter={StaticResource Icon}}" />
+                </Button>
+            </Grid>
+
+            <ContentControl Grid.Row="1" Content="{Binding Dock}" />
+
+            <!-- Open with nothing in it: no provider key, so neither
+                 conversation can be built. The sentence the command sets is
+                 already on screen above the sessions; this says why the column
+                 beside them is empty. -->
+            <TextBlock Grid.Row="1" Classes="muted" Margin="16" TextWrapping="Wrap" FontSize="12"
+                       IsVisible="{Binding Dock, Converter={x:Static ObjectConverters.IsNull}}"
+                       Text="Nothing to show yet. Choose a host, or add a provider key in Settings." />
         </Grid>
     </Grid>
 

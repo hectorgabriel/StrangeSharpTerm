@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Threading;
 using StrangeSharpTerm.App.ViewModels;
@@ -94,6 +95,30 @@ public static class TestApp
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()
             .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = true });
+}
+
+/// <summary>
+/// Where a pane is drawn: the outlined frame the layout keeps for it, whatever
+/// it puts between that frame and the pane's own view.
+///
+/// Asked for by walking up rather than by taking the view's immediate parent,
+/// because a tiled frame holds a name strip above its pane and the pane is then
+/// a grandchild. What these tests are about is the frame — that it is the same
+/// one after a move, that it is hidden rather than removed — and that is true
+/// however many layers deep the view sits.
+/// </summary>
+public static class Frames
+{
+    public static Border Of(Control view)
+    {
+        for (var parent = view.Parent; parent is not null; parent = parent.Parent)
+        {
+            if (parent is Border frame && frame.Classes.Contains("pane"))
+                return frame;
+        }
+
+        throw new InvalidOperationException("this view is not in a pane frame");
+    }
 }
 
 /// <summary>

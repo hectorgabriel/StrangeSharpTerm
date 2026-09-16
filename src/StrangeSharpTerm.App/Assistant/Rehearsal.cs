@@ -1,4 +1,7 @@
 using Avalonia.Controls;
+using StrangeSharpTerm.Model;
+using StrangeSharpTerm.Terminal;
+using StrangeSharpTerm.App.Terminal;
 using StrangeSharpTerm.App.ViewModels;
 using StrangeSharpTerm.App.Views;
 using StrangeSharpTerm.Assist;
@@ -197,6 +200,156 @@ internal static class Rehearsal
         }, Avalonia.Threading.DispatcherPriority.Background);
 
         return window;
+    }
+
+    /// <summary>
+    /// The whole window, with four sessions tiled and the dock beside them.
+    ///
+    /// The layout nobody could otherwise look at: it needs four servers and an
+    /// API key at once, and the panes it arranges are the ones that already
+    /// needed a fixture to be seen at all.
+    ///
+    /// The terminals are stand-ins rather than the real control. A rehearsed
+    /// channel carries nothing, and a terminal reading a stream that is already
+    /// at its end asks again forever — so the demo would spin rather than draw.
+    /// </summary>
+    internal static Window TiledWindow()
+    {
+        var hosts = new[]
+        {
+            ("web-01", "web-01.example.com"),
+            ("web-02", "web-02.example.com"),
+            ("db-primary", "db-01.example.com"),
+            ("bastion", "bastion.example.com"),
+        };
+        var connections = hosts.Select(host => new Connection { Name = host.Item1, Hostname = host.Item2 }).ToArray();
+
+        var settings = new AssistSettings();
+        var shell = new ShellViewModel(
+            new InventoryViewModel(null, new InventoryTree(connections: connections)),
+            new RehearsedSessions(),
+            (_, _) => Screen(),
+            assist: settings,
+            backends: _ => new RehearsedBackend(RehearsedBackend.Says(
+                "Nothing in this window reached a server: it is a rehearsal of the layout.")),
+            assistKeys: Keys());
+
+        var window = new Views.ShellWindow(shell) { Width = 1280, Height = 820 };
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+        {
+            foreach (var connection in connections)
+                await shell.OpenTerminal(connection);
+
+            shell.ToggleTilesCommand.Execute(null);
+            shell.Inventory.Selection = connections[0].Id;
+            shell.OpenAssistantCommand.Execute(null);
+        }, Avalonia.Threading.DispatcherPriority.Background);
+
+        return window;
+    }
+
+    /// <summary>
+    /// What a session looks like when there is no session: a prompt and the last
+    /// thing someone typed at it, one screen per host in the order they open.
+    /// </summary>
+    private static Control Screen()
+    {
+        var text = Screens[_screen++ % Screens.Length];
+        return new Border
+        {
+            Background = Avalonia.Application.Current?.FindResource("BackgroundBrush") as Avalonia.Media.IBrush,
+            Padding = new Avalonia.Thickness(10),
+            Child = new TextBlock
+            {
+                FontFamily = "monospace",
+                FontSize = 12,
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                Text = text,
+            },
+        };
+    }
+
+    private static int _screen;
+
+    private static readonly string[] Screens =
+    [
+        "deploy@web-01:~$ df -h /\nFilesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        49G   "
+            + "46G  1.2G  98% /\ndeploy@web-01:~$ ",
+        "deploy@web-02:~$ uptime\n 14:22:01 up 12 days,  3:41,  1 user,  load average: 1.85, 1.98, 2.11\n"
+            + "deploy@web-02:~$ ",
+        "postgres@db-primary:~$ pg_isready\n/var/run/postgresql:5432 - accepting connections\n"
+            + "postgres@db-primary:~$ ",
+        "deploy@bastion:~$ who\ndeploy   pts/0        14:02 (10.0.0.4)\ndeploy@bastion:~$ ",
+    ];
+
+    /// <summary>Every host answering from nowhere, so a whole window can be arranged without a network.</summary>
+    private sealed class RehearsedSessions : IHostSessions
+    {
+        public TerminalSession Shell(Connection connection) => new(new QuietChannel());
+
+        public IRemoteFiles Files(Connection connection) => throw new NotSupportedException("rehearsed");
+
+        public ITunnels Tunnels(Connection connection) => throw new NotSupportedException("rehearsed");
+
+        public IServerHealth Health(Connection connection) => new Invented();
+
+        public IRemoteCommands Commands(Connection connection) => new Invented();
+
+        public bool IsOpen(Connection connection) => true;
+
+        /// <summary>The same made-up server behind both: no request leaves the process.</summary>
+        private sealed class Invented : IServerHealth, IRemoteCommands
+        {
+            public ServerMetrics Collect() => Metrics;
+
+            public CommandResult Run(string command, TimeSpan timeout) =>
+                new(0, "Nothing ran: this window is a rehearsal.", "");
+        }
+
+        /// <summary>
+        /// A channel nothing ever arrives on.
+        ///
+        /// Not an empty MemoryStream: reading one returns zero, which a terminal
+        /// reads as the end of the shell and answers by asking again, forever.
+        /// </summary>
+        private sealed class QuietChannel : ITerminalChannel
+        {
+            public Stream Stream { get; } = new Silence();
+
+            public void Resize(int columns, int rows) { }
+
+            public void Dispose() => Stream.Dispose();
+
+            private sealed class Silence : Stream
+            {
+                public override bool CanRead => true;
+
+                public override bool CanSeek => false;
+
+                public override bool CanWrite => true;
+
+                public override long Length => 0;
+
+                public override long Position { get => 0; set { } }
+
+                public override void Flush() { }
+
+                public override int Read(byte[] buffer, int offset, int count) => Block();
+
+                public override long Seek(long offset, SeekOrigin origin) => 0;
+
+                public override void SetLength(long value) { }
+
+                public override void Write(byte[] buffer, int offset, int count) { }
+
+                private static int Block()
+                {
+                    Thread.Sleep(Timeout.Infinite);
+                    return 0;
+                }
+            }
+        }
     }
 
     private static TargetRow Target(string alias, bool connected, bool chosen) =>

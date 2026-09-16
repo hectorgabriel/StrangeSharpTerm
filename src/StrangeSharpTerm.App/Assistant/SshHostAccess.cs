@@ -109,5 +109,15 @@ public sealed class SshHostAccess(
 public static class TerminalTail
 {
     public static Func<string?> Of(TerminalRegistry terminals, NodeId? pane, int lines) =>
-        () => pane is { } id ? terminals.RecentText(id, lines) : null;
+        Of(terminals, () => pane, lines);
+
+    /// <summary>
+    /// The same, for a conversation whose pane is not settled when it is built.
+    ///
+    /// A docked assistant follows whichever session has the keyboard, so which
+    /// shell it is reading is a question to ask each time rather than an answer
+    /// to keep.
+    /// </summary>
+    public static Func<string?> Of(TerminalRegistry terminals, Func<NodeId?> pane, int lines) =>
+        () => pane() is { } id ? terminals.RecentText(id, lines) : null;
 }
