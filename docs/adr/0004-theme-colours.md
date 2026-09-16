@@ -131,6 +131,37 @@ A host — or a folder — that names one keeps it when the app theme changes;
 everything else follows the app. Otherwise choosing a theme would silently
 discard a setting someone set deliberately, host by host.
 
+## Muted was measured, and unreadable
+
+Both themes took `Muted` from Dracula's comment colour: `#6272A4` measured, and
+`#67738B` derived for StrangeTerm Dark at the same luminance in its own hue. A
+comment colour is chosen to recede behind code, and it did — `#6272A4` on
+`Surface` is **2.51:1**, under even the 3:1 floor WCAG allows large text, and
+`#67738B` on its own surface is 3.22:1.
+
+That was tolerable while muted meant a hostname beside a name. It stopped being
+tolerable when the assistant panes arrived, because almost everything wearing it
+there is content: command output, the reason a command stopped at the gate, what
+each host reported, every row of an exchange.
+
+So each theme's muted is now its measured colour with all three channels scaled
+by one factor — the hue is exactly what it was, only the brightness moved —
+lifted until it clears 4.5:1 against that theme's `Surface`, the worst
+background it appears on.
+
+| | measured | now | on surface | on background |
+|---|---|---|---|---|
+| Dracula | `#6272A4` | `#889EE3` | 2.51 → 4.52 | 3.03 → 5.46 |
+| StrangeTerm Dark | `#67738B` | `#7D8CA9` | 3.22 → 4.53 | 3.54 → 4.98 |
+
+Two things this gives up, deliberately. Dracula's muted is no longer the
+published comment colour, so that theme is faithful in its surfaces, its text
+and its accent but not in this one value. And the two themes' muted no longer
+sit at equal luminance, because their surfaces differ and reaching the same
+legibility on each takes a different lift — legibility is the property worth
+holding, so that is the one the tests now assert, over every built-in palette
+rather than these two by name.
+
 ## Consequences
 
 - The measured values are checkable by anyone with the repository:

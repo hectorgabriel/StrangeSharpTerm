@@ -191,4 +191,11 @@
         <Setter Property="CornerRadius" Value="6" />
         <Setter Property="Padding" Value="10,8" />
     </Style>
+
+    <!-- Asking about something that writes, rather than something that
+         destroys. Red for both told you nothing about which you were looking
+         at, and a gate you stop reading is a gate that is not there. -->
+    <Style Selector="Border.banner.caution">
+        <Setter Property="Background" Value="{DynamicResource WarningTintBrush}" />
+    </Style>
 </Styles>

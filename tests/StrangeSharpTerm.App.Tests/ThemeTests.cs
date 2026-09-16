@@ -24,6 +24,61 @@ public class ThemeTests
         return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
     }
 
+    /// <summary>
+    /// The relative luminance WCAG defines, which is not the weighted average
+    /// above: each channel is linearised first, and the difference between the
+    /// two is the whole reason a colour can look bright and still fail.
+    /// </summary>
+    private static double Relative(uint colour)
+    {
+        var (red, green, blue) = Rgb(colour);
+        return 0.2126 * Linear(red) + 0.7152 * Linear(green) + 0.0722 * Linear(blue);
+
+        static double Linear(byte channel)
+        {
+            var value = channel / 255.0;
+            return value <= 0.03928 ? value / 12.92 : Math.Pow((value + 0.055) / 1.055, 2.4);
+        }
+    }
+
+    private static double Contrast(uint one, uint other)
+    {
+        var (high, low) = (Math.Max(Relative(one), Relative(other)), Math.Min(Relative(one), Relative(other)));
+        return (high + 0.05) / (low + 0.05);
+    }
+
+    /// <summary>
+    /// Text has to be readable on everything it is drawn on.
+    ///
+    /// Muted carried command output, the reason a command stopped at the gate,
+    /// and what each host reported, at 2.51:1 on a chip in Dracula -- under even
+    /// the 3:1 floor for large text, let alone the 4.5:1 ordinary text wants.
+    /// Both themes had taken it from Dracula's comment colour, which is chosen
+    /// to recede.
+    ///
+    /// Over every built-in palette rather than the two by name, so a theme added
+    /// later cannot arrive unreadable.
+    /// </summary>
+    [Fact]
+    public void MutedAndOrdinaryTextAreReadableAgainstEverySurfaceTheyAppearOn()
+    {
+        foreach (var palette in AppPalette.BuiltIn)
+        {
+            foreach (var (name, behind) in new[]
+            {
+                ("background", palette.Background),
+                ("surface", palette.Surface),
+                ("sidebar", palette.Sidebar),
+            })
+            {
+                Contrast(palette.Muted, behind)
+                    .ShouldBeGreaterThanOrEqualTo(4.5, $"{palette.Name}: muted on {name}");
+                Contrast(palette.Text, behind)
+                    .ShouldBeGreaterThanOrEqualTo(4.5, $"{palette.Name}: text on {name}");
+            }
+        }
+    }
+
     [Fact]
     public void DraculaIsWhatTheScreenshotsShow()
     {
@@ -38,7 +93,12 @@ public class ThemeTests
         dracula.Border.ShouldBe(0x424450u);
         dracula.Selection.ShouldBe(0x353147u);
         dracula.Text.ShouldBe(0xF8F8F2u);
-        dracula.Muted.ShouldBe(0x6272A4u);
+        // Not the measured #6272A4 any more. That is Dracula's comment colour,
+        // and a comment colour recedes on purpose -- on a chip it came to
+        // 2.51:1, under even the floor for large text, while carrying command
+        // output and gate reasons. Same hue, lifted until it can be read; see
+        // AreReadableAgainstEverySurfaceTheyAppearOn and docs/adr/0004.
+        dracula.Muted.ShouldBe(0x889EE3u);
         dracula.Accent.ShouldBe(0xBD93F9u);
         dracula.OnAccent.ShouldBe(0x191A21u);
         dracula.Success.ShouldBe(0x50FA7Bu);
@@ -79,9 +139,10 @@ public class ThemeTests
         AppPalette.Blend(dracula.Accent, dracula.Sidebar, 0.13).ShouldBe(dracula.Selection);
         AppPalette.Blend(dark.Accent, dark.Sidebar, 0.13).ShouldBe(dark.Selection);
 
-        // Muted text sits as far down as Dracula's comment colour does, in the
-        // hue this theme's own surfaces have.
-        Luminance(dark.Muted).ShouldBe(Luminance(dracula.Muted), tolerance: 1);
+        // Muted text is in the hue this theme's own surfaces have. It no longer
+        // sits at the same luminance as Dracula's: the two themes have
+        // different surfaces, so reaching the same legibility on each takes a
+        // different lift, and legibility is the property worth holding.
         Ratio(dark.Muted).ShouldBe(Ratio(dark.Background), tolerance: 0.01);
 
         dark.OnAccent.ShouldBe(dark.Rail);
