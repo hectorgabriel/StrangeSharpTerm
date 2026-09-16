@@ -5,7 +5,17 @@ public abstract record AnswerBlock
 {
     private AnswerBlock() { }
 
-    public sealed record Prose(string Text) : AnswerBlock;
+    public sealed record Prose(string Text) : AnswerBlock
+    {
+        /// <summary>
+        /// The paragraph broken into its lines, each with its markup read.
+        ///
+        /// Here rather than in the pane because it is the same answer wherever
+        /// it is shown, and because a parser with no window around it is one a
+        /// test can hold to its word.
+        /// </summary>
+        public IReadOnlyList<ProseLine> Lines => Markdown.Lines(Text);
+    }
 
     /// <param name="Language">The fence's tag, or null when it had none.</param>
     public sealed record Code(string Text, string? Language) : AnswerBlock

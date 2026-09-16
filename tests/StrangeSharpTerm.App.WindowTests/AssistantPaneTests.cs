@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using StrangeSharpTerm.App.ViewModels;
@@ -40,7 +41,7 @@ public class AssistantPaneTests
             Settle(window);
 
             // What it actually ran should never require looking somewhere else.
-            var shown = In<TextBlock>(window).Select(block => block.Text).ToArray();
+            var shown = Shown(window);
             shown.ShouldContain("what is eating the disk?");
             shown.ShouldContain("df -h /");
             shown.ShouldContain("how full, and which device");
@@ -70,7 +71,7 @@ public class AssistantPaneTests
             Pump(() => model.Waiting is not null);
             Settle(window);
 
-            var shown = In<TextBlock>(window).Select(block => block.Text).ToArray();
+            var shown = Shown(window);
             shown.ShouldContain("systemctl restart nginx");
             shown.ShouldContain("Run it");
             shown.ShouldContain("No");
@@ -174,7 +175,7 @@ public class AssistantPaneTests
             var model = Pane(new Quiet("web-01"), Canned.Says("."));
             var window = Show(new AssistantView(model));
 
-            var shown = In<TextBlock>(window).Select(block => block.Text).ToArray();
+            var shown = Shown(window);
             shown.ShouldContain("Assistant");
             shown.ShouldContain("web-01");
             shown.ShouldContain("Canned · canned-1");
@@ -231,7 +232,7 @@ public class AssistantPaneTests
             Headless.Finish(model.RunCommand.ExecuteAsync(null));
             Settle(window);
 
-            var shown = In<TextBlock>(window).Select(block => block.Text).ToArray();
+            var shown = Shown(window);
             shown.ShouldContain("web-01");
             shown.ShouldContain("bastion");
             // A host the run cannot get an agent for is no longer skipped in
@@ -470,7 +471,7 @@ public class AssistantPaneTests
             // Every phase, its hosts, the reason for it, and the commands each
             // host will be given -- as commands, because a plan is worth reading
             // only to the extent the thing read is the thing that runs.
-            var shown = In<TextBlock>(window).Select(block => block.Text).ToArray();
+            var shown = Shown(window);
             shown.ShouldContain("Prepare every node");
             shown.ShouldContain("apt-get install -y containerd");
             shown.ShouldContain("Both need the runtime before either can join.");
@@ -539,7 +540,7 @@ public class AssistantPaneTests
             // The server, the tool, where it goes and the exact arguments are
             // all on screen: a gate whose substance is one click away is a gate
             // people approve without reading.
-            var shown = In<TextBlock>(window).Select(block => block.Text).ToArray();
+            var shown = Shown(window);
             shown.ShouldContain("Grafana");
             shown.ShouldContain("query_range");
             shown.ShouldContain("Its arguments go to metrics.example.com");
@@ -663,6 +664,17 @@ public class AssistantPaneTests
     }
 
     private static IEnumerable<T> In<T>(Visual root) where T : Visual => root.GetVisualDescendants().OfType<T>();
+
+    /// <summary>
+    /// Every word on screen.
+    ///
+    /// Inlines as well as Text, because an answer is drawn as runs now -- bold,
+    /// inline code, a list marker beside its item -- and its words are no
+    /// longer any one TextBlock's Text.
+    /// </summary>
+    private static string?[] Shown(Visual root) =>
+        [.. In<TextBlock>(root).SelectMany(block => new[] { block.Text }
+            .Concat(block.Inlines?.OfType<Run>().Select(run => run.Text) ?? []))];
 
     private sealed class Late(Func<ICommandGate> gate) : ICommandGate
     {

@@ -44,7 +44,7 @@
                                                    TextWrapping="Wrap" Text="{Binding Command}" />
                                         <TextBlock Classes="muted" FontSize="10" Text="{Binding State}" />
                                     </StackPanel>
-                                    <TextBlock Classes="muted" FontFamily="monospace" FontSize="10"
+                                    <SelectableTextBlock Classes="muted" FontFamily="monospace" FontSize="10"
                                                TextWrapping="Wrap" IsVisible="{Binding HasOutput}"
                                                Text="{Binding Output}" />
                                 </StackPanel>
@@ -107,7 +107,9 @@
                        Text="{Binding Answering}" />
         </Grid>
 
-        <ScrollViewer Grid.Row="1">
+        <!-- Follows the run as hosts report, and lets go as soon as you scroll
+             up to read one of them. -->
+        <ScrollViewer Grid.Row="1" views:Follows.TheEnd="True">
             <StackPanel Margin="12,0,12,8" Spacing="8">
 
                 <TextBlock Classes="danger" FontSize="12" TextWrapping="Wrap"
@@ -152,7 +154,7 @@
                                                FontWeight="SemiBold" />
                                     <TextBlock Grid.Row="0" Grid.Column="1" Classes="muted" FontSize="11"
                                                Text="{Binding Label}" />
-                                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0"
+                                    <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0"
                                                TextWrapping="Wrap" FontSize="12" Text="{Binding Text}"
                                                IsVisible="{Binding Reported}" />
                                     <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" Classes="muted"
@@ -172,8 +174,10 @@
                         <TextBlock Classes="section" Text="ACROSS ALL HOSTS" />
                         <!-- Commands here are shown but never staged: they apply to
                              hosts, plural, and picking one terminal would be
-                             picking the wrong one. -->
-                        <TextBlock TextWrapping="Wrap" Text="{Binding Collated}" />
+                             picking the wrong one. So no StageCommand, but they
+                             are still copyable, which is what a person does with
+                             a command meant for several servers. -->
+                        <views:MarkdownView Text="{Binding Collated}" />
                     </StackPanel>
                 </Border>
 
@@ -209,7 +213,7 @@
                                                  shell, and a rewrapped command is a different one. -->
                                             <Border Padding="8" CornerRadius="4"
                                                     Background="{DynamicResource BackgroundBrush}">
-                                                <TextBlock FontFamily="monospace" FontSize="11"
+                                                <SelectableTextBlock FontFamily="monospace" FontSize="11"
                                                            TextWrapping="Wrap" Text="{Binding Commands}" />
                                             </Border>
                                         </StackPanel>
@@ -232,7 +236,7 @@
                                                 IsVisible="{Binding Captured, Converter={x:Static ObjectConverters.IsNotNull}}">
                                             <StackPanel Spacing="2">
                                                 <TextBlock Classes="muted" FontSize="10" Text="{Binding CapturedLabel}" />
-                                                <TextBlock FontFamily="monospace" FontSize="11" TextWrapping="Wrap"
+                                                <SelectableTextBlock FontFamily="monospace" FontSize="11" TextWrapping="Wrap"
                                                            Text="{Binding Captured}" />
                                             </StackPanel>
                                         </Border>
