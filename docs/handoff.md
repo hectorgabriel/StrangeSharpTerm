@@ -39,9 +39,11 @@ written. At the time of writing: nothing.
    Everything up to the credential is exercised: both providers against recorded
    streams, a local MCP server end to end for real, and an ad-hoc bundle built,
    verified, mounted from its disk image and started.
-3. **There is no app icon.** The Swift app's `ssh_app_logo.svg` is not in this
-   repo. `build/make-icon.sh` takes one and writes both formats; until then the
-   bundle takes the system default.
+3. **The Windows app icon is still missing.** The macOS one is done:
+   `build/mac/logo.svg` and the `AppIcon.icns` rendered from it are both in the
+   repo, and `build/package.sh` picks the latter up. `make-icon.sh` writes the
+   `.ico` only where ImageMagick is installed — `brew install imagemagick` and
+   run it again — so until then the Windows bundle takes the system default.
 4. **One shortcut is still unbound**: ⌃⌘X (disconnect), which cannot be
    translated to Windows as it stands — `docs/adr/0005` says why.
 5. **What the panes do not do yet.** The browser has no rename and no
