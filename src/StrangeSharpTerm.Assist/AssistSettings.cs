@@ -119,4 +119,24 @@ public static class AssistLimits
     /// listing or a stack trace; not a whole log file.
     /// </summary>
     public const int MaxOutputCharacters = 8000;
+
+    /// <summary>
+    /// How large a conversation may get before its oldest exchanges are left
+    /// out of the request.
+    /// </summary>
+    /// <remarks>
+    /// Nothing bounded this, and an agent is kept for the life of a pane. A
+    /// twelve-phase plan is twelve questions on the same host, each able to
+    /// spend twelve commands returning up to
+    /// <see cref="MaxOutputCharacters"/> apiece: about 1.15 million characters
+    /// by the last phase, resent in full on every turn of it. Somewhere over a
+    /// quarter of a million tokens, for a conversation nobody asked to keep.
+    ///
+    /// This number is chosen so that one exchange always fits whole:
+    /// <see cref="CommandBudget"/> times <see cref="MaxOutputCharacters"/> is
+    /// 96,000, so at 160,000 the newest question can never be the thing that
+    /// has to be cut, and the rule stays "drop whole old exchanges" rather than
+    /// "cut into the one being answered".
+    /// </remarks>
+    public const int MaxConversationCharacters = 160_000;
 }

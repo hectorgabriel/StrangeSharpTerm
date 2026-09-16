@@ -31,6 +31,20 @@ public sealed record AssistMessage
 
     /// <summary>Results for the previous assistant turn's calls. Only ever on a user message.</summary>
     public IReadOnlyList<AssistToolResult> ToolResults { get; init; } = [];
+
+    /// <summary>
+    /// Roughly how much of a request this message is, in characters.
+    ///
+    /// Characters rather than tokens, which would mean a tokeniser per
+    /// provider to answer a question that does not need that much precision:
+    /// what this is for is keeping a conversation from growing without limit,
+    /// and four characters to the token is close enough to set a budget by.
+    /// It counts what is actually sent, which is mostly command output.
+    /// </summary>
+    public int Size =>
+        (Text?.Length ?? 0)
+        + ToolCalls.Sum(call => call.Name.Length + call.Arguments.Length)
+        + ToolResults.Sum(result => result.Output.Length);
 }
 
 /// <summary>A tool offered to the model. There is exactly one, and see <see cref="AssistTools"/> for why.</summary>
