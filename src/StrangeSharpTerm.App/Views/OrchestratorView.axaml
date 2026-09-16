@@ -266,8 +266,14 @@
                 IsVisible="{Binding $self.DataContext, Converter={x:Static ObjectConverters.IsNotNull}}">
             <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto"
                   x:DataType="assist:PendingCommand">
-                <TextBlock Grid.Row="0" Grid.Column="0" FontWeight="SemiBold" FontSize="12"
-                           Text="{Binding Host}" />
+                <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                    <TextBlock FontWeight="SemiBold" FontSize="12" Text="{Binding Host}" />
+                    <!-- How many hosts are queued behind this one. Answering
+                         what is in front of you without knowing two more are
+                         coming is how the third gets clicked through. -->
+                    <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center"
+                               Text="{Binding $parent[UserControl].((vm:OrchestratorViewModel)DataContext).WaitingMore}" />
+                </StackPanel>
                 <TextBlock Grid.Row="1" Grid.Column="0" FontFamily="monospace" FontSize="12"
                            TextWrapping="Wrap" Margin="0,2,0,0" Text="{Binding Command}" />
                 <TextBlock Grid.Row="2" Grid.Column="0" Classes="muted" FontSize="11" TextWrapping="Wrap"
@@ -300,6 +306,8 @@
                     <!-- The server's own claim. Shown, and never acted on. -->
                     <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center"
                                Text="the server calls this read-only" IsVisible="{Binding ReadOnlyClaim}" />
+                    <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center"
+                               Text="{Binding $parent[UserControl].((vm:OrchestratorViewModel)DataContext).WaitingMore}" />
                 </StackPanel>
 
                 <TextBlock Grid.Row="1" Classes="muted" FontSize="11" Margin="0,2,0,0"
