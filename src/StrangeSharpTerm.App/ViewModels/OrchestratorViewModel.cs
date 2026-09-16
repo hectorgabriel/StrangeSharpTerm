@@ -228,8 +228,23 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     private Dictionary<string, int> _order = new(StringComparer.Ordinal);
 
     private CancellationTokenSource? _running;
-    private TaskCompletionSource<bool>? _answering;
-    private TaskCompletionSource<ToolApproval>? _answeringTool;
+
+    /// <summary>
+    /// Everyone waiting on a person, oldest first.
+    ///
+    /// A queue rather than one pending answer, because a fan-out runs three
+    /// hosts at once and all three can reach the gate together. Holding one
+    /// meant the second to arrive overwrote the first, which then waited on an
+    /// answer nobody could give — and because the caption was set separately
+    /// from the answer, the banner could name one host while the buttons
+    /// answered for another.
+    ///
+    /// Guarded by <see cref="_asking"/>: it is added to from whichever worker
+    /// thread a host is running on, and taken from on the UI thread.
+    /// </summary>
+    private readonly List<Asking> _waiting = [];
+
+    private readonly Lock _asking = new();
 
     public OrchestratorViewModel(IAssistBackend backend, IEnumerable<TargetRow> targets, Func<string, HostAgent?> agentFor)
     {
@@ -303,6 +318,17 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// <summary>A connected tool's call, waiting on a person, captioned with the host that asked.</summary>
     [ObservableProperty]
     public partial PendingToolCall? WaitingTool { get; private set; }
+
+    /// <summary>
+    /// How many other hosts are queued behind this one, said where the decision
+    /// is made.
+    ///
+    /// A run stops three hosts at once, and answering what is in front of you
+    /// without knowing two more are coming is how a person clicks through the
+    /// third without reading it.
+    /// </summary>
+    [ObservableProperty]
+    public partial string WaitingMore { get; private set; } = "";
 
     [ObservableProperty]
     public partial string Progress { get; private set; } = "";
@@ -671,28 +697,21 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     [RelayCommand]
     public void Stop()
     {
-        _answering?.TrySetResult(false);
-        _answeringTool?.TrySetResult(ToolApproval.No);
+        // Everyone, not just whoever is on screen: a host left waiting would
+        // hold its place in the run until the process ended.
+        AnswerEveryone(ToolApproval.No);
         _running?.Cancel();
     }
 
     [RelayCommand]
-    public void Allow()
-    {
-        _answering?.TrySetResult(true);
-        _answeringTool?.TrySetResult(ToolApproval.Once);
-    }
+    public void Allow() => Answer(ToolApproval.Once);
 
     [RelayCommand]
-    public void Refuse()
-    {
-        _answering?.TrySetResult(false);
-        _answeringTool?.TrySetResult(ToolApproval.No);
-    }
+    public void Refuse() => Answer(ToolApproval.No);
 
     /// <inheritdoc cref="AssistantViewModel.AlwaysAllow"/>
     [RelayCommand]
-    public void AlwaysAllow() => _answeringTool?.TrySetResult(ToolApproval.Always);
+    public void AlwaysAllow() => Answer(ToolApproval.Always);
 
     /// <summary>
     /// The gate, per host and saying which one.
@@ -702,40 +721,118 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// </summary>
     public Task<bool> Allow(PendingCommand command, CancellationToken cancellationToken = default)
     {
-        _answering = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var pending = _answering;
-        Post(() => Waiting = command);
-        cancellationToken.Register(() => pending.TrySetResult(false));
-        return pending.Task.ContinueWith(
-            answered =>
-            {
-                Post(() => Waiting = null);
-                return answered.Result;
-            },
+        var asking = Join(new Asking { Command = command }, cancellationToken);
+        return asking.Answered.Task.ContinueWith(
+            answered => answered.Result != ToolApproval.No,
             TaskScheduler.Default);
     }
 
     /// <inheritdoc cref="Allow(PendingCommand, CancellationToken)"/>
-    public Task<ToolApproval> Allow(PendingToolCall call, CancellationToken cancellationToken = default)
-    {
-        var answering = new TaskCompletionSource<ToolApproval>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _answeringTool = answering;
-        Post(() => WaitingTool = call);
-        cancellationToken.Register(() => answering.TrySetResult(ToolApproval.No));
+    public Task<ToolApproval> Allow(PendingToolCall call, CancellationToken cancellationToken = default) =>
+        Join(new Asking { Tool = call }, cancellationToken).Answered.Task;
 
-        return answering.Task.ContinueWith(
-            answered =>
-            {
-                Post(() => WaitingTool = null);
-                return answered.Result;
-            },
-            TaskScheduler.Default);
+    /// <summary>
+    /// One host waiting on a person: what it wants, and the answer it is blocked
+    /// on. A command and a tool call queue together because they arrive together
+    /// — from different hosts, at the same moment, in the same run.
+    /// </summary>
+    private sealed class Asking
+    {
+        public PendingCommand? Command { get; init; }
+
+        public PendingToolCall? Tool { get; init; }
+
+        public TaskCompletionSource<ToolApproval> Answered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Let go of the token, or a long run accumulates one of these per gated command.</summary>
+        public CancellationTokenRegistration Cancelling { get; set; }
+    }
+
+    /// <summary>Takes a place in the queue, and shows it if the queue was empty.</summary>
+    private Asking Join(Asking asking, CancellationToken cancellationToken)
+    {
+        lock (_asking)
+            _waiting.Add(asking);
+
+        // Registered after joining, so a token that is already cancelled finds
+        // it there to remove rather than leaving it behind for ever.
+        asking.Cancelling = cancellationToken.Register(() => Settle(asking, ToolApproval.No));
+
+        Post(Show);
+        return asking;
+    }
+
+    /// <summary>Answers whoever is on screen, and brings the next one up.</summary>
+    private void Answer(ToolApproval approval)
+    {
+        Asking? asking;
+        lock (_asking)
+            asking = _waiting.FirstOrDefault();
+
+        if (asking is not null)
+            Settle(asking, approval);
+    }
+
+    private void AnswerEveryone(ToolApproval approval)
+    {
+        Asking[] everyone;
+        lock (_asking)
+            everyone = [.. _waiting];
+
+        foreach (var asking in everyone)
+            Settle(asking, approval);
+    }
+
+    /// <summary>
+    /// Gives one host its answer and takes it out of the queue.
+    ///
+    /// Removed before the answer is set: the host wakes on another thread and
+    /// may be back at the gate immediately, and it must not find itself still
+    /// queued from last time.
+    /// </summary>
+    private void Settle(Asking asking, ToolApproval approval)
+    {
+        lock (_asking)
+        {
+            if (!_waiting.Remove(asking))
+                return;
+        }
+
+        asking.Cancelling.Dispose();
+        asking.Answered.TrySetResult(approval);
+        Post(Show);
+    }
+
+    /// <summary>Puts the head of the queue in the banners, and nothing if it is empty.</summary>
+    private void Show()
+    {
+        Asking? head;
+        int behind;
+        lock (_asking)
+        {
+            head = _waiting.FirstOrDefault();
+            behind = Math.Max(0, _waiting.Count - 1);
+        }
+
+        // Both set from the one place, so the caption and the buttons can never
+        // be about different hosts.
+        Waiting = head?.Command;
+        WaitingTool = head?.Tool;
+        WaitingMore = behind switch
+        {
+            0 => "",
+            1 => "1 more waiting",
+            _ => $"{behind} more waiting",
+        };
     }
 
     public void Dispose()
     {
-        _answering?.TrySetResult(false);
-        _answeringTool?.TrySetResult(ToolApproval.No);
+        // Closing the pane is the same promise Stop makes: a run may be waiting
+        // on an approval nobody will now see, and every one of them is answered
+        // rather than the one that happened to be showing.
+        AnswerEveryone(ToolApproval.No);
         _running?.Cancel();
         _running?.Dispose();
     }
