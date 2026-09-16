@@ -80,12 +80,15 @@ internal sealed class DeepSeekStream
 
         // Reasoning arrives on a field of its own rather than as a block, which
         // is the shape difference that matters between the two providers.
-        if (delta.TryGetProperty("reasoning_content", out var reasoning)
-            && reasoning.ValueKind == JsonValueKind.String
-            && reasoning.GetString() is { Length: > 0 } thought)
-        {
+        //
+        // Under two names, because the servers that speak this format do not
+        // agree on one: DeepSeek says reasoning_content, and Ollama -- which is
+        // how this app is exercised against a real model without an account --
+        // says reasoning. Neither is wrong, and a client that knows only one of
+        // them silently drops the thinking rather than failing, which is the
+        // kind of gap nothing complains about.
+        if (Thought(delta) is { Length: > 0 } thought)
             yield return new AssistEvent.Reasoning(thought);
-        }
 
         if (delta.TryGetProperty("content", out var content)
             && content.ValueKind == JsonValueKind.String
@@ -113,6 +116,28 @@ internal sealed class DeepSeekStream
         foreach (var call in Flush())
             yield return call;
         yield return new AssistEvent.Finished(_stop);
+    }
+
+    /// <summary>
+    /// The thinking on a delta, under either of the names servers give it.
+    ///
+    /// <c>reasoning_content</c> first, because that is the one the provider this
+    /// backend is named after uses; a server that sends both would be sending
+    /// the same text twice, and taking the first is the way to yield it once.
+    /// </summary>
+    private static string? Thought(JsonElement delta)
+    {
+        foreach (var name in (ReadOnlySpan<string>)["reasoning_content", "reasoning"])
+        {
+            if (delta.TryGetProperty(name, out var reasoning)
+                && reasoning.ValueKind == JsonValueKind.String
+                && reasoning.GetString() is { Length: > 0 } thought)
+            {
+                return thought;
+            }
+        }
+
+        return null;
     }
 
     private void Accumulate(JsonElement call)
