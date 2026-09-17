@@ -101,6 +101,9 @@ public sealed class TerminalSession : IDisposable
         }
     }
 
+    /// <summary>Back to the start of the line and clear it: what <see cref="Show"/> writes over.</summary>
+    private static readonly byte[] Erase = Encoding.UTF8.GetBytes("\r[K");
+
     /// <summary>
     /// Writes into what the pane shows, and nowhere else.
     ///
@@ -110,7 +113,56 @@ public sealed class TerminalSession : IDisposable
     /// the window you are watching, without typing into your shell and without
     /// racing whatever you are typing.
     /// </summary>
-    public void Show(string text) => _feed.Feed(Encoding.UTF8.GetBytes(text));
+    public void Show(string text)
+    {
+        var (prompt, column) = Waiting();
+
+        // Take the prompt off the line before writing over it, because it is
+        // put back at the end and two of them is worse than none. Erasing
+        // rather than leaving it costs nothing: the line reappears below,
+        // character for character, when the last of this is written.
+        if (prompt.Length > 0)
+            _feed.Feed(Erase);
+
+        _feed.Feed(Encoding.UTF8.GetBytes(text));
+
+        // Put it back underneath. The shell does not know any of this happened
+        // -- nothing was sent to it, so it has no reason to draw its prompt
+        // again -- and a terminal whose last line is somebody else's output
+        // looks like one that has hung. Which is what it looked like.
+        //
+        // A copy, not the prompt itself: what the buffer keeps for us is the
+        // text of a line and not its colours, so this comes back in the
+        // ordinary foreground. Better than a cursor sitting under somebody
+        // else's output with no prompt in front of it.
+        if (prompt.Length == 0)
+            return;
+
+        _feed.Feed(Encoding.UTF8.GetBytes(prompt));
+
+        // Trailing spaces are trimmed off a line when it is read back, and the
+        // one after a prompt's $ is the difference between a cursor in the
+        // right place and one a character to the left. The column the cursor
+        // was actually in is what says how many to put back.
+        if (column > prompt.Length)
+            _feed.Feed(Encoding.UTF8.GetBytes(new string(' ', column - prompt.Length)));
+    }
+
+    /// <summary>
+    /// The line the shell is sitting on and where the cursor is in it.
+    ///
+    /// Usually the prompt, and whatever has been typed at it so far -- which
+    /// matters as much as the prompt does: losing half a typed command would be
+    /// worse than losing the prompt in front of it.
+    /// </summary>
+    private (string Line, int Column) Waiting()
+    {
+        lock (_gate)
+        {
+            var line = _engine.Buffer.GetLine(_engine.Buffer.Y + _engine.Buffer.YBase);
+            return line is null ? ("", 0) : (TextOf(line).TrimEnd(), _engine.Buffer.X);
+        }
+    }
 
     public NodeId Id { get; } = NodeId.New();
 

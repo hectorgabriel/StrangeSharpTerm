@@ -82,16 +82,33 @@ public class ShowTests
         }
     }
 
+    /// <summary>
+    /// What <see cref="TerminalSession.Show"/> writes before anything else,
+    /// when there is a prompt on the line: back to its start, and clear it.
+    /// The prompt comes back underneath at the end.
+    /// </summary>
+    private const string Erase = "\r\u001b[K";
+
+    /// <summary>
+    /// Reads what was asked for, or gives up.
+    ///
+    /// The deadline is the difference between a test that fails and a test that
+    /// hangs: the stream blocks when there is nothing to read, so one that asks
+    /// for a byte more than was written -- which is what a test asserting on
+    /// what Show writes does when Show stops writing it -- would never come
+    /// back to say so.
+    /// </summary>
     private static string Read(Stream stream, int count)
     {
         var buffer = new byte[count];
         var got = 0;
         while (got < count)
         {
-            var read = stream.Read(buffer, got, count - got);
-            if (read <= 0)
+            var at = got;
+            var read = Task.Run(() => stream.Read(buffer, at, count - at));
+            if (!read.Wait(TimeSpan.FromSeconds(2)) || read.Result <= 0)
                 break;
-            got += read;
+            got += read.Result;
         }
 
         return Encoding.UTF8.GetString(buffer, 0, got);
@@ -106,7 +123,7 @@ public class ShowTests
 
         session.Show("-- assistant");
 
-        Read(session.Stream, "-- assistant".Length).ShouldBe("-- assistant");
+        Read(session.Stream, (Erase + "-- assistant").Length).ShouldBe(Erase + "-- assistant");
     }
 
     /// <summary>
@@ -153,7 +170,79 @@ public class ShowTests
 
         Read(session.Stream, 3).ShouldBe("one");
         session.Show("two");
-        Read(session.Stream, 3).ShouldBe("two");
+        Read(session.Stream, (Erase + "two").Length).ShouldBe(Erase + "two");
+    }
+
+    /// <summary>
+    /// The prompt comes back underneath.
+    ///
+    /// The shell does not know any of this happened -- nothing was sent to it,
+    /// so it has no reason to draw its prompt again -- and a terminal whose last
+    /// line is somebody else's output looks like a terminal that has hung. That
+    /// is what it looked like.
+    /// </summary>
+    [Fact]
+    public void ThePromptIsPutBackUnderneath()
+    {
+        using var session = new TerminalSession(new Loopback("deploy@web-01:~$ "));
+
+        Read(session.Stream, "deploy@web-01:~$ ".Length);
+        session.Show("-- assistant\r\n");
+
+        // What the reader gets: the narration, and the prompt again after it.
+        Read(session.Stream, (Erase + "-- assistant\r\ndeploy@web-01:~$ ").Length)
+            .ShouldBe(Erase + "-- assistant\r\ndeploy@web-01:~$ ");
+
+        // Including the space after the $: the cursor was a column past the
+        // last character, and that is where it has to come back to.
+    }
+
+    /// <summary>
+    /// And what was half typed comes back with it. It is on the same line as
+    /// the prompt, and losing it would be worse than losing the prompt.
+    /// </summary>
+    [Fact]
+    public void SoDoesWhateverWasHalfTyped()
+    {
+        using var session = new TerminalSession(new Loopback("deploy@web-01:~$ systemctl sta"));
+
+        Read(session.Stream, "deploy@web-01:~$ systemctl sta".Length);
+        session.Show("-- assistant\r\n");
+
+        Read(session.Stream, (Erase + "-- assistant\r\ndeploy@web-01:~$ systemctl sta").Length)
+            .ShouldBe(Erase + "-- assistant\r\ndeploy@web-01:~$ systemctl sta");
+    }
+
+    /// <summary>
+    /// Two things shown one after the other leave one prompt, at the bottom.
+    ///
+    /// A run narrates twice -- the command going out, and its output coming
+    /// back -- and the prompt put back after the first was still on the line
+    /// when the second arrived, so the output was written along the end of it:
+    /// "deploy@web-01:~$ Filesystem  Size  Used". It reads as a command
+    /// somebody typed. It is not one.
+    /// </summary>
+    [Fact]
+    public void TwoThingsShownOneAfterTheOtherLeaveOnePrompt()
+    {
+        const string prompt = "deploy@web-01:~$ ";
+        using var session = new TerminalSession(new Loopback(prompt));
+        Read(session.Stream, prompt.Length);
+
+        var starting = "\u2500\u2500 assistant \u00b7 df -h /\r\n";
+        session.Show(starting);
+        Read(session.Stream, Encoding.UTF8.GetByteCount(Erase + starting + prompt));
+
+        var finished = "/dev/disk3s1s1  460Gi\r\n\u2500\u2500 exit 0\r\n";
+        session.Show(finished);
+        Read(session.Stream, Encoding.UTF8.GetByteCount(Erase + finished + prompt));
+
+        var screen = session.RecentText(10).ShouldNotBeNull();
+        var lines = screen.Split('\n').Where(line => line.Length > 0).ToArray();
+
+        lines.Count(line => line.Contains("deploy@web-01:~$")).ShouldBe(1);
+        lines[^1].ShouldBe(prompt.TrimEnd());
+        lines.ShouldContain("/dev/disk3s1s1  460Gi");
     }
 
     /// <summary>A channel that has nothing more to say ends the session, as it always did.</summary>

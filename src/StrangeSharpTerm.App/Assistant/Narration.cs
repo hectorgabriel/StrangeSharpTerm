@@ -31,9 +31,15 @@ internal static class Narration
 
     private const string Plain = "\u001b[0m";
 
-    /// <summary>The line written when a command starts.</summary>
+    /// <summary>
+    /// The line written when a command starts.
+    ///
+    /// No newline in front of it: it is written over the prompt, which
+    /// <see cref="Terminal.TerminalSession.Show"/> clears first and puts back
+    /// underneath when the last of this has been written.
+    /// </summary>
     internal static string Starting(FleetStep step) =>
-        $"\r\n{Dim}\u2500\u2500 assistant \u00b7 {step.Command}{Plain}\r\n";
+        $"{Dim}\u2500\u2500 assistant \u00b7 {step.Command}{Plain}\r\n";
 
     /// <summary>What is written when it comes back: the output, then how it ended.</summary>
     internal static string Finished(FleetStep step)
