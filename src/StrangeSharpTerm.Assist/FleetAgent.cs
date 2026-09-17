@@ -30,10 +30,26 @@ public sealed record FleetHost(string Alias, Func<IHostAccess?> Access);
 /// </summary>
 public sealed class FleetAgent(
     IAssistBackend backend,
-    IReadOnlyList<FleetHost> hosts,
     ICommandGate gate,
     IExternalTools? tools = null)
 {
+    /// <summary>
+    /// The hosts this question is about, which are the ones ticked when it was
+    /// asked.
+    ///
+    /// Per question rather than per agent, because the conversation outlives any
+    /// one run: "and now the other two" is a second question in the same
+    /// conversation, over a different set of machines.
+    /// </summary>
+    private IReadOnlyList<FleetHost> _hosts = [];
+
+    /// <summary>
+    /// What this assistant has already been asked and already answered.
+    ///
+    /// Kept for as long as the pane is open, so a second instruction is a
+    /// second turn rather than a first one: "and now the other two" means
+    /// something, and the answer can refer to what the last run found.
+    /// </summary>
     private readonly List<AssistMessage> _conversation = [];
     private readonly List<TranscriptEntry> _entries = [];
 
@@ -64,9 +80,12 @@ public sealed class FleetAgent(
 
     public async Task<AgentAnswer> Ask(
         string instruction,
+        IReadOnlyList<FleetHost> hosts,
         bool mayRunCommands,
         CancellationToken cancellationToken = default)
     {
+        _hosts = hosts;
+
         // The run's budget, not a host's: there are no per-host conversations to
         // give twelve commands each to any more, and a single assistant looking
         // at eight machines spends them where they are needed rather than evenly.
@@ -180,13 +199,13 @@ public sealed class FleetAgent(
     /// assistant can ask for what it actually needs.
     /// </summary>
     private string Roster() => string.Join('\n',
-        ["The hosts you can reach:", .. hosts.Select(host => $"- {host.Alias}")]);
+        ["The hosts you can reach:", .. _hosts.Select(host => $"- {host.Alias}")]);
 
     private IReadOnlyList<AssistTool> Offered(bool mayRunCommands)
     {
         List<AssistTool> offered = [];
         if (mayRunCommands)
-            offered.Add(AssistTools.FleetRunner([.. hosts.Select(host => host.Alias)]));
+            offered.Add(AssistTools.FleetRunner([.. _hosts.Select(host => host.Alias)]));
         if (tools is { } connected)
             offered.AddRange(connected.Offered);
         return offered;
@@ -219,7 +238,7 @@ public sealed class FleetAgent(
 
         // A host it invented, or one the user unticked. Told plainly rather
         // than run somewhere else.
-        if (hosts.All(host => host.Alias != alias))
+        if (_hosts.All(host => host.Alias != alias))
         {
             step.State = StepState.Failed;
             step.Output = $"There is no host called {alias} in this run.";
@@ -227,7 +246,7 @@ public sealed class FleetAgent(
             return (false, new AssistToolResult(
                 call.Id,
                 $"There is no host called {alias} in this run. The hosts are: "
-                    + $"{string.Join(", ", hosts.Select(host => host.Alias))}.",
+                    + $"{string.Join(", ", _hosts.Select(host => host.Alias))}.",
                 Failed: true));
         }
 
@@ -314,7 +333,7 @@ public sealed class FleetAgent(
     {
         if (_opened.TryGetValue(alias, out var held))
             return held;
-        return _opened[alias] = hosts.FirstOrDefault(host => host.Alias == alias)?.Access();
+        return _opened[alias] = _hosts.FirstOrDefault(host => host.Alias == alias)?.Access();
     }
 
     private static string Latest(StringBuilder said, StringBuilder thought, string found) =>

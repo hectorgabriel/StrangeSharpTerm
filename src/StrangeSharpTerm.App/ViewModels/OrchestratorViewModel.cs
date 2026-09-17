@@ -352,6 +352,8 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     [ObservableProperty]
     public partial string Asked { get; private set; } = "";
 
+    partial void OnAskedChanged(string value) => OnPropertyChanged(nameof(ShowsGoal));
+
     /// <summary>Why a plan was refused, naming the phase. Refused rather than shown.</summary>
     [ObservableProperty]
     public partial string? Refusal { get; private set; }
@@ -430,6 +432,12 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         _ => $"{Chosen.Count} hosts",
     };
 
+    /// <summary>
+    /// Whether the goal is shown above everything. Only in plan mode: asking
+    /// keeps its questions in the conversation, and this would repeat the last.
+    /// </summary>
+    public bool ShowsGoal => IsPlanning && Asked.Length > 0;
+
     public bool HasPlan => Phases.Count > 0;
 
     public bool CanRun => !IsRunning && Chosen.Count > 0 && Instruction.Trim().Length > 0;
@@ -443,6 +451,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         OnPropertyChanged(nameof(IsPlanning));
         OnPropertyChanged(nameof(ModeNote));
         OnPropertyChanged(nameof(RunLabel));
+        OnPropertyChanged(nameof(ShowsGoal));
     }
 
     partial void OnInstructionChanged(string value) => RunCommand.NotifyCanExecuteChanged();
@@ -490,18 +499,26 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// </summary>
     private async Task Fan()
     {
-        Rows.Clear();
+        // The rows are not cleared and the assistant is not rebuilt. A second
+        // instruction is a second turn: it can refer to what the last one
+        // found, and the pane shows both.
         Refusal = null;
         var instruction = Instruction.Trim();
         Asked = instruction;
 
+        // Emptied, because the question is in the transcript now and the next
+        // one is a different question. A plan keeps its goal in the box -- that
+        // is what Run presses on a second time -- but asking never re-sends.
+        Instruction = "";
+
         Thinking = "";
         IsThinkingOpen = true;
 
-        var fleet = Fleet();
+        var fleet = _fleet ??= Fleet();
+        var hosts = Ticked();
         await Working(async token =>
         {
-            var answer = await fleet.Ask(instruction, MayRunCommands, token);
+            var answer = await fleet.Ask(instruction, hosts, MayRunCommands, token);
             Post(() =>
             {
                 Progress = $"{Chosen.Count} hosts · {answer.CommandsRun} commands";
@@ -515,19 +532,27 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     }
 
     /// <summary>
-    /// The fleet assistant for this run, following its transcript into the
-    /// pane.
-    ///
-    /// One per run rather than one per pane: a fleet conversation is about a
-    /// set of hosts, and the set is whatever was ticked when Run was pressed.
+    /// The hosts ticked now, which is what this question is about. A later one
+    /// may be about a different set, and reaches the same conversation.
     /// </summary>
+    private IReadOnlyList<FleetHost> Ticked() =>
+    [
+        .. Targets.Where(target => target.IsChosen)
+            .Select(target => new FleetHost(target.Alias, () => _accessFor(target.Alias))),
+    ];
+
+    /// <summary>
+    /// The fleet assistant, built on first use and kept for as long as the pane
+    /// is open.
+    ///
+    /// One per pane rather than one per run: it was one per run, and every
+    /// question arrived at an assistant that had never been asked anything.
+    /// </summary>
+    private FleetAgent? _fleet;
+
     private FleetAgent Fleet()
     {
-        var fleet = new FleetAgent(
-            _backend,
-            [.. Targets.Where(target => target.IsChosen)
-                .Select(target => new FleetHost(target.Alias, () => _accessFor(target.Alias)))],
-            this);
+        var fleet = new FleetAgent(_backend, this);
 
         fleet.Added += (_, entry) => Post(() =>
         {
