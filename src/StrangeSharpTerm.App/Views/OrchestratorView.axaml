@@ -116,9 +116,11 @@
                            IsVisible="{Binding Refusal, Converter={x:Static ObjectConverters.IsNotNull}}"
                            Text="{Binding Refusal}" />
 
-                <!-- The question the findings below are answers to. -->
+                <!-- The goal a plan was drafted for. Asking carries its own
+                     questions in the conversation below, so this would be the
+                     last of them said twice. -->
                 <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,4"
-                           IsVisible="{Binding Asked.Length}" Text="{Binding Asked}" />
+                           IsVisible="{Binding ShowsGoal}" Text="{Binding Asked}" />
 
                 <!-- Says the next instruction will be read against the last plan
                      rather than cold, which the screen cannot otherwise show:
@@ -157,6 +159,15 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:AssistRow">
                             <StackPanel Margin="0,0,0,8">
+                                <!-- What was asked, above what it did about it.
+                                     The conversation holds every question now,
+                                     so each one stands over its own answer
+                                     rather than one heading naming the last. -->
+                                <StackPanel IsVisible="{Binding IsQuestion}" Spacing="4" Margin="0,4,0,4">
+                                    <TextBlock Classes="section" Text="YOU" />
+                                    <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                                </StackPanel>
+
                                 <views:MarkdownView IsVisible="{Binding IsAnswer}" Text="{Binding Text}" />
 
                                 <!-- A command, and the host it went to. In a
