@@ -119,6 +119,28 @@ says. Three things it took to get right:
   `ssh-keygen` given a mangled empty passphrase by PowerShell quoting, a
   `window-change` sent before the server had a pty, and a credential service
   name that must be a URI there and a plain string on macOS.
+- **Reading the screen is only safe once the screen is up to date.**
+  `TerminalSession.Show` puts the prompt back under whatever it writes, and to
+  do that it reads the line the shell is sitting on. The bytes it feeds reach
+  the engine when *the reader* gets to them, on another thread -- so the
+  assistant narrating twice in a row (a command going out, its output coming
+  back) had the second call read a screen the first call's prompt had not
+  reached yet. It saw no prompt, so it neither erased nor restored one, and the
+  pane was left showing output glued to a stale prompt with nothing underneath:
+  the hung-looking terminal the restore exists to prevent. It passed every run
+  on a developer's machine for two milestones and failed on a loaded CI runner,
+  because what decides it is how far behind the reader is. The fix is that
+  `Show` queues, and the work happens when the feed says the engine has caught
+  up (`FeedStream.IsIdle`, acknowledged by `Consumed`).
+  `ShowTests.AndWithNobodyReadingInBetween` is the regression test, and the
+  older test beside it is the one that missed it: it drained the stream between
+  the two calls, and draining is exactly what nothing in the app does.
+- **A wait is only as good as the state it waits for.** Three tests in a row
+  here waited for something that is true in the *middle* of the sequence they
+  were asserting on -- "exit 0" arrives before the prompt is back under it, and
+  a prompt at the end is already there after the first line. Each passed until a
+  machine was slow enough to look between the two. If a test waits for one thing
+  and asserts another, it is a race with a timeout on it.
 - **The workspace has two demo flags of its own.** `--demo-workspace` is the
   pane over an invented project, and `--demo-file-write` is the surface that
   most needed looking at: the assistant stopped at a write, with the lines it

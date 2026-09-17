@@ -37,7 +37,20 @@ public class NarrationTests
 
             shell.Ask("how full is the disk?");
 
-            var screen = shell.Until("exit 0");
+            // Both halves, because each alone is true in the middle of the
+            // sequence. Show takes the prompt off the line, writes, and puts
+            // the prompt back -- once when the command starts and again when it
+            // finishes. So "exit 0" alone can arrive before the prompt is back
+            // under it, and a prompt at the end alone is already true after the
+            // starting line. Waiting for "exit 0" was what this did, and what
+            // it caught on a Windows runner was not a slow machine: it was
+            // TerminalSession.Show reading the screen while its own bytes were
+            // still queued. See ShowTests.AndWithNobodyReadingInBetween.
+            shell.Until(
+                () => shell.Screen().Contains("exit 0")
+                    && shell.Screen().TrimEnd().EndsWith("deploy@web-01:~$"),
+                "the finished narration, with the prompt back underneath");
+            var screen = shell.Screen();
             screen.ShouldSatisfyAllConditions(
                 // The command, marked as the assistant's rather than the shell's.
                 () => screen.ShouldContain("assistant"),

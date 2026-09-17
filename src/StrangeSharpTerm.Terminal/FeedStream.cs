@@ -32,7 +32,47 @@ internal sealed class FeedStream : Stream
     /// <summary>How far into the front buffer the reader has got.</summary>
     private int _at;
 
+    /// <summary>
+    /// Bytes handed to the reader that the engine has not been told about yet.
+    ///
+    /// The queue going empty is not the same as the screen being up to date:
+    /// the reader takes bytes out under this lock and writes them to the engine
+    /// afterwards, on its own thread. Anything that wants to read the screen
+    /// and act on what it says has to wait for both, and this is the second
+    /// half. See <see cref="IsIdle"/>.
+    /// </summary>
+    private int _outstanding;
+
     private bool _done;
+
+    /// <summary>
+    /// Nothing queued and nothing in flight: the engine now shows everything
+    /// that has been fed.
+    /// </summary>
+    public bool IsIdle
+    {
+        get
+        {
+            lock (_gate)
+                return _waiting.Count == 0 && _outstanding == 0;
+        }
+    }
+
+    /// <summary>
+    /// Said by whoever writes the bytes into the engine, once they are in it.
+    ///
+    /// The acknowledgement is the point: without it "the reader took them" is
+    /// the best anything could know, and the screen is written a moment after
+    /// that.
+    /// </summary>
+    public void Consumed(int count)
+    {
+        lock (_gate)
+        {
+            _outstanding = Math.Max(0, _outstanding - count);
+            Monitor.PulseAll(_gate);
+        }
+    }
 
     public override bool CanRead => true;
 
@@ -96,6 +136,7 @@ internal sealed class FeedStream : Stream
             var taken = Math.Min(buffer.Length, front.Length - _at);
             front.AsSpan(_at, taken).CopyTo(buffer);
             _at += taken;
+            _outstanding += taken;
 
             if (_at == front.Length)
             {

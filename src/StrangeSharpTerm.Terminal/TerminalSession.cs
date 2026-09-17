@@ -115,7 +115,46 @@ public sealed class TerminalSession : IDisposable
     /// </summary>
     public void Show(string text)
     {
-        var (prompt, column) = Waiting();
+        // Queued rather than written, because this has to read the screen
+        // before it writes over it -- and the screen is only true when
+        // everything already fed has reached the engine.
+        //
+        // What went wrong without this: the assistant narrates twice in a row,
+        // once when a command starts and once when it comes back. The second
+        // call read the buffer while the first call's own bytes were still on
+        // their way through, saw a line with no prompt on it, and therefore
+        // neither erased anything nor put a prompt back. The pane was left
+        // showing the command's output glued to the end of a stale prompt with
+        // nothing underneath -- which is exactly the hung-looking terminal the
+        // prompt is put back to avoid. It survived every run on one machine and
+        // failed on a loaded CI runner, because what decides it is how far
+        // behind the reader happens to be.
+        lock (_gate)
+        {
+            _showing.Enqueue(text);
+            ShowWhatIsSettled();
+        }
+    }
+
+    /// <summary>What is waiting to be written into the pane, in order.</summary>
+    private readonly Queue<string> _showing = new();
+
+    /// <summary>
+    /// Writes the next queued line, if and only if the engine is up to date.
+    ///
+    /// One at a time: the prompt this reads is the one the previous line put
+    /// back, so the next cannot be worked out until that has arrived. Called
+    /// when something is queued and again every time bytes reach the engine,
+    /// which between them cover both orders -- a pane nobody is reading yet,
+    /// and a pane racing ahead of this.
+    /// </summary>
+    private void ShowWhatIsSettled()
+    {
+        if (_showing.Count == 0 || !_feed.IsIdle)
+            return;
+
+        var text = _showing.Dequeue();
+        var (prompt, column) = WaitingLine();
 
         // Take the prompt off the line before writing over it, because it is
         // put back at the end and two of them is worse than none. Erasing
@@ -158,10 +197,14 @@ public sealed class TerminalSession : IDisposable
     private (string Line, int Column) Waiting()
     {
         lock (_gate)
-        {
-            var line = _engine.Buffer.GetLine(_engine.Buffer.Y + _engine.Buffer.YBase);
-            return line is null ? ("", 0) : (TextOf(line).TrimEnd(), _engine.Buffer.X);
-        }
+            return WaitingLine();
+    }
+
+    /// <summary>The same, for a caller that already holds the lock.</summary>
+    private (string Line, int Column) WaitingLine()
+    {
+        var line = _engine.Buffer.GetLine(_engine.Buffer.Y + _engine.Buffer.YBase);
+        return line is null ? ("", 0) : (TextOf(line).TrimEnd(), _engine.Buffer.X);
     }
 
     public NodeId Id { get; } = NodeId.New();
@@ -332,6 +375,15 @@ public sealed class TerminalSession : IDisposable
         {
             _engine.Write(bytes);
             title = _engine.Title ?? "";
+
+            // Said after the write and under the same lock: until this, the
+            // feed still counts these bytes as in flight, which is what stops
+            // anything reading a screen that is one chunk out of date.
+            _feed.Consumed(bytes.Length);
+
+            // And now that it is up to date, whatever was waiting to be drawn
+            // over the prompt can be worked out against what is really there.
+            ShowWhatIsSettled();
         }
 
         if (title == _title)
