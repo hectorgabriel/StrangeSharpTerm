@@ -27,36 +27,59 @@ public sealed class FakeSessions : IHostSessions
     /// <summary>Which hosts count as connected. Empty is the default, as a fresh window is.</summary>
     public HashSet<string> Open { get; } = [];
 
-    /// <summary>Every host asked for, in order, whatever it was asked for.</summary>
-    public List<string> Asked { get; } = [];
+    /// <summary>
+    /// Every host asked for, in order, whatever it was asked for.
+    ///
+    /// Locked, because the window asks from two threads: opening a shell, a
+    /// browser or a workspace goes through <c>Task.Run</c> -- a connection
+    /// blocks on a network -- while building a conversation asks on the thread
+    /// it was called on. A plain List mutated from both is a test that fails
+    /// somewhere else, under load, for no reason anybody can see.
+    /// </summary>
+    public IReadOnlyList<string> Asked
+    {
+        get
+        {
+            lock (_asked)
+                return [.. _asked];
+        }
+    }
+
+    private readonly List<string> _asked = [];
+
+    private void Note(string what)
+    {
+        lock (_asked)
+            _asked.Add(what);
+    }
 
     public TerminalSession Shell(Connection connection)
     {
-        Asked.Add($"shell {connection.Name}");
+        Note($"shell {connection.Name}");
         return OnShell?.Invoke(connection) ?? new TerminalSession(new DeadChannel());
     }
 
     public IRemoteFiles Files(Connection connection)
     {
-        Asked.Add($"files {connection.Name}");
+        Note($"files {connection.Name}");
         return OnFiles?.Invoke(connection) ?? throw new NotSupportedException("this test has no files");
     }
 
     public ITunnels Tunnels(Connection connection)
     {
-        Asked.Add($"tunnels {connection.Name}");
+        Note($"tunnels {connection.Name}");
         return OnTunnels?.Invoke(connection) ?? throw new NotSupportedException("this test has no tunnels");
     }
 
     public IServerHealth Health(Connection connection)
     {
-        Asked.Add($"health {connection.Name}");
+        Note($"health {connection.Name}");
         return OnHealth?.Invoke(connection) ?? new NoHealth();
     }
 
     public IRemoteCommands Commands(Connection connection)
     {
-        Asked.Add($"commands {connection.Name}");
+        Note($"commands {connection.Name}");
         return OnCommands?.Invoke(connection) ?? new NoCommands();
     }
 

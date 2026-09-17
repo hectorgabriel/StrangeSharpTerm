@@ -245,6 +245,80 @@ public class ShowTests
         lines.ShouldContain("/dev/disk3s1s1  460Gi");
     }
 
+    /// <summary>
+    /// The same, with nobody reading in between -- which is the real case, and
+    /// the one that was broken.
+    ///
+    /// The test above drains the stream between the two calls, and draining is
+    /// what brings the engine up to date. Nothing in the app does that: the
+    /// assistant narrates a command going out and its output coming back as
+    /// fast as the two happen, and the reader is a control on another thread
+    /// that is always somewhere behind. So the second call read a screen that
+    /// did not yet have the first call's prompt on it, concluded there was no
+    /// prompt to erase or restore, and left the output written along the end of
+    /// a stale one with nothing underneath.
+    ///
+    /// It survived every run on a developer's machine and failed on a loaded CI
+    /// runner, because what decides it is how far behind the reader is.
+    /// </summary>
+    [Fact]
+    public void AndWithNobodyReadingInBetween()
+    {
+        const string prompt = "deploy@web-01:~$ ";
+        using var session = new TerminalSession(new Loopback(prompt));
+
+        // One reader, running throughout, as a control is -- rather than a
+        // read between each step, which is the thing that hid this.
+        using var reading = new CancellationTokenSource();
+        var reader = Task.Run(
+            () =>
+            {
+                var buffer = new byte[64];
+                while (!reading.IsCancellationRequested && session.Stream.Read(buffer, 0, buffer.Length) > 0)
+                {
+                }
+            },
+            reading.Token);
+
+        session.Show("\u2500\u2500 assistant \u00b7 df -h /\r\n");
+        session.Show("/dev/disk3s1s1  460Gi\r\n\u2500\u2500 exit 0\r\n");
+
+        // Both halves again: a prompt at the end is already true after the
+        // first line landed, so waiting for that alone reads the screen halfway
+        // through and calls it settled.
+        var screen = Settles(
+            session,
+            text => text.Contains("exit 0") && text.EndsWith("deploy@web-01:~$"));
+        reading.Cancel();
+
+        var lines = screen.Split('\n').Where(line => line.Length > 0).ToArray();
+        lines.ShouldContain(line => line.Contains("assistant \u00b7 df -h /"));
+        lines.ShouldContain("/dev/disk3s1s1  460Gi");
+        lines.ShouldContain("\u2500\u2500 exit 0");
+        // One prompt, and it is the last line: not one halfway up with the
+        // output written along the end of it.
+        lines.Count(line => line.Contains("deploy@web-01:~$")).ShouldBe(1);
+        lines[^1].ShouldBe(prompt.TrimEnd());
+    }
+
+    /// <summary>
+    /// The screen once it stops changing, or whatever it says when the deadline
+    /// runs out -- so a regression fails on its assertion rather than hanging.
+    /// </summary>
+    private static string Settles(TerminalSession session, Func<string, bool> until, int seconds = 5)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(seconds);
+        while (DateTime.UtcNow < deadline)
+        {
+            var text = (session.RecentText(10) ?? "").TrimEnd();
+            if (until(text))
+                return text;
+            Thread.Sleep(5);
+        }
+
+        return (session.RecentText(10) ?? "").TrimEnd();
+    }
+
     /// <summary>A channel that has nothing more to say ends the session, as it always did.</summary>
     [Fact]
     public void AChannelThatClosesStillEndsTheSession()

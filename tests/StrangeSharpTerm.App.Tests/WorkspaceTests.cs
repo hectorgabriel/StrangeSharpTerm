@@ -331,6 +331,13 @@ public class WorkspacePaneTests
             // it in.
             backends: _ => new StubBackend(),
             orchestratorView: model => new Avalonia.Controls.Border { DataContext = model },
+            // A stand-in for the conversation's control as well, and not only
+            // for tidiness: opening a folder changes a property the real view
+            // binds to a check box's IsVisible, and a binding that reaches a
+            // control from a thread Avalonia's dispatcher does not own throws.
+            // It threw about one run in four, in whichever test happened to
+            // bind the dispatcher first.
+            assistantView: model => new Avalonia.Controls.Border { DataContext = model },
             workspaceView: model => new Avalonia.Controls.Border { DataContext = model });
     }
 
@@ -372,7 +379,9 @@ public class WorkspacePaneTests
         await shell.ConnectSelectedCommand.ExecuteAsync(null);
         shell.OpenAssistantCommand.Execute(null);
 
-        var assistant = (shell.Dock as StrangeSharpTerm.App.Views.AssistantView)?.DataContext as AssistantViewModel;
+        // By what the control holds rather than by its type, so the stand-in
+        // answers as the real control would.
+        var assistant = shell.Dock?.DataContext as AssistantViewModel;
         assistant.ShouldNotBeNull().HasWorkspace.ShouldBeFalse();
 
         await shell.OpenWorkspaceCommand.ExecuteAsync(null);
