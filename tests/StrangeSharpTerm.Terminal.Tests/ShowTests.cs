@@ -269,8 +269,15 @@ public class ShowTests
 
         // One reader, running throughout, as a control is -- rather than a
         // read between each step, which is the thing that hid this.
+        //
+        // On a thread of its own rather than a pool one, for the reason the
+        // session's own pump takes one: this blocks, and a suite full of
+        // blocking pool work grows the pool about a thread a second. Queued
+        // behind that, a reader can sit unscheduled for longer than any
+        // sensible deadline, and the test then fails for the pool's reasons
+        // rather than the terminal's.
         using var reading = new CancellationTokenSource();
-        var reader = Task.Run(
+        var reader = Task.Factory.StartNew(
             () =>
             {
                 var buffer = new byte[64];
@@ -278,7 +285,9 @@ public class ShowTests
                 {
                 }
             },
-            reading.Token);
+            reading.Token,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
 
         session.Show("\u2500\u2500 assistant \u00b7 df -h /\r\n");
         session.Show("/dev/disk3s1s1  460Gi\r\n\u2500\u2500 exit 0\r\n");
