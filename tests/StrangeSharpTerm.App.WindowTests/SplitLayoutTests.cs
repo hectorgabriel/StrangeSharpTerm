@@ -23,7 +23,8 @@ namespace StrangeSharpTerm.App.WindowTests;
 [Collection("window")]
 public class SplitLayoutTests
 {
-    private static PaneSlot Slot(Control view, bool active = false) => new(NodeId.New(), view, active);
+    private static PaneSlot Slot(Control view, bool active = false, string title = "") =>
+        new(NodeId.New(), view, active, title);
 
     /// <summary>Still drawn somewhere, as opposed to merely still referenced.</summary>
     private static bool InTheTree(Visual control) =>
@@ -290,6 +291,48 @@ public class SplitLayoutTests
             Frames.Of(panes[0]).Bounds.Width.ShouldBe(Frames.Of(panes[1]).Bounds.Width, tolerance: 1);
         });
     }
+
+    /// <summary>
+    /// A tile says when the assistant is working in it, and stops saying so
+    /// when it lets go.
+    ///
+    /// In a window showing eight servers, which one is being worked on is
+    /// otherwise something you infer from output appearing -- and a host that
+    /// is being changed is exactly the one worth being able to point at.
+    /// </summary>
+    [Fact]
+    public void ATileSaysWhenTheAssistantIsWorkingInIt()
+    {
+        Headless.Run(() =>
+        {
+            var view = new PaneSplitView { IsTiled = true };
+            var window = new Window { Content = view, Width = 900, Height = 600 };
+            window.Show();
+
+            var panes = new[] { Slot(new Border(), title: "web-01"), Slot(new Border(), title: "web-02") };
+            view.Panes = panes;
+            Settle(window);
+
+            Marks(window).ShouldAllBe(mark => !mark.IsVisible);
+
+            view.Driving = [panes[0].Id];
+            Settle(window);
+
+            Frames.Of(panes[0].View).Child.ShouldNotBeNull();
+            Marks(window).Count(mark => mark.IsVisible).ShouldBe(1);
+
+            // And let go again the moment the command comes back.
+            view.Driving = [];
+            Settle(window);
+            Marks(window).ShouldAllBe(mark => !mark.IsVisible);
+        });
+    }
+
+    /// <summary>The words a tile can wear beside its name.</summary>
+    private static TextBlock[] Marks(Visual root) =>
+        [.. root.GetSelfAndVisualDescendants()
+            .OfType<TextBlock>()
+            .Where(block => block.Text is not null && block.Text.Contains("assistant"))];
 
     private static double Left(Visual visual, Visual root) => visual.TranslatePoint(default, root)!.Value.X;
 

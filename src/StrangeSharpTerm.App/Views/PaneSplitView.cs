@@ -63,6 +63,16 @@ public sealed class PaneSplitView : Decorator
     public static readonly StyledProperty<bool> IsTiledProperty =
         AvaloniaProperty.Register<PaneSplitView, bool>(nameof(IsTiled));
 
+    /// <summary>
+    /// The panes the assistant is running a command in just now.
+    ///
+    /// Marked while it is, and unmarked the moment the command comes back, so
+    /// a window full of servers shows which one is being worked on rather than
+    /// leaving you to infer it from output appearing.
+    /// </summary>
+    public static readonly StyledProperty<IReadOnlyList<NodeId>?> DrivingProperty =
+        AvaloniaProperty.Register<PaneSplitView, IReadOnlyList<NodeId>?>(nameof(Driving));
+
     /// <summary>Told which pane the pointer went into, so the keyboard can follow.</summary>
     public static readonly StyledProperty<ICommand?> FocusCommandProperty =
         AvaloniaProperty.Register<PaneSplitView, ICommand?>(nameof(FocusCommand));
@@ -79,8 +89,11 @@ public sealed class PaneSplitView : Decorator
     private readonly Grid _grid = new();
     private readonly Dictionary<NodeId, Border> _frames = [];
 
-    /// <summary>Each frame's name strip, kept so tiling can show it and say what it says.</summary>
-    private readonly Dictionary<NodeId, (Border Strip, TextBlock Name)> _titles = [];
+    /// <summary>
+    /// Each frame's name strip: the strip itself, what it calls the pane, and
+    /// the mark that says the assistant is working in it.
+    /// </summary>
+    private readonly Dictionary<NodeId, (Border Strip, TextBlock Name, TextBlock Mark)> _titles = [];
 
     /// <summary>The grid last laid out, so a resize that changes nothing costs nothing.</summary>
     private (int Rows, int Columns) _shape;
@@ -94,6 +107,8 @@ public sealed class PaneSplitView : Decorator
         // A tiled grid is the only layout whose shape depends on how much room
         // it has, so it is the only one a resize can invalidate.
         BoundsProperty.Changed.AddClassHandler<PaneSplitView>((view, _) => view.Reflow());
+        // Not a re-arrange: the same frames, wearing a different mark.
+        DrivingProperty.Changed.AddClassHandler<PaneSplitView>((view, _) => view.Mark());
     }
 
     public PaneSplitView() => Child = _grid;
@@ -120,6 +135,12 @@ public sealed class PaneSplitView : Decorator
     {
         get => GetValue(IsTiledProperty);
         set => SetValue(IsTiledProperty, value);
+    }
+
+    public IReadOnlyList<NodeId>? Driving
+    {
+        get => GetValue(DrivingProperty);
+        set => SetValue(DrivingProperty, value);
     }
 
     public ICommand? FocusCommand
@@ -326,6 +347,18 @@ public sealed class PaneSplitView : Decorator
         Height = sideBySide ? double.NaN : 6,
     };
 
+    /// <summary>Says which panes the assistant has hold of, and which it has let go.</summary>
+    private void Mark()
+    {
+        var driving = Driving ?? [];
+        foreach (var (id, title) in _titles)
+        {
+            var held = driving.Contains(id);
+            title.Strip.Classes.Set("driven", held);
+            title.Mark.IsVisible = held;
+        }
+    }
+
     /// <summary>
     /// Puts a pane's frame on screen and says what it is.
     ///
@@ -372,11 +405,29 @@ public sealed class PaneSplitView : Decorator
             TextTrimming = TextTrimming.CharacterEllipsis,
         };
 
+        var mark = new TextBlock
+        {
+            Text = "\u25cf assistant",
+            FontSize = 11,
+            IsVisible = false,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Application.Current?.FindResource("AccentBrush") as IBrush,
+        };
+
+        var strip = new Grid
+        {
+            ColumnDefinitions = [new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto)],
+        };
+        Grid.SetColumn(name, 0);
+        Grid.SetColumn(mark, 1);
+        strip.Children.Add(name);
+        strip.Children.Add(mark);
+
         var header = new Border
         {
             Classes = { "tilename" },
             IsVisible = false,
-            Child = name,
+            Child = strip,
         };
 
         var contents = new Grid { RowDefinitions = { new RowDefinition(GridLength.Auto), new RowDefinition(new GridLength(1, GridUnitType.Star)) } };
@@ -386,7 +437,7 @@ public sealed class PaneSplitView : Decorator
         contents.Children.Add(slot.View);
 
         var frame = new Border { Classes = { "pane" }, Child = contents };
-        _titles[slot.Id] = (header, name);
+        _titles[slot.Id] = (header, name, mark);
 
         // Tunnelling, so the click reaches here before the terminal takes it: the
         // terminal wants the keyboard, and this wants to know which pane asked.
