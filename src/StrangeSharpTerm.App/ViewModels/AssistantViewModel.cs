@@ -170,6 +170,11 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
                 row.Refresh();
             OnPropertyChanged(nameof(Waiting));
         });
+        // Which host it has, while it has it. The pane showing this host says
+        // so for as long as the command is running, exactly as it does for an
+        // orchestrated run -- the window cannot tell the two apart and should
+        // not have to.
+        _agent.Working += (_, step) => Post(() => Driving?.Invoke(this, step));
         // A retry takes the last question back, and the rows it produced go
         // with it -- or the pane would show both attempts as though both had
         // been asked.
@@ -181,6 +186,14 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
             OnPropertyChanged(nameof(IsEmpty));
         });
     }
+
+    /// <summary>
+    /// What the assistant is doing on this host, for the window to show.
+    ///
+    /// Raised on the way into a command and again on the way out, so a pane can
+    /// say the assistant has this host and then that it has let go.
+    /// </summary>
+    public event EventHandler<AssistStep>? Driving;
 
     public string Alias => _agent.Alias;
 

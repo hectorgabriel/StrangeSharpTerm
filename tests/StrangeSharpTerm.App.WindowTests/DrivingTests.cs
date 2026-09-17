@@ -5,12 +5,16 @@ using StrangeSharpTerm.Transport;
 namespace StrangeSharpTerm.App.WindowTests;
 
 /// <summary>
-/// Which host the fleet assistant has hold of, as the window learns it.
+/// Which host an assistant has hold of, as the window learns it.
 ///
-/// The agent says so on the way into every command and again on the way out;
-/// the pane turns that into the set of tiles to mark. What the mark looks like
-/// is <c>SplitLayoutTests</c>; this is that the right panes are named, and that
-/// they stop being named.
+/// Either assistant says so on the way into every command and again on the way
+/// out; the pane turns that into the set of tiles to mark. What the mark looks
+/// like is <c>SplitLayoutTests</c>; this is that the right panes are named, and
+/// that they stop being named.
+///
+/// Both are here together on purpose: the window takes one path for the two of
+/// them, so a change that breaks the single-host side fails beside the fleet
+/// one rather than somewhere else.
 /// </summary>
 [Collection("window")]
 public class DrivingTests
@@ -28,7 +32,7 @@ public class DrivingTests
                 _ => null,
                 _ => new Answering("web-01"));
 
-            var driving = new List<FleetStep>();
+            var driving = new List<AssistStep>();
             model.Driving += (_, step) => driving.Add(step);
 
             model.MayRunCommands = true;
@@ -44,6 +48,58 @@ public class DrivingTests
             driving[1].Running.ShouldBeFalse();
             driving[1].ExitStatus.ShouldBe(0);
         });
+    }
+
+    /// <summary>
+    /// The one-host panel narrates what it runs, exactly as the orchestrator
+    /// does -- which is the point: a pane beside a conversation should not look
+    /// idle while the assistant works through twelve commands on that host.
+    /// </summary>
+    [Fact]
+    public void TheOneHostPanelSaysWhatItIsRunningAndWhenItIsDone()
+    {
+        Headless.Run(() =>
+        {
+            var settings = new AssistSettings();
+            AssistantViewModel? model = null;
+            model = new AssistantViewModel(
+                new HostAgent(
+                    new Canned(
+                        Canned.Runs("df -h /", "how full", "c1"),
+                        Canned.Says("98% full.")),
+                    new Answering("web-01"),
+                    settings,
+                    new Late(() => model!)),
+                settings,
+                _ => { });
+
+            var driving = new List<AssistStep>();
+            model.Driving += (_, step) => driving.Add(step);
+
+            model.MayRunCommands = true;
+            model.Question = "how full is the disk?";
+            Headless.Finish(model.AskCommand.ExecuteAsync(null));
+
+            // In on the way to the command, out on the way back -- the same
+            // pair, in the same order, as the fleet run above.
+            driving.Count.ShouldBe(2);
+            driving[0].ShouldSatisfyAllConditions(
+                () => driving[0].Host.ShouldBe("web-01"),
+                () => driving[0].Command.ShouldBe("df -h /"),
+                () => driving[0].Running.ShouldBeTrue());
+            driving[1].Running.ShouldBeFalse();
+            driving[1].ExitStatus.ShouldBe(0);
+        });
+    }
+
+    /// <summary>The pane is its own gate, and cannot be built before the agent it holds.</summary>
+    private sealed class Late(Func<ICommandGate> gate) : ICommandGate
+    {
+        public Task<bool> Allow(PendingCommand command, CancellationToken cancellationToken = default) =>
+            gate().Allow(command, cancellationToken);
+
+        public Task<ToolApproval> Allow(PendingToolCall call, CancellationToken cancellationToken = default) =>
+            gate().Allow(call, cancellationToken);
     }
 
     private sealed class Answering(string alias) : IHostAccess
@@ -67,6 +123,15 @@ public class DrivingTests
 
         public static IReadOnlyList<AssistEvent> Says(string text) =>
             [new AssistEvent.Say(text), new AssistEvent.Finished(AssistStop.EndTurn)];
+
+        public static IReadOnlyList<AssistEvent> Runs(string command, string why, string id) =>
+        [
+            new AssistEvent.Call(new AssistToolCall(
+                id,
+                AssistTools.RunCommand,
+                System.Text.Json.JsonSerializer.Serialize(new { command, why }))),
+            new AssistEvent.Finished(AssistStop.ToolUse),
+        ];
 
         public static IReadOnlyList<AssistEvent> FleetRuns(string host, string command, string id) =>
         [

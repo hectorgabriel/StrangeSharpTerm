@@ -38,11 +38,11 @@ internal static class Narration
     /// <see cref="Terminal.TerminalSession.Show"/> clears first and puts back
     /// underneath when the last of this has been written.
     /// </summary>
-    internal static string Starting(FleetStep step) =>
+    internal static string Starting(AssistStep step) =>
         $"{Dim}\u2500\u2500 assistant \u00b7 {step.Command}{Plain}\r\n";
 
     /// <summary>What is written when it comes back: the output, then how it ended.</summary>
-    internal static string Finished(FleetStep step)
+    internal static string Finished(AssistStep step)
     {
         var lines = step.Output.Replace("\r\n", "\n").Split('\n');
         var shown = string.Join("\r\n", lines.Take(Lines));

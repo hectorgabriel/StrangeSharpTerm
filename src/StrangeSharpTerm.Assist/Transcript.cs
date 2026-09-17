@@ -27,6 +27,26 @@ public enum StepState
 }
 
 /// <summary>
+/// A command the assistant is running on a host, and then the same one once it
+/// has finished.
+///
+/// Raised by both agents -- the one conversation about a single host and the one
+/// driving a fleet -- because a window showing that host says the same thing
+/// either way. Narrating a command got one implementation, not two.
+/// </summary>
+/// <param name="Running">
+/// True on the way in and false on the way out, so a pane can show that the
+/// assistant has this host and then let go of it again.
+/// </param>
+public sealed record AssistStep(
+    string Host,
+    string Command,
+    string Why,
+    bool Running,
+    int? ExitStatus = null,
+    string Output = "");
+
+/// <summary>
 /// One row in a conversation, as the pane draws it.
 ///
 /// A command is a row in the same list as the answer, deliberately: what the

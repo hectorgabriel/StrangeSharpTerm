@@ -76,7 +76,7 @@ public sealed class FleetAgent(
     /// only way to see a fleet being driven rather than read about it
     /// afterwards.
     /// </summary>
-    public event EventHandler<FleetStep>? Working;
+    public event EventHandler<AssistStep>? Working;
 
     public async Task<AgentAnswer> Ask(
         string instruction,
@@ -290,7 +290,7 @@ public sealed class FleetAgent(
 
         step.State = StepState.Running;
         Updated?.Invoke(this, step);
-        Working?.Invoke(this, new FleetStep(alias, command, why, Running: true));
+        Working?.Invoke(this, new AssistStep(alias, command, why, Running: true));
 
         CommandOutcome outcome;
         try
@@ -299,7 +299,7 @@ public sealed class FleetAgent(
         }
         catch (OperationCanceledException)
         {
-            Working?.Invoke(this, new FleetStep(alias, command, why, Running: false));
+            Working?.Invoke(this, new AssistStep(alias, command, why, Running: false));
             throw;
         }
         catch (Exception e)
@@ -307,7 +307,7 @@ public sealed class FleetAgent(
             step.State = StepState.Failed;
             step.Output = e.Message;
             Updated?.Invoke(this, step);
-            Working?.Invoke(this, new FleetStep(alias, command, why, Running: false));
+            Working?.Invoke(this, new AssistStep(alias, command, why, Running: false));
             return (false, new AssistToolResult(call.Id, $"The command could not be run: {e.Message}", Failed: true));
         }
 
@@ -316,7 +316,7 @@ public sealed class FleetAgent(
         step.ExitStatus = outcome.TimedOut ? null : outcome.ExitStatus;
         step.Output = output;
         Updated?.Invoke(this, step);
-        Working?.Invoke(this, new FleetStep(alias, command, why, Running: false, outcome.ExitStatus, output));
+        Working?.Invoke(this, new AssistStep(alias, command, why, Running: false, outcome.ExitStatus, output));
 
         // Named in the result as well as in the row: one conversation holds
         // every host's output, and a result that did not say which machine it
@@ -347,19 +347,3 @@ public sealed class FleetAgent(
         Added?.Invoke(this, entry);
     }
 }
-
-/// <summary>
-/// A command the fleet assistant is running on a host, and then the same one
-/// once it has finished.
-/// </summary>
-/// <param name="Running">
-/// True on the way in and false on the way out, so a pane can show that the
-/// assistant has this host and then let go of it again.
-/// </param>
-public sealed record FleetStep(
-    string Host,
-    string Command,
-    string Why,
-    bool Running,
-    int? ExitStatus = null,
-    string Output = "");

@@ -208,7 +208,7 @@ public class FleetAgentTests
             Runs("web-01", "df -h /", "c1"),
             ScriptedBackend.Says("Done."));
 
-        var steps = new List<FleetStep>();
+        var steps = new List<AssistStep>();
         agent.Working += (_, step) => steps.Add(step);
 
         await agent.Ask("how full?", Hosts(hosts), mayRunCommands: true, TestContext.Current.CancellationToken);
