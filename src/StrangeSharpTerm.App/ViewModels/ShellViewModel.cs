@@ -936,6 +936,10 @@ public sealed partial class ShellViewModel : ObservableObject
                 ShowsAlias = false,
             };
 
+            // Said in the pane showing this host and marked on its tile, for as
+            // long as it has it -- the same path an orchestrated run takes.
+            model.Driving += (_, step) => Mark(step);
+
             _assistants[connection.Id] = view = _assistantView(model);
 
             // The disclosure is filled in before anything is typed: every
@@ -1044,7 +1048,7 @@ public sealed partial class ShellViewModel : ObservableObject
     /// where a host has no pane, which is the ordinary case for a run over a
     /// rack -- and the run does not depend on it either way.
     /// </summary>
-    private void Mark(FleetStep step)
+    private void Mark(AssistStep step)
     {
         var panes = Workspace.Panes
             .Where(pane => pane.IsTerminal && Named(pane.ConnectionId) == step.Host)

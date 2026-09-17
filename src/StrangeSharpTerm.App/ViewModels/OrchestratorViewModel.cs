@@ -581,7 +581,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// Raised on the way into a command and again on the way out, so a pane can
     /// say the assistant has this host and then that it has let go.
     /// </summary>
-    public event EventHandler<FleetStep>? Driving;
+    public event EventHandler<AssistStep>? Driving;
 
     /// <summary>The fleet conversation, as the pane draws it.</summary>
     public ObservableCollection<AssistRow> Rows { get; } = [];

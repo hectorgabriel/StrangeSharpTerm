@@ -308,6 +308,61 @@ public class HostAgentTests
     [Fact]
     public void ShortOutputIsUntouched() => HostAgent.Truncate("fine", limit: 40).ShouldBe("fine");
 
+    /// <summary>
+    /// The pane beside a one-host conversation needs to know a command is
+    /// running on it, and when it is over -- the same thing the fleet agent
+    /// says, so the window can treat both the same way.
+    /// </summary>
+    [Fact]
+    public async Task ItSaysWhichHostItHasAndWhenItLetsGo()
+    {
+        var host = new FakeHost("web-01") { Answer = _ => new CommandOutcome(0, "/dev/sda1 98% /") };
+        var agent = Agent(host, new RecordingGate(), ScriptedBackend.Runs("df -h /", "how full"), ScriptedBackend.Says("98% full."));
+
+        var steps = new List<AssistStep>();
+        agent.Working += (_, step) => steps.Add(step);
+
+        await agent.Ask("what is eating the disk?", Running, TestContext.Current.CancellationToken);
+
+        // In on the way to the command, out on the way back.
+        steps.Count.ShouldBe(2);
+        steps[0].ShouldSatisfyAllConditions(
+            () => steps[0].Host.ShouldBe("web-01"),
+            () => steps[0].Command.ShouldBe("df -h /"),
+            () => steps[0].Why.ShouldBe("how full"),
+            () => steps[0].Running.ShouldBeTrue());
+        steps[1].ShouldSatisfyAllConditions(
+            () => steps[1].Running.ShouldBeFalse(),
+            () => steps[1].ExitStatus.ShouldBe(0),
+            () => steps[1].Output.ShouldContain("98%"));
+    }
+
+    /// <summary>
+    /// A command nobody allowed never reaches a pane.
+    ///
+    /// The narration is raised after the gate, not before it: a refused command
+    /// that had already announced itself in the terminal would be the window
+    /// saying something happened on a host when nothing did.
+    /// </summary>
+    [Fact]
+    public async Task ARefusedCommandIsNeverNarrated()
+    {
+        var host = new FakeHost("web-01");
+        var agent = Agent(
+            host,
+            new RecordingGate { Answer = _ => false },
+            ScriptedBackend.Runs("systemctl restart nginx", "restart it"),
+            ScriptedBackend.Says("Understood."));
+
+        var steps = new List<AssistStep>();
+        agent.Working += (_, step) => steps.Add(step);
+
+        await agent.Ask("restart nginx", Running, TestContext.Current.CancellationToken);
+
+        host.Ran.ShouldBeEmpty();
+        steps.ShouldBeEmpty();
+    }
+
     private static AskOptions Running { get; } = new() { MayRunCommands = true };
 
     private static HostAgent Agent(FakeHost host, ICommandGate gate, params IReadOnlyList<AssistEvent>[] turns) =>

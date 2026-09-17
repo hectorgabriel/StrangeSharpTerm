@@ -102,6 +102,17 @@ public sealed class HostAgent(
     public event EventHandler<TranscriptEntry>? Updated;
 
     /// <summary>
+    /// A command is about to run on this host, and then that it has finished.
+    ///
+    /// The same event the fleet agent raises, for the same reason: the window
+    /// showing this host can say what is being done to it while it happens,
+    /// rather than leaving the pane beside the conversation looking idle
+    /// through twelve commands. Only commands on the host -- a connected tool
+    /// call goes somewhere else entirely and has no pane to narrate into.
+    /// </summary>
+    public event EventHandler<AssistStep>? Working;
+
+    /// <summary>
     /// Gathers what a question would carry, without asking anything.
     ///
     /// The pane calls this to fill its disclosure before a question is typed:
@@ -450,6 +461,7 @@ public sealed class HostAgent(
 
         step.State = StepState.Running;
         Updated?.Invoke(this, step);
+        Working?.Invoke(this, new AssistStep(host.Alias, command, why, Running: true));
 
         CommandOutcome outcome;
         try
@@ -458,6 +470,10 @@ public sealed class HostAgent(
         }
         catch (OperationCanceledException)
         {
+            // Let go of the pane before the exception leaves: a run stopped
+            // half way through would otherwise leave the tile marked as being
+            // worked in for as long as the window stayed open.
+            Working?.Invoke(this, new AssistStep(host.Alias, command, why, Running: false));
             throw;
         }
         catch (Exception e)
@@ -465,6 +481,7 @@ public sealed class HostAgent(
             step.State = StepState.Failed;
             step.Output = e.Message;
             Updated?.Invoke(this, step);
+            Working?.Invoke(this, new AssistStep(host.Alias, command, why, Running: false));
             return (false, new AssistToolResult(call.Id, $"The command could not be run: {e.Message}", Failed: true));
         }
 
@@ -477,6 +494,8 @@ public sealed class HostAgent(
         step.ExitStatus = outcome.TimedOut ? null : outcome.ExitStatus;
         step.Output = output;
         Updated?.Invoke(this, step);
+        Working?.Invoke(this, new AssistStep(
+            host.Alias, command, why, Running: false, step.ExitStatus, output));
 
         var reply = outcome.TimedOut
             ? $"The command did not finish within {timeout.TotalSeconds:0} seconds and was left running. "
