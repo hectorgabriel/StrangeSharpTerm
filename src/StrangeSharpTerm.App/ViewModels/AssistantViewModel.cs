@@ -120,6 +120,25 @@ public sealed partial class AssistRow : ObservableObject
     /// <summary>Why a person is being asked. Empty when the policy let it through.</summary>
     public string Gate => Step?.Gate ?? "";
 
+    /// <summary>
+    /// The lines a write would change, shown with the question rather than
+    /// behind it: approving a write you have not read is approving a file you
+    /// have not read.
+    /// </summary>
+    public string Detail => Step?.Detail ?? "";
+
+    public bool HasDetail => Detail.Length > 0;
+
+    /// <summary>Whether this row is a file in the workspace rather than a command on the host.</summary>
+    public bool IsFile => Step?.IsFile ?? false;
+
+    /// <summary>
+    /// What the button says. "Run it" is wrong for a file: nothing runs, a file
+    /// is replaced, and a button that says the wrong verb is a button people
+    /// press for the wrong reason.
+    /// </summary>
+    public string AllowLabel => IsFile ? "Write it" : "Run it";
+
     public bool IsDestructive => Step?.IsDestructive ?? false;
 
     /// <summary>Redraws the row. The agent mutates the entry; this says when.</summary>
@@ -151,10 +170,20 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
     /// How a command reaches the terminal. It <em>types</em> it and stops: no
     /// newline, no execution. The person reads it and presses Return.
     /// </param>
-    public AssistantViewModel(HostAgent agent, AssistSettings settings, Action<string> stage)
+    /// <param name="workspace">
+    /// What folder this host has open, asked for each time rather than captured:
+    /// a docked conversation outlives the pane it was opened from, and a folder
+    /// can be opened after the conversation has started.
+    /// </param>
+    public AssistantViewModel(
+        HostAgent agent,
+        AssistSettings settings,
+        Action<string> stage,
+        Func<string?>? workspace = null)
     {
         _agent = agent;
         _stage = stage;
+        _workspace = workspace;
         MayRunCommands = settings.AllowCommandsByDefault;
 
         _agent.Added += (_, entry) => Post(() =>
@@ -175,6 +204,9 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
         // orchestrated run -- the window cannot tell the two apart and should
         // not have to.
         _agent.Working += (_, step) => Post(() => Driving?.Invoke(this, step));
+        // A file it wrote is a file the workspace pane is still showing the old
+        // version of. The window joins the two; this only says when.
+        _agent.Wrote += (_, change) => Post(() => Wrote?.Invoke(this, change));
         // A retry takes the last question back, and the rows it produced go
         // with it -- or the pane would show both attempts as though both had
         // been asked.
@@ -228,6 +260,39 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
     /// </summary>
     [ObservableProperty]
     public partial bool MayRunCommands { get; set; }
+
+    /// <summary>
+    /// Whether it may write to the folder this host has open.
+    ///
+    /// Its own switch beside the commands one, because they are different
+    /// decisions about different things: a command runs and is over, and a file
+    /// is still changed tomorrow. Reading the folder is not behind either — that
+    /// was decided by opening it.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool MayEditFiles { get; set; }
+
+    /// <summary>
+    /// Whether the folder switch is worth showing at all. There is nothing to
+    /// edit until a folder is open, and a toggle for nothing is a toggle that
+    /// teaches people it does nothing.
+    /// </summary>
+    public bool HasWorkspace => _workspace?.Invoke() is { Length: > 0 };
+
+    private readonly Func<string?>? _workspace;
+
+    /// <summary>The folder open on this host, for the header to name. Empty when there is none.</summary>
+    public string WorkspaceRoot => _workspace?.Invoke() ?? "";
+
+    /// <summary>Says the folder changed, so the header and the switch catch up.</summary>
+    public void WorkspaceChanged()
+    {
+        OnPropertyChanged(nameof(HasWorkspace));
+        OnPropertyChanged(nameof(WorkspaceRoot));
+    }
+
+    /// <summary>A file in the open folder was written by the assistant.</summary>
+    public event EventHandler<FileChange>? Wrote;
 
     [ObservableProperty]
     public partial bool IsAsking { get; private set; }
@@ -353,7 +418,10 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
 
         try
         {
-            await _agent.Ask(question, new AskOptions { MayRunCommands = MayRunCommands }, _asking.Token);
+            await _agent.Ask(
+                question,
+                new AskOptions { MayRunCommands = MayRunCommands, MayEditFiles = MayEditFiles },
+                _asking.Token);
             await Look();
         }
         finally

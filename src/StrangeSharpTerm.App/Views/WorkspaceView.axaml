@@ -1,0 +1,186 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:StrangeSharpTerm.App.ViewModels"
+             xmlns:views="clr-namespace:StrangeSharpTerm.App.Views"
+             x:Class="StrangeSharpTerm.App.Views.WorkspaceView"
+             x:DataType="vm:HostWorkspaceViewModel">
+    <!--
+        A folder on a server, open: the tree down the left, the files being
+        edited on the right, and one connection under both. It is a pane like any
+        other — it belongs to a host, sits in a tab, and splits beside the shell
+        on the same machine, which is most of the point: the terminal that runs
+        the thing is next to the file that configures it.
+    -->
+    <UserControl.Resources>
+        <views:IconConverter x:Key="Icon" />
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Background="{DynamicResource BackgroundBrush}">
+
+        <!-- Which folder is open, and everything done to it. -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto,Auto" Margin="8,8,8,4">
+            <TextBox Grid.Column="0" Text="{Binding RootDraft, Mode=TwoWay}" FontFamily="monospace"
+                     VerticalAlignment="Center" Watermark="A folder on this host"
+                     ToolTip.Tip="The folder this workspace is rooted at, and the only one the assistant may touch"
+                     KeyDown="RootKeyed" />
+
+            <Button Grid.Column="1" Classes="row" Padding="6" Margin="4,0,0,0" ToolTip.Tip="Open this folder"
+                    Command="{Binding OpenRootCommand}">
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconFolderOpen, Converter={StaticResource Icon}}" />
+            </Button>
+            <Button Grid.Column="2" Classes="row" Padding="6" ToolTip.Tip="Read it again"
+                    Command="{Binding RefreshCommand}">
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconRefreshCw, Converter={StaticResource Icon}}" />
+            </Button>
+            <Button Grid.Column="3" Classes="row" Padding="6" ToolTip.Tip="New file"
+                    Command="{Binding NewFileCommand}">
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconFilePlus, Converter={StaticResource Icon}}" />
+            </Button>
+            <Button Grid.Column="4" Classes="row" Padding="6" ToolTip.Tip="New folder"
+                    Command="{Binding NewFolderCommand}">
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconFolderPlus, Converter={StaticResource Icon}}" />
+            </Button>
+            <Button Grid.Column="5" Classes="row" Padding="6" ToolTip.Tip="Upload into this folder"
+                    Command="{Binding UploadCommand}">
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconUpload, Converter={StaticResource Icon}}" />
+            </Button>
+            <Button Grid.Column="6" Classes="row" Padding="6" ToolTip.Tip="Download to this machine"
+                    Command="{Binding DownloadCommand}">
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconDownload, Converter={StaticResource Icon}}" />
+            </Button>
+        </Grid>
+
+        <!-- Naming something, where the thing will appear rather than in a
+             window over the top of it. -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto,Auto" Margin="8,0,8,4"
+              IsVisible="{Binding IsNaming}">
+            <TextBlock Grid.Column="0" Classes="muted" VerticalAlignment="Center" Margin="0,0,8,0"
+                       Text="{Binding NamingLabel}" />
+            <TextBox Grid.Column="1" Name="NameField" Text="{Binding NameDraft, Mode=TwoWay}"
+                     FontFamily="monospace" KeyDown="NameKeyed" />
+            <Button Grid.Column="2" Margin="4,0,0,0" Content="Create"
+                    Command="{Binding ConfirmNameCommand}" />
+            <Button Grid.Column="3" Classes="row" Padding="6" ToolTip.Tip="Cancel"
+                    Command="{Binding CancelNameCommand}">
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconX, Converter={StaticResource Icon}}" />
+            </Button>
+        </Grid>
+
+        <!-- What went wrong, or what just happened. -->
+        <StackPanel Grid.Row="2" Margin="8,0,8,4">
+            <Border Classes="banner" IsVisible="{Binding Failure, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="{Binding Failure}" TextWrapping="Wrap" />
+            </Border>
+            <TextBlock Classes="muted" FontSize="11" Margin="2,2"
+                       IsVisible="{Binding Note, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Text="{Binding Note}" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <Grid Grid.Row="3" ColumnDefinitions="220,4,*">
+
+            <TreeView Grid.Column="0" Margin="4,0,0,4" Background="Transparent"
+                      ItemsSource="{Binding Tree}"
+                      SelectedItem="{Binding Selected, Mode=TwoWay}"
+                      KeyDown="TreeKeyed">
+                <TreeView.Styles>
+                    <!-- Expanding a folder is what reads it, so the tree's own
+                         state has to be the view model's. -->
+                    <Style Selector="TreeViewItem" x:DataType="vm:WorkspaceNode">
+                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                    </Style>
+                </TreeView.Styles>
+                <TreeView.ItemTemplate>
+                    <TreeDataTemplate ItemsSource="{Binding Children}" x:DataType="vm:WorkspaceNode">
+                        <Grid ColumnDefinitions="Auto,*" Margin="0,1" DoubleTapped="Opened">
+                            <Path Grid.Column="0" Classes="icon" Width="13" Height="13" Margin="0,0,6,0"
+                                  Data="{Binding IconKey, Converter={StaticResource Icon}}" />
+                            <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                    </TreeDataTemplate>
+                </TreeView.ItemTemplate>
+            </TreeView>
+
+            <GridSplitter Grid.Column="1" Classes="pane" ResizeDirection="Columns" />
+
+            <Grid Grid.Column="2" RowDefinitions="Auto,*" Margin="4,0,4,4">
+
+                <!-- The files being edited. A dot on the tab is unsaved work,
+                     which is what every editor means by it. -->
+                <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled"
+                              IsVisible="{Binding Open.Count}">
+                    <ItemsControl ItemsSource="{Binding Open}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:FileEditorViewModel">
+                                <Border Classes="tab" Classes.active="{Binding IsCurrent}"
+                                        Margin="0,2,4,4" Padding="8,3">
+                                    <Grid ColumnDefinitions="Auto,Auto">
+                                        <Button Grid.Column="0" Classes="row" Padding="2,0"
+                                                Content="{Binding TabTitle}"
+                                                ToolTip.Tip="{Binding Relative}"
+                                                Command="{Binding $parent[UserControl].((vm:HostWorkspaceViewModel)DataContext).ShowCommand}"
+                                                CommandParameter="{Binding}" />
+                                        <Button Grid.Column="1" Classes="row" Padding="4,0" Margin="4,0,0,0"
+                                                ToolTip.Tip="Close"
+                                                Command="{Binding $parent[UserControl].((vm:HostWorkspaceViewModel)DataContext).CloseCommand}"
+                                                CommandParameter="{Binding}">
+                                            <Path Classes="icon" Width="9" Height="9"
+                                                  Data="{Binding Source=IconX, Converter={StaticResource Icon}}" />
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- The file itself, with its line numbers beside it. -->
+                <Grid Grid.Row="1" ColumnDefinitions="Auto,*" DataContext="{Binding Current}"
+                      IsVisible="{Binding $parent[UserControl].((vm:HostWorkspaceViewModel)DataContext).HasOpenFile}">
+                    <Border Grid.Column="0" Background="{DynamicResource SurfaceBrush}" Padding="6,7,4,0">
+                        <TextBlock Name="Gutter" Classes="muted" FontFamily="monospace" FontSize="12"
+                                   TextAlignment="Right" Text="{Binding Lines}" />
+                    </Border>
+                    <TextBox Grid.Column="1" Name="Editor" AcceptsReturn="True" AcceptsTab="True"
+                             FontFamily="monospace" FontSize="12" TextWrapping="NoWrap"
+                             BorderThickness="0" CornerRadius="0"
+                             Text="{Binding Text, Mode=TwoWay}" />
+                </Grid>
+
+                <TextBlock Grid.Row="1" Classes="muted" Margin="24" VerticalAlignment="Top"
+                           IsVisible="{Binding !HasOpenFile}"
+                           Text="Open a file from the tree. The assistant can read and write anything in this folder, and nothing outside it." />
+            </Grid>
+        </Grid>
+
+        <!-- What is open, what it would save, and whether anything is in flight. -->
+        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto,Auto" Margin="10,0,10,8">
+            <TextBlock Grid.Column="0" Classes="muted" FontSize="11" VerticalAlignment="Center"
+                       IsVisible="{Binding IsBusy}" Text="Working…" />
+            <TextBlock Grid.Column="1" Classes="muted" FontSize="11" Margin="8,0"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                       DataContext="{Binding Current}" Text="{Binding Relative}" />
+            <Button Grid.Column="2" Margin="0,0,4,0" Content="Save"
+                    ToolTip.Tip="Write it back to the host"
+                    Command="{Binding SaveCommand}" />
+            <Button Grid.Column="3" Classes="row" Padding="6" ToolTip.Tip="Delete what is selected"
+                    Command="{Binding DeleteCommand}">
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconTrash2, Converter={StaticResource Icon}}" />
+            </Button>
+        </Grid>
+    </Grid>
+</UserControl>

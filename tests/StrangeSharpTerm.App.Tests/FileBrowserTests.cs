@@ -53,6 +53,16 @@ public class FileBrowserTests
 
         public void CreateDirectory(string path) => Check($"mkdir {path}");
 
+        public RemoteEntry? Stat(string path) => null;
+
+        public byte[] Read(string path, long limit)
+        {
+            Check($"read {path}");
+            return [];
+        }
+
+        public void Write(string path, byte[] content) => Check($"write {path}");
+
         private void Check(string what)
         {
             Did.Add(what);

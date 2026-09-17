@@ -99,10 +99,11 @@ public partial class App : Application
 
     /// <summary>
     /// <c>--demo-assistant</c>, <c>--demo-orchestrator</c>,
-    /// <c>--demo-orchestrator-idle</c>, <c>--demo-plan</c> and
-    /// <c>--demo-tiles</c>: the two assistant panes over a fixture, and the
-    /// three-pane window they now sit in, with nothing reaching a network or a
-    /// server.
+    /// <c>--demo-orchestrator-idle</c>, <c>--demo-plan</c>,
+    /// <c>--demo-tiles</c>, <c>--demo-workspace</c> and
+    /// <c>--demo-file-write</c>: the two assistant panes over a fixture, the
+    /// three-pane window they now sit in, and the workspace, with nothing
+    /// reaching a network or a server.
     ///
     /// The Swift app had the last three for the same reason. These panes only
     /// exist after a real connection <em>and</em> a real API key, and neither is
@@ -125,6 +126,15 @@ public partial class App : Application
         // once, so without a fixture it is a layout nobody can look at.
         if (arguments.Contains("--demo-tiles"))
             return Rehearsal.TiledWindow();
+        // The workspace: the pane over an invented project, and the surface the
+        // workspace adds that most needs looking at -- the assistant stopped at
+        // a write, with the lines it would change in the bar. Neither exists
+        // without a server, and the second needs a key and a model that decides
+        // to change a file.
+        if (arguments.Contains("--demo-workspace"))
+            return Rehearsal.WorkspacePane();
+        if (arguments.Contains("--demo-file-write"))
+            return Rehearsal.FileWritePane();
         return null;
     }
 

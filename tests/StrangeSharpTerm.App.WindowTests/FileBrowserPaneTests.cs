@@ -34,6 +34,12 @@ public class FileBrowserPaneTests
         public void Rename(string path, string newPath) { }
 
         public void CreateDirectory(string path) { }
+
+        public RemoteEntry? Stat(string path) => null;
+
+        public byte[] Read(string path, long limit) => [];
+
+        public void Write(string path, byte[] content) { }
     }
 
     private static void Settle(Window window)
@@ -96,6 +102,12 @@ public class FileBrowserPaneTests
         public void Rename(string path, string newPath) { }
 
         public void CreateDirectory(string path) { }
+
+        public RemoteEntry? Stat(string path) => null;
+
+        public byte[] Read(string path, long limit) => [];
+
+        public void Write(string path, byte[] content) { }
     }
 
     [Fact]

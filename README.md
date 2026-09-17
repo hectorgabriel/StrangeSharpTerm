@@ -10,6 +10,29 @@ Swift/SwiftUI app. No Swift code carries over; the design does.
 
 ## Status
 
+**M9 — the workspace.** A folder on a host, open: a tree down one side and the
+files you are editing beside it, in a pane that splits next to the shell on the
+same machine. ⇧⌘E opens it, ⌘S saves, and the file goes back in the line endings
+it already had — which is what stops a Windows machine rewriting every line of a
+Linux host's `nginx.conf` to change one.
+
+The folder is also the permission. The same root is what the assistant may work
+in: it gets `list_files` and `read_file` as soon as you open one, `write_file`
+only where **Edit files** is on, and nothing at all outside the root — that is
+refused rather than asked, because you answered it when you chose the folder.
+Every write stops at the same gate a command does, showing **the lines that
+change**, because "it would like to write nginx.conf" is not a question anybody
+can answer. Files are redacted like everything else before they are sent, and a
+write that would put `[redacted]` back into a real file is refused before anyone
+is asked. See `docs/adr/0009`.
+
+```sh
+# the same folder, without a window: read inside it, write inside it, and be
+# refused outside it
+dotnet run --project src/stctl -- workspace user@host \
+    --root '~/srv/app' --cat conf/nginx.conf
+```
+
 **M8 — packaging.** `build/package.sh` builds `StrangeSharpTerm.app` and a disk
 image around it; `build/install.sh` puts it in `/Applications` for your own Mac
 and needs no certificate at all. `build/package.ps1` does the Windows side.
@@ -163,10 +186,12 @@ with shell channels, SFTP, port forwards, and command execution over it.
 src/StrangeSharpTerm.Model/       value types: inventory, settings, forwards
 src/StrangeSharpTerm.Store/       inventory JSON, ssh_config parser and importer
 src/StrangeSharpTerm.Security/    known_hosts, credential storage
-src/StrangeSharpTerm.Transport/   SSH.NET connection pool, SFTP, probes
+src/StrangeSharpTerm.Transport/   SSH.NET connection pool, SFTP, probes,
+                                  the rooted workspace and its path rules
 src/StrangeSharpTerm.Terminal/    XTerm.NET engine bound to an SSH channel
-src/StrangeSharpTerm.Assist/      providers, the agent loop, the command gate,
-                                  redaction, orchestration and run plans
+src/StrangeSharpTerm.Assist/      providers, the agent loop, the command and
+                                  file gates, redaction, diffs, orchestration
+                                  and run plans
 src/StrangeSharpTerm.Mcp/         connected tool servers: transports, the
                                   namespacing, the grant rules, OAuth storage
 src/StrangeSharpTerm.App/         Avalonia views and view models

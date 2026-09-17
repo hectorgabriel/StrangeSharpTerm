@@ -61,6 +61,11 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly TerminalRegistry _terminals = new();
     private readonly IHostSessions _sessions;
     private readonly Dictionary<NodeId, DashboardViewModel> _dashboards = [];
+    // One folder per host, not one per pane: "the folder open on web-01" has to
+    // be a question with one answer, because the assistant asks it too.
+    private readonly Dictionary<NodeId, HostWorkspaceViewModel> _workspaces = [];
+    private readonly Dictionary<NodeId, NodeId> _workspacePanes = [];
+    private readonly Dictionary<NodeId, AssistantViewModel> _conversations = [];
     private readonly Func<TerminalSession, TerminalPalette, Control> _view;
     private readonly IDialogService _dialogs;
     private readonly Lazy<ISecretStore> _secrets;
@@ -90,7 +95,8 @@ public sealed partial class ShellViewModel : ObservableObject
         ISecretStore? assistKeys = null,
         ISecretStore? toolTokens = null,
         Func<OrchestratorViewModel, Control>? orchestratorView = null,
-        Func<AssistantViewModel, Control>? assistantView = null)
+        Func<AssistantViewModel, Control>? assistantView = null,
+        Func<HostWorkspaceViewModel, Control>? workspaceView = null)
     {
         Inventory = inventory;
         _dialogs = dialogs ?? new ScriptedDialogService();
@@ -125,6 +131,10 @@ public sealed partial class ShellViewModel : ObservableObject
         // dock now, which a test of the layout builds without an application
         // around it to run the control's XAML in.
         _assistantView = assistantView ?? (model => new AssistantView(model));
+        _workspaceView = workspaceView ?? (model => new WorkspaceView(model));
+        // Which folder each host was last opened at. Read once, here, because
+        // opening a pane should not be a file read.
+        _roots = new Dictionary<NodeId, string>(WorkspacePreferences.Load(preferencesPath));
 
         // Focusing a pane moves the sidebar with it, and deleting a host closes
         // whatever it had open. Neither half knows about the other.
@@ -838,6 +848,108 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>How a browser becomes something on screen. Replaced in tests.</summary>
     private readonly Func<FileBrowserViewModel, Control> _browser = model => new FileBrowserView(model);
 
+    /// <summary>
+    /// Opens a folder on the selected host as a workspace, beside whatever is
+    /// open.
+    ///
+    /// One per host: asking again brings the one that is open forward rather
+    /// than opening a second. Two panes rooted at two folders would make "the
+    /// folder open on this host" a question with two answers, and that question
+    /// is what the assistant's file tools are judged against.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(HasSelectedHost))]
+    public async Task OpenWorkspace()
+    {
+        if (Detail is not { } detail)
+            return;
+
+        Failure = null;
+        var connection = detail.Connection;
+
+        if (_workspacePanes.TryGetValue(connection.Id, out var already)
+            && Workspace.Pane(already) is not null)
+        {
+            Workspace.FocusPane(already);
+            Show();
+            return;
+        }
+
+        var pane = new Pane
+        {
+            Title = $"{connection.Name} workspace",
+            Kind = new PaneKind.Workspace(),
+            ConnectionId = connection.Id,
+        };
+
+        try
+        {
+            // Off the UI thread for the same reason the browser is: SFTP costs
+            // its own authentication, and a window that freezes while a host
+            // times out is what that would cost.
+            var files = await Task.Run(() => _sessions.Files(connection));
+            var model = new HostWorkspaceViewModel(
+                files,
+                connection.Name,
+                _roots.GetValueOrDefault(connection.Id),
+                _dialogs,
+                remember: root =>
+                {
+                    _roots[connection.Id] = root;
+                    WorkspacePreferences.Save(_preferencesPath, connection.Id, root);
+                });
+
+            // The conversation about this host has to notice: the folder decides
+            // which tools it is offered, and it may already be open in the dock.
+            model.RootChanged += (_, _) => _conversations.GetValueOrDefault(connection.Id)?.WorkspaceChanged();
+            model.Saveability += (_, _) =>
+            {
+                OnPropertyChanged(nameof(CanSaveFile));
+                SaveFileCommand.NotifyCanExecuteChanged();
+            };
+
+            _workspaces[connection.Id] = model;
+            _workspacePanes[connection.Id] = pane.Id;
+
+            Workspace.Open(pane, Panes.Count > 0 ? Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal : null);
+            _views[pane.Id] = _workspaceView(model);
+            Show();
+            _conversations.GetValueOrDefault(connection.Id)?.WorkspaceChanged();
+            await model.Refresh();
+        }
+        catch (Exception e)
+        {
+            System.Diagnostics.Trace.WriteLine($"opening a workspace on {connection.Name} failed: {e}");
+            Failure = SshFailure.Classify(e).Summary;
+        }
+    }
+
+    /// <summary>How a workspace becomes something on screen. Replaced in tests.</summary>
+    private readonly Func<HostWorkspaceViewModel, Control> _workspaceView;
+
+    /// <summary>Which folder each host was last opened at, remembered between runs.</summary>
+    private readonly Dictionary<NodeId, string> _roots;
+
+    /// <summary>
+    /// The workspace of whichever pane has the keyboard, for ⌘S.
+    ///
+    /// The focused pane rather than "the only one open": with a workspace on two
+    /// hosts side by side, saving has to mean the file you are looking at.
+    /// </summary>
+    private HostWorkspaceViewModel? FocusedWorkspace =>
+        Workspace.ActivePane is { Kind: PaneKind.Workspace, ConnectionId: { } host }
+            ? _workspaces.GetValueOrDefault(host)
+            : null;
+
+    public bool CanSaveFile => FocusedWorkspace?.CanSave == true;
+
+    /// <summary>Writes the focused workspace's open file back to its host.</summary>
+    [RelayCommand(CanExecute = nameof(CanSaveFile))]
+    public async Task SaveFile()
+    {
+        if (FocusedWorkspace is { } workspace)
+            await workspace.Save();
+    }
+
     /// <summary>Opens the selected host's tunnels, beside whatever is open.</summary>
     [RelayCommand(CanExecute = nameof(HasSelectedHost))]
     public async Task OpenTunnels()
@@ -929,7 +1041,9 @@ public sealed partial class ShellViewModel : ObservableObject
                 // Typed into the shell it is about, and not run. Sent rather
                 // than written, so a broadcast group fans it out as it fans out
                 // typing.
-                text => (Focused(connection.Id) is { } id ? _terminals.Session(id) : ActiveTerminal())?.Send(text))
+                text => (Focused(connection.Id) is { } id ? _terminals.Session(id) : ActiveTerminal())?.Send(text),
+                // What the header names and the Edit files switch depends on.
+                () => _workspaces.GetValueOrDefault(connection.Id)?.Workspace.RootLabel)
             {
                 // The dock's own header names the host, and at this width two
                 // labels for it leave neither any room.
@@ -939,7 +1053,16 @@ public sealed partial class ShellViewModel : ObservableObject
             // Said in the pane showing this host and marked on its tile, for as
             // long as it has it -- the same path an orchestrated run takes.
             model.Driving += (_, step) => Mark(step);
+            // A file the assistant wrote is a file the pane is still showing the
+            // old version of. Showing a stale file is worse than showing none,
+            // because it looks current.
+            model.Wrote += async (_, change) =>
+            {
+                if (_workspaces.GetValueOrDefault(connection.Id) is { } workspace)
+                    await workspace.Changed(change);
+            };
 
+            _conversations[connection.Id] = model;
             _assistants[connection.Id] = view = _assistantView(model);
 
             // The disclosure is filled in before anything is typed: every
@@ -1107,7 +1230,11 @@ public sealed partial class ShellViewModel : ObservableObject
                 access,
                 AssistantSettings,
                 new Deferred(gate),
-                ToolsFor(inARun));
+                ToolsFor(inARun),
+                // Asked for each time rather than captured: a folder is opened
+                // and closed while a conversation is going on, and the tools
+                // appear and go with it.
+                new RemoteWorkspaceAccess(() => _workspaces.GetValueOrDefault(connection.Id)?.Workspace));
         };
 
     /// <summary>
@@ -1223,6 +1350,7 @@ public sealed partial class ShellViewModel : ObservableObject
         OnPropertyChanged(nameof(HasSelectedHost));
         OnPropertyChanged(nameof(HasOpenPane));
         OnPropertyChanged(nameof(CanBroadcast));
+        OnPropertyChanged(nameof(CanSaveFile));
 
         ConnectSelectedCommand.NotifyCanExecuteChanged();
         EditSelectedCommand.NotifyCanExecuteChanged();
@@ -1231,6 +1359,8 @@ public sealed partial class ShellViewModel : ObservableObject
         SplitDownCommand.NotifyCanExecuteChanged();
         ClosePaneCommand.NotifyCanExecuteChanged();
         BrowseFilesCommand.NotifyCanExecuteChanged();
+        OpenWorkspaceCommand.NotifyCanExecuteChanged();
+        SaveFileCommand.NotifyCanExecuteChanged();
         RunSnippetCommand.NotifyCanExecuteChanged();
         OpenTunnelsCommand.NotifyCanExecuteChanged();
         OpenAssistantCommand.NotifyCanExecuteChanged();
@@ -1246,6 +1376,17 @@ public sealed partial class ShellViewModel : ObservableObject
     private void PruneViews()
     {
         var open = Workspace.Panes.Select(pane => pane.Id).ToHashSet();
+
+        // Closing the pane closes the folder, which takes the assistant's file
+        // tools with it. That is the whole contract: what it may touch is what
+        // you have open in front of you.
+        foreach (var (host, pane) in _workspacePanes.Where(pane => !open.Contains(pane.Value)).ToArray())
+        {
+            _workspacePanes.Remove(host);
+            _workspaces.Remove(host);
+            _conversations.GetValueOrDefault(host)?.WorkspaceChanged();
+        }
+
         foreach (var (id, view) in _views.Where(pane => !open.Contains(pane.Key)).ToArray())
         {
             // Whatever the pane holds — an ssh session, a running forward — goes

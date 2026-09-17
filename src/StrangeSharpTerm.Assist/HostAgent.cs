@@ -1,4 +1,5 @@
 using System.Text;
+using StrangeSharpTerm.Transport;
 
 namespace StrangeSharpTerm.Assist;
 
@@ -22,6 +23,17 @@ public sealed record AskOptions
 
     /// <summary>Something extra for this question alone: a phase's task, or an instruction to report a value.</summary>
     public string? Instruction { get; init; }
+
+    /// <summary>
+    /// Whether the model may write to the open folder.
+    ///
+    /// Off is the default, exactly as <see cref="MayRunCommands"/> is, and for
+    /// the same reason: reading a host is one decision and changing it is
+    /// another. Reading the folder needs no switch -- opening it was the
+    /// decision -- so this one is only about <c>write_file</c>, which is not
+    /// offered at all until it is on. Every write still stops at the gate.
+    /// </summary>
+    public bool MayEditFiles { get; init; }
 
     /// <summary>
     /// What to say about connected tools, when the default is not right.
@@ -68,12 +80,19 @@ public sealed record AgentAnswer(
 /// Connected tool servers, or null. Their tools are offered alongside
 /// <c>run_command</c>, stop at the same gate, and spend the same budget.
 /// </param>
+/// <param name="workspace">
+/// The folder open on this host, or null. Its tools are offered alongside
+/// <c>run_command</c>, stop at the same gate and spend the same budget. A
+/// workspace whose root is empty is one nobody has opened yet, and offers
+/// nothing.
+/// </param>
 public sealed class HostAgent(
     IAssistBackend backend,
     IHostAccess host,
     AssistSettings settings,
     ICommandGate gate,
-    IExternalTools? tools = null)
+    IExternalTools? tools = null,
+    IWorkspaceAccess? workspace = null)
 {
     private readonly List<AssistMessage> _conversation = [];
     private readonly List<TranscriptEntry> _entries = [];
@@ -411,6 +430,9 @@ public sealed class HostAgent(
         if (tools is { } connected && connected.Owns(call.Name))
             return await CarryTool(connected, call, budget, cancellationToken);
 
+        if (WorkspaceTools.Owns(call.Name))
+            return await CarryFile(call, budget, cancellationToken);
+
         if (call.Name != AssistTools.RunCommand)
         {
             return (false, new AssistToolResult(call.Id, $"There is no tool called {call.Name}.", Failed: true));
@@ -585,23 +607,296 @@ public sealed class HostAgent(
             reply.Failed));
     }
 
+    /// <summary>
+    /// One call to the open folder: listed, read, or written.
+    ///
+    /// The same gate and the same budget as a command, judged by
+    /// <see cref="FilePolicy"/> instead of <see cref="CommandPolicy"/>. Reading
+    /// runs unattended; a write is worked out first so that what stops at the
+    /// gate is the lines that change rather than the sentence "it would like to
+    /// write a file".
+    /// </summary>
+    private async Task<(bool Ran, AssistToolResult Result)> CarryFile(
+        AssistToolCall call,
+        ICommandBudget budget,
+        CancellationToken cancellationToken)
+    {
+        if (Open is not { } open)
+        {
+            return (false, new AssistToolResult(
+                call.Id,
+                "No folder is open on this host any more, so there is nothing to read or write.",
+                Failed: true));
+        }
+
+        var writing = call.Name == WorkspaceTools.WriteFile;
+        var (path, content, why) = writing
+            ? WorkspaceTools.ReadWrite(call.Arguments)
+            : (WorkspaceTools.ReadPath(call.Arguments), "", "");
+
+        var operation = call.Name switch
+        {
+            WorkspaceTools.ListFiles => FileOperation.List,
+            WorkspaceTools.ReadFile => FileOperation.Read,
+            _ => FileOperation.Write,
+        };
+        var verb = call.Name switch
+        {
+            WorkspaceTools.ListFiles => "list",
+            WorkspaceTools.ReadFile => "read",
+            _ => "write",
+        };
+
+        var judgement = FilePolicy.Judge(operation, open.Root, path);
+        var step = new TranscriptEntry.Step
+        {
+            Host = host.Alias,
+            Command = $"{verb} {(path.Length == 0 ? "?" : path)}",
+            Why = why,
+            Gate = judgement.Reason,
+            IsDestructive = judgement.IsDestructive,
+            IsFile = true,
+        };
+        Append(step);
+
+        // Taken before anything is decided, exactly as a command is: a model
+        // asking repeatedly for paths outside the folder is spending turns, and
+        // the budget is what bounds that.
+        if (!budget.Take())
+        {
+            step.State = StepState.Skipped;
+            Updated?.Invoke(this, step);
+            return (false, new AssistToolResult(
+                call.Id,
+                "The budget for this question is spent. Do not ask for anything else; "
+                    + "summarise what you have found so far.",
+                Failed: true));
+        }
+
+        // Outside the folder is not a question for a person. They answered it
+        // when they chose the folder, and asking again would teach them to say
+        // yes to a bar they have stopped reading.
+        if (judgement.IsRefused)
+        {
+            step.State = StepState.Refused;
+            Updated?.Invoke(this, step);
+            return (false, new AssistToolResult(call.Id, judgement.Reason, Failed: true));
+        }
+
+        try
+        {
+            if (!writing)
+                return await CarryRead(open, call, step, path, cancellationToken);
+
+            var change = await open.Plan(path, content, cancellationToken);
+
+            // A model that read a scrubbed file and sent it back would write the
+            // marker into the real one, turning a password into the word
+            // [redacted]. The diff would show it and a person might still miss
+            // it, so it never reaches the gate.
+            if (change.Text.Contains(Redaction.Marker, StringComparison.Ordinal)
+                && !change.Creates)
+            {
+                step.State = StepState.Refused;
+                step.Output = $"It would write {Redaction.Marker} into the file.";
+                Updated?.Invoke(this, step);
+                return (false, new AssistToolResult(
+                    call.Id,
+                    $"This write contains {Redaction.Marker}, which is what this app puts in place of a "
+                        + "secret before you see it. Writing it back would destroy the real value. Leave "
+                        + "those lines out of your change, or ask the user to edit them.",
+                    Failed: true));
+            }
+
+            if (change.Diff.IsEmpty && !change.Creates)
+            {
+                // Nothing to approve and nothing to do. Saying so is better than
+                // a gate that asks a person to allow a write that changes
+                // nothing.
+                step.State = StepState.Ran;
+                step.Output = "It already says exactly that.";
+                Updated?.Invoke(this, step);
+                return (true, new AssistToolResult(
+                    call.Id,
+                    $"{change.Relative} already contains exactly that. Nothing was written."));
+            }
+
+            // Judged again now that the size of it is known: "it writes
+            // nginx.conf" and "it writes nginx.conf, and 380 of its 400 lines
+            // change" are not the same question.
+            var reason = change.Creates
+                ? $"It creates {change.Relative}, which is not there yet."
+                : $"{judgement.Reason} {change.Diff.Summary}.";
+
+            step.Gate = reason;
+            step.Detail = change.Diff.Text;
+            Updated?.Invoke(this, step);
+
+            var allowed = await gate.Allow(
+                new PendingCommand(
+                    host.Alias,
+                    $"write {change.Relative}",
+                    why,
+                    reason,
+                    judgement.IsDestructive,
+                    change.Diff.Text),
+                cancellationToken);
+
+            if (!allowed)
+            {
+                step.State = StepState.Refused;
+                Updated?.Invoke(this, step);
+                return (false, new AssistToolResult(
+                    call.Id,
+                    "The user refused this change. Do not write it somewhere else and do not suggest a "
+                        + "command that would make the same change. Work with what you have, or say what "
+                        + "you would need and why.",
+                    Failed: true));
+            }
+
+            step.State = StepState.Running;
+            Updated?.Invoke(this, step);
+            Working?.Invoke(this, new AssistStep(host.Alias, step.Command, why, Running: true));
+
+            await open.Write(change, cancellationToken);
+
+            step.State = StepState.Ran;
+            step.ExitStatus = 0;
+            step.Output = change.Diff.Text;
+            Updated?.Invoke(this, step);
+            Working?.Invoke(this, new AssistStep(
+                host.Alias, step.Command, why, Running: false, 0, change.Diff.Summary));
+            Wrote?.Invoke(this, change);
+
+            return (true, new AssistToolResult(
+                call.Id,
+                change.Creates
+                    ? $"Created {change.Relative}."
+                    : $"Wrote {change.Relative}: {change.Diff.Summary}."));
+        }
+        catch (OperationCanceledException)
+        {
+            Working?.Invoke(this, new AssistStep(host.Alias, step.Command, why, Running: false));
+            throw;
+        }
+        catch (Exception e)
+        {
+            step.State = StepState.Failed;
+            step.Output = e.Message;
+            Updated?.Invoke(this, step);
+            Working?.Invoke(this, new AssistStep(host.Alias, step.Command, why, Running: false));
+            return (false, new AssistToolResult(call.Id, e.Message, Failed: true));
+        }
+    }
+
+    /// <summary>
+    /// A listing or a file, which the policy lets through without asking.
+    ///
+    /// Redacted and truncated like command output, and for the same reason --
+    /// a file in a workspace is exactly where an API key lives. The count goes
+    /// back with it, because a model that rewrote a scrubbed file whole would
+    /// replace the secret with the word that hid it.
+    /// </summary>
+    private async Task<(bool Ran, AssistToolResult Result)> CarryRead(
+        IWorkspaceAccess open,
+        AssistToolCall call,
+        TranscriptEntry.Step step,
+        string path,
+        CancellationToken cancellationToken)
+    {
+        step.State = StepState.Running;
+        Updated?.Invoke(this, step);
+
+        string text;
+        var note = "";
+        if (call.Name == WorkspaceTools.ListFiles)
+        {
+            text = await open.List(path, cancellationToken);
+        }
+        else
+        {
+            var file = await open.Read(path, cancellationToken);
+            if (file.IsBinary)
+            {
+                step.State = StepState.Failed;
+                step.Output = $"{file.Relative} is not a text file.";
+                Updated?.Invoke(this, step);
+                return (true, new AssistToolResult(
+                    call.Id,
+                    $"{file.Relative} is not a text file ({file.Length} bytes). Nothing was read.",
+                    Failed: true));
+            }
+
+            var scrubbed = Redaction.Scrub(file.Text);
+            text = scrubbed.Text;
+            if (scrubbed.Count > 0)
+                note = $"\n\n{scrubbed.Count} secret(s) were removed from this file before you saw it. "
+                    + $"Do not write {Redaction.Marker} back into it.";
+            if (file.Truncated)
+                note += $"\n\nThis is the first {RemoteWorkspace.MaxFileBytes / 1000} kB of a "
+                    + $"{file.Length}-byte file.";
+        }
+
+        var output = Truncate(text);
+        step.State = StepState.Ran;
+        step.ExitStatus = 0;
+        step.Output = output;
+        Updated?.Invoke(this, step);
+
+        return (true, new AssistToolResult(call.Id, output + note));
+    }
+
+    /// <summary>
+    /// A file in the workspace was changed by the assistant.
+    ///
+    /// The pane showing that folder listens, because a tree and an editor that
+    /// go on showing what the file said five minutes ago are worse than no tree
+    /// at all -- and the one thing certain to have changed it is this.
+    /// </summary>
+    public event EventHandler<FileChange>? Wrote;
+
+    /// <summary>
+    /// The folder open on this host, or null when there is none.
+    ///
+    /// Asked each turn rather than once, because a folder is opened and closed
+    /// while a conversation is going on: the tools appear in the turn after it
+    /// is opened and go again when it is closed, in the same conversation.
+    /// </summary>
+    private IWorkspaceAccess? Open => workspace is { Root.Length: > 0 } open ? open : null;
+
     /// <summary>What the provider is offered this turn.</summary>
     private IReadOnlyList<AssistTool> Offered(AskOptions how)
     {
         List<AssistTool> offered = [];
         if (how.MayRunCommands)
             offered.Add(AssistTools.Runner);
+        if (Open is not null)
+        {
+            // Reading needs no switch: opening the folder was the decision.
+            offered.AddRange(WorkspaceTools.Reading);
+            if (how.MayEditFiles)
+                offered.Add(WorkspaceTools.Writer);
+        }
         if (tools is { } connected)
             offered.AddRange(connected.Offered);
         return offered;
     }
 
-    private static string System(AskOptions how, IReadOnlyList<AssistTool> offered)
+    private string System(AskOptions how, IReadOnlyList<AssistTool> offered)
     {
         var baseline = how.MayRunCommands ? AssistPrompts.HostWithCommands : AssistPrompts.Host;
-        return offered.Any(tool => tool.Name != AssistTools.RunCommand)
-            ? string.Join("\n\n", baseline, how.ToolNote ?? AssistPrompts.ConnectedTools)
-            : baseline;
+        List<string> parts = [baseline];
+
+        if (Open is { } open)
+            parts.Add(AssistPrompts.Workspace(open.RootLabel, how.MayEditFiles));
+
+        // Only about servers that are not this one. The workspace's tools are
+        // this host's own files, so the paragraph about third parties would be
+        // false about them.
+        if (offered.Any(tool => tool.Name != AssistTools.RunCommand && !WorkspaceTools.Owns(tool.Name)))
+            parts.Add(how.ToolNote ?? AssistPrompts.ConnectedTools);
+
+        return string.Join("\n\n", parts);
     }
 
     private async Task<HostSnapshot> Look(CancellationToken cancellationToken)

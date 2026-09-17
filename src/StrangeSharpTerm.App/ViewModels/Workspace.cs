@@ -32,6 +32,12 @@ public abstract record PaneKind
 
     public sealed record Files : PaneKind;
 
+    /// <summary>
+    /// A folder on this host, open: a tree, the files being edited, and the
+    /// same root the assistant may work in.
+    /// </summary>
+    public sealed record Workspace : PaneKind;
+
     /// <summary>This host's port forwards, and which of them are up.</summary>
     public sealed record Tunnels : PaneKind;
 

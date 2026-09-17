@@ -40,7 +40,19 @@ public interface IHostAccess
 /// Named on every one of these. Approving <c>systemctl restart nginx</c> means
 /// nothing until you know whose nginx.
 /// </param>
-public sealed record PendingCommand(string Host, string Command, string Why, string Reason, bool IsDestructive);
+/// <param name="Detail">
+/// What the substance of it is, where a line of command is not enough to decide
+/// by: the lines a write would change. Shown in the bar itself, for the same
+/// reason a tool call's arguments are — a gate whose substance is one click away
+/// is a gate people approve without reading.
+/// </param>
+public sealed record PendingCommand(
+    string Host,
+    string Command,
+    string Why,
+    string Reason,
+    bool IsDestructive,
+    string? Detail = null);
 
 /// <summary>
 /// Who says yes.
