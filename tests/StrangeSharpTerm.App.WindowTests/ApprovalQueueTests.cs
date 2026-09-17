@@ -162,13 +162,15 @@ public class ApprovalQueueTests
     /// The whole thing, end to end: a real fan-out where two hosts each want a
     /// command the policy will not run unattended.
     ///
-    /// This is the symptom as it appeared — the run simply never finished, and
+    /// This is the symptom as it appeared -- the run simply never finished, and
     /// the banner had gone, so there was nothing on screen to answer and nothing
-    /// to say why. It is worth a test of its own because the gate being correct
-    /// in isolation is not the same claim as a run that completes.
+    /// to say why. It drives a planned run, which is where hosts are still
+    /// worked on several at a time: Ask mode has one conversation now and asks
+    /// one thing at a time, so it can no longer put two hosts at the gate
+    /// together. Plan mode can, and does.
     /// </summary>
     [Fact]
-    public void ARunWhereTwoHostsBothNeedApprovalFinishes()
+    public void APlannedPhaseWhereTwoHostsBothNeedApprovalFinishes()
     {
         Headless.Run(() =>
         {
@@ -178,11 +180,18 @@ public class ApprovalQueueTests
                     alias => alias,
                     alias => new HostAgent(new Restarts(), new Nowhere(alias), new AssistSettings(), pane));
 
-            var run = new Orchestrator(new Nothing()).Ask(
-                "restart nginx",
-                [.. agents.Select(pair => new OrchestratorTarget(pair.Key, () => pair.Value))],
-                mayRunCommands: true,
-                CancellationToken.None);
+            var plan = new RunPlan(
+            [
+                new PlanPhase
+                {
+                    Name = "Restart nginx",
+                    Hosts = [.. agents.Keys],
+                    Commands = ["systemctl restart nginx"],
+                },
+            ]);
+
+            var run = new PlanRunner(alias => agents.GetValueOrDefault(alias))
+                .Run(plan, mayRunCommands: true, CancellationToken.None);
 
             // Both hosts reach the gate; they are answered one at a time.
             for (var answered = 0; answered < agents.Count; answered++)
@@ -193,9 +202,9 @@ public class ApprovalQueueTests
 
             Headless.Finish(run);
 
-            run.Result.Findings.Count.ShouldBe(2);
-            run.Result.Findings.ShouldAllBe(finding => finding.Outcome == HostOutcome.Reported);
-            run.Result.CommandsRun.ShouldBe(2);
+            var phase = run.Result.Phases.ShouldHaveSingleItem();
+            phase.Findings.Count.ShouldBe(2);
+            phase.Findings.ShouldAllBe(finding => finding.Outcome == HostOutcome.Reported);
         });
     }
 

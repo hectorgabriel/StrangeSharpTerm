@@ -29,33 +29,6 @@ public class OutcomeStylingTests
     private static TextBlock Labelled(Visual root, string text) =>
         root.GetVisualDescendants().OfType<TextBlock>().First(block => block.Text == text);
 
-    [Fact]
-    public void AFailedHostIsNotTheSameWordInTheSameColourAsOneThatReported()
-    {
-        Headless.Run(() =>
-        {
-            var model = new OrchestratorViewModel(
-                new Canned(Canned.Says("Summary.")),
-                [
-                    new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true },
-                    new TargetRow { Alias = "bastion", IsConnected = false, IsChosen = true },
-                ],
-                alias => alias == "bastion"
-                    ? new HostAgent(new Broken(), new Quiet(alias), new AssistSettings(), new StandingAnswer(true))
-                    : new HostAgent(
-                        new Canned(Canned.Says("Affected.")), new Quiet(alias), new AssistSettings(), new StandingAnswer(true)));
-
-            var window = new Window { Content = new OrchestratorView(model), Width = 480, Height = 640 };
-            window.Show();
-
-            model.Instruction = "is the journal filling the disk?";
-            Headless.Finish(model.RunCommand.ExecuteAsync(null));
-            Settle(window);
-
-            Labelled(window, "failed").Classes.ShouldContain("danger");
-            Labelled(window, "reported").Classes.ShouldNotContain("danger");
-        });
-    }
 
     /// <summary>
     /// The gate says which kind of command it stopped. It used to be red for

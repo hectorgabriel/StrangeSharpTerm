@@ -144,46 +144,55 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Ask: one row per host, then the collated answer. -->
-                <ItemsControl ItemsSource="{Binding Findings}" IsVisible="{Binding IsAsking}">
+                <!--
+                    Ask: one conversation, with the host named on every command.
+
+                    It used to be a card per host and a summary underneath,
+                    because every host had its own assistant and a further one
+                    collated what they said. There is one assistant now, and
+                    this is its transcript: what it asked, what it ran and
+                    where, and what it made of the lot.
+                -->
+                <ItemsControl ItemsSource="{Binding Rows}" IsVisible="{Binding IsAsking}">
                     <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:FindingRow">
-                            <Border Classes="chip" Padding="12,10" CornerRadius="6" Margin="0,0,0,6">
-                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Alias}"
-                                               FontWeight="SemiBold" />
-                                    <!-- The one word that says what became of this
-                                         host, in the colour that says it too. -->
-                                    <TextBlock Grid.Row="0" Grid.Column="1" Classes="muted" FontSize="11"
-                                               Classes.danger="{Binding Failed}"
-                                               Classes.warning="{Binding Stopped}"
-                                               Text="{Binding Label}" />
-                                    <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0"
-                                               TextWrapping="Wrap" FontSize="12" Text="{Binding Text}"
-                                               IsVisible="{Binding Reported}" />
-                                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" Classes="muted"
-                                               TextWrapping="Wrap" FontSize="12" Text="{Binding Text}"
-                                               IsVisible="{Binding !Reported}" />
-                                    <ContentControl Grid.Row="2" Grid.ColumnSpan="2" Content="{Binding}"
-                                                    ContentTemplate="{StaticResource Exchange}" />
-                                </Grid>
-                            </Border>
+                        <DataTemplate x:DataType="vm:AssistRow">
+                            <StackPanel Margin="0,0,0,8">
+                                <views:MarkdownView IsVisible="{Binding IsAnswer}" Text="{Binding Text}" />
+
+                                <!-- A command, and the host it went to. In a
+                                     fleet that is the first thing to know about
+                                     it: the same command means different things
+                                     on different servers. -->
+                                <Border Classes="chip" Padding="12,9" CornerRadius="6" IsVisible="{Binding IsStep}">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto">
+                                        <TextBlock Grid.Row="0" Grid.Column="0" FontSize="12" FontWeight="SemiBold"
+                                                   Margin="0,0,10,0" Text="{Binding Host}" />
+                                        <SelectableTextBlock Grid.Row="0" Grid.Column="1" FontFamily="monospace"
+                                                             FontSize="12" TextWrapping="Wrap"
+                                                             Text="{Binding Command}" />
+                                        <TextBlock Grid.Row="0" Grid.Column="2" Classes="muted" FontSize="11"
+                                                   Margin="10,0,0,0" VerticalAlignment="Top"
+                                                   Text="{Binding State}" />
+
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="muted"
+                                                   FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"
+                                                   Text="{Binding Why}" />
+
+                                        <Border Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,8,0,0"
+                                                Padding="8" CornerRadius="4" IsVisible="{Binding HasOutput}"
+                                                Background="{DynamicResource BackgroundBrush}">
+                                            <SelectableTextBlock FontFamily="monospace" FontSize="11"
+                                                                 TextWrapping="Wrap" Text="{Binding Output}" />
+                                        </Border>
+                                    </Grid>
+                                </Border>
+
+                                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                                           IsVisible="{Binding IsNote}" Text="{Binding Text}" />
+                            </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-
-                <Border Classes="chip" Padding="14,12" CornerRadius="6"
-                        IsVisible="{Binding Collated.Length}">
-                    <StackPanel Spacing="6">
-                        <TextBlock Classes="section" Text="ACROSS ALL HOSTS" />
-                        <!-- Commands here are shown but never staged: they apply to
-                             hosts, plural, and picking one terminal would be
-                             picking the wrong one. So no StageCommand, but they
-                             are still copyable, which is what a person does with
-                             a command meant for several servers. -->
-                        <views:MarkdownView Text="{Binding Collated}" />
-                    </StackPanel>
-                </Border>
 
                 <!-- Plan: every phase in full, each switchable. -->
                 <StackPanel Spacing="6" IsVisible="{Binding IsPlanning}">

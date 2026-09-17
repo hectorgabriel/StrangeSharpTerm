@@ -81,6 +81,15 @@ public sealed partial class AssistRow : ObservableObject
 
     public TranscriptEntry.Step? Step => Entry as TranscriptEntry.Step;
 
+    /// <summary>
+    /// Which host the command went to.
+    ///
+    /// Always known, and only worth drawing where a conversation covers more
+    /// than one machine: in a pane about a single host it would be the same
+    /// word on every row.
+    /// </summary>
+    public string Host => Step?.Host ?? "";
+
     public string Command => Step?.Command ?? "";
 
     public string Why => Step?.Why ?? "";

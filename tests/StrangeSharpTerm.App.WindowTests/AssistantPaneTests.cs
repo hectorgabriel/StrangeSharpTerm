@@ -93,40 +93,6 @@ public class AssistantPaneTests
         });
     }
 
-    [Fact]
-    public void FindingsReadInTheOrderTheHostsWereTickedNotTheOrderTheyAnswerIn()
-    {
-        Headless.Run(() =>
-        {
-            // web-01 takes its time; bastion is not connected and reports at
-            // once. A list that reordered itself as each host finished would
-            // come out differently on a second reading.
-            var model = new OrchestratorViewModel(
-                new Canned(Canned.Says("Summary.")),
-                [
-                    new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true },
-                    new TargetRow { Alias = "bastion", IsConnected = false, IsChosen = true },
-                    new TargetRow { Alias = "web-02", IsConnected = true, IsChosen = true },
-                ],
-                alias => alias == "bastion"
-                    ? null
-                    : new HostAgent(
-                        new Slow($"{alias} is affected.", alias == "web-01" ? 80 : 10),
-                        new Quiet(alias),
-                        new AssistSettings(),
-                        new StandingAnswer(true)));
-            var window = Show(new OrchestratorView(model));
-
-            model.Instruction = "is the journal filling the disk?";
-            Headless.Finish(model.RunCommand.ExecuteAsync(null));
-            Settle(window);
-
-            model.Findings.Select(finding => finding.Alias).ShouldBe(["web-01", "bastion", "web-02"]);
-            // And the question they are answers to is above them.
-            In<TextBlock>(window).Select(block => block.Text)
-                .ShouldContain("is the journal filling the disk?");
-        });
-    }
 
     /// <summary>A backend that takes its time, so the hosts finish out of order.</summary>
     private sealed class Slow(string answer, int milliseconds) : IAssistBackend
@@ -207,46 +173,6 @@ public class AssistantPaneTests
         });
     }
 
-    [Fact]
-    public void EveryHostIsListedAboveTheCollatedAnswerIncludingTheOnesNotAsked()
-    {
-        Headless.Run(() =>
-        {
-            var model = new OrchestratorViewModel(
-                new Canned(Canned.Says("Two of the three are affected.")),
-                [
-                    new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true },
-                    new TargetRow { Alias = "web-02", IsConnected = true, IsChosen = true },
-                    new TargetRow { Alias = "bastion", IsConnected = false, IsChosen = true },
-                ],
-                alias => alias == "bastion"
-                    ? null
-                    : new HostAgent(
-                        new Canned(Canned.Says($"{alias} is affected.")),
-                        new Quiet(alias),
-                        new AssistSettings(),
-                        new StandingAnswer(true)));
-            var window = Show(new OrchestratorView(model));
-
-            model.Instruction = "is the journal filling the disk?";
-            Headless.Finish(model.RunCommand.ExecuteAsync(null));
-            Settle(window);
-
-            var shown = Shown(window);
-            shown.ShouldContain("web-01");
-            shown.ShouldContain("bastion");
-            // A host the run cannot get an agent for is no longer skipped in
-            // silence: it gets a row of its own saying what became of it. Not
-            // asked rather than failed -- nothing went wrong on that host,
-            // there was simply nothing here to ask it with.
-            shown.ShouldContain("not asked");
-            shown.ShouldContain("reported");
-            // A summary that read as though it covered every host is the failure
-            // this layout exists to prevent.
-            shown.ShouldContain("ACROSS ALL HOSTS");
-            shown.ShouldContain("Two of the three are affected.");
-        });
-    }
 
     /// <summary>
     /// The reasoning used to be dropped between the provider and the pane. It is
@@ -348,91 +274,7 @@ public class AssistantPaneTests
         });
     }
 
-    /// <summary>
-    /// What each host said to the model, and what the model said back, under the
-    /// row for that host. Until now a run showed only the sentence each host
-    /// ended on: the commands it ran and what came back were visible only if you
-    /// had an assistant pane open on that host.
-    /// </summary>
-    [Fact]
-    public void EachHostsExchangeIsThereToOpenUnderneathItsRow()
-    {
-        Headless.Run(() =>
-        {
-            var model = new OrchestratorViewModel(
-                new Canned(Canned.Says("Both are fine.")),
-                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
-                alias => new HostAgent(
-                    new Canned(
-                        Canned.Runs("df -h", "to see the disk"),
-                        Canned.Says("Plenty of room.")),
-                    new Quiet(alias),
-                    new AssistSettings { AllowCommandsByDefault = true },
-                    new StandingAnswer(true)));
-            var window = Show(new OrchestratorView(model));
 
-            model.Instruction = "is the disk full?";
-            Headless.Finish(model.RunCommand.ExecuteAsync(null));
-            Settle(window);
-
-            var host = model.Findings.ShouldHaveSingleItem();
-            host.Alias.ShouldBe("web-01");
-            host.HasExchange.ShouldBeTrue();
-
-            // The question it was given, the command it ran, and its answer.
-            host.Exchange.Select(row => row.Text).ShouldContain("is the disk full?");
-            host.Exchange.ShouldContain(row => row.Command == "df -h");
-            host.Exchange.Select(row => row.Text).ShouldContain("Plenty of room.");
-
-            // Folded until asked for, and the command is on screen once it is.
-            host.IsExchangeOpen.ShouldBeFalse();
-            In<TextBlock>(window).Select(block => block.Text).ShouldNotContain("df -h");
-
-            host.ToggleExchangeCommand.Execute(null);
-            Settle(window);
-            In<TextBlock>(window).Select(block => block.Text).ShouldContain("df -h");
-        });
-    }
-
-    /// <summary>
-    /// The row is there from the moment the host is asked, not from the moment it
-    /// answers: a phase can take minutes, and a list that stays empty until it is
-    /// over looks like nothing is happening.
-    /// </summary>
-    [Fact]
-    public void AHostHasARowWhileItIsStillWorking()
-    {
-        Headless.Run(() =>
-        {
-            var answering = new TaskCompletionSource();
-            var model = new OrchestratorViewModel(
-                new Canned(Canned.Says("Done.")),
-                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
-                alias => new HostAgent(
-                    new Waiting(answering.Task, "Finished."),
-                    new Quiet(alias),
-                    new AssistSettings(),
-                    new StandingAnswer(true)));
-            var window = Show(new OrchestratorView(model));
-
-            model.Instruction = "is the disk full?";
-            var run = model.RunCommand.ExecuteAsync(null);
-            Settle(window);
-
-            // Asked, not answered.
-            var host = model.Findings.ShouldHaveSingleItem();
-            host.Alias.ShouldBe("web-01");
-            host.Label.ShouldBe("working");
-            In<TextBlock>(window).Select(block => block.Text).ShouldContain("web-01");
-
-            answering.SetResult();
-            Headless.Finish(run);
-            Settle(window);
-
-            host.Label.ShouldBe("reported");
-            host.Text.ShouldBe("Finished.");
-        });
-    }
 
     [Fact]
     public void APlanIsShownInFullAndNothingRunsUntilItIsRun()
@@ -683,6 +525,84 @@ public class AssistantPaneTests
 
         public Task<ToolApproval> Allow(PendingToolCall call, CancellationToken cancellationToken = default) =>
             gate().Allow(call, cancellationToken);
+    }
+
+    /// <summary>
+    /// Ask mode opens no conversation per host at all.
+    ///
+    /// It used to build one agent for every ticked host and a further
+    /// conversation to collate what they each said: nine for eight hosts. There
+    /// is one now, which reaches whichever host it chooses, so asking twice
+    /// builds no per-host agents either time.
+    /// </summary>
+    [Fact]
+    public void AskingAcrossHostsOpensOneConversationAndNoAgents()
+    {
+        Headless.Run(() =>
+        {
+            var built = new List<string>();
+            var model = new OrchestratorViewModel(
+                new Canned(Canned.Says("Nothing is wrong."), Canned.Says("Still nothing.")),
+                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+                alias =>
+                {
+                    built.Add(alias);
+                    return null;
+                },
+                _ => new Quiet("web-01"));
+
+            model.Instruction = "is the journal filling the disk?";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            model.Instruction = "and is it still?";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+
+            built.ShouldBeEmpty();
+            model.Rows.ShouldNotBeEmpty();
+        });
+    }
+
+    /// <summary>
+    /// A fresh agent was built for every phase, so on a given host phase three
+    /// had never heard of phase one -- the only thing that crossed between them
+    /// was the single captured value. One agent per host, held for the life of
+    /// the pane, is what makes a plan a sequence rather than a set of separate
+    /// errands. Plan mode still works that way; Ask mode no longer has agents.
+    /// </summary>
+    [Fact]
+    public void EachHostGetsOneAgentAndKeepsItAcrossPhases()
+    {
+        Headless.Run(() =>
+        {
+            const string plan = """
+            {"phases": [
+              {"name": "Look", "hosts": ["web-01"], "commands": ["uname -sr"]},
+              {"name": "Look again", "hosts": ["web-01"], "commands": ["uptime"]}
+            ]}
+            """;
+
+            var built = new List<string>();
+            var model = new OrchestratorViewModel(
+                new Canned(Canned.Says(plan)),
+                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+                alias =>
+                {
+                    built.Add(alias);
+                    return new HostAgent(
+                        new Canned(Canned.Says("done"), Canned.Says("done again")),
+                        new Quiet(alias),
+                        new AssistSettings(),
+                        new StandingAnswer(true));
+                });
+
+            model.Mode = OrchestratorMode.Plan;
+            model.Instruction = "look at this host twice";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+
+            // Two phases on one host, and one agent between them: the second
+            // phase reached the conversation the first one left.
+            built.ShouldBe(["web-01"]);
+        });
     }
 
     private sealed class Quiet(string alias) : IHostAccess

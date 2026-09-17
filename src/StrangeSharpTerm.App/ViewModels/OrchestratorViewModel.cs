@@ -223,6 +223,26 @@ public enum OrchestratorMode
 public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGate, IDisposable
 {
     private readonly Func<string, HostAgent?> _agentFor;
+
+    private readonly Func<string, IHostAccess?> _accessFor;
+
+    /// <summary>
+    /// A host reached through the agent that already has one.
+    ///
+    /// Only for callers that supplied an agent and no access of their own: the
+    /// window supplies both, because Ask mode wants the connection without the
+    /// conversation that used to come with it.
+    /// </summary>
+    private sealed class Named(HostAgent agent) : IHostAccess
+    {
+        public string Alias => agent.Alias;
+
+        public Task<HostSnapshot> Look(bool metrics, bool tail, int lines, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new HostSnapshot());
+
+        public Task<CommandOutcome> Run(string command, TimeSpan timeout, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("this orchestrator was given no way to run commands");
+    }
     private readonly IAssistBackend _backend;
 
     /// <summary>
@@ -237,10 +257,6 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     private readonly Dictionary<string, HostAgent> _agents = new(StringComparer.Ordinal);
 
     private readonly Planner _planner;
-    private readonly Orchestrator _orchestrator;
-
-    /// <summary>Where each ticked host's row belongs, for the run in progress.</summary>
-    private Dictionary<string, int> _order = new(StringComparer.Ordinal);
 
     private CancellationTokenSource? _running;
 
@@ -261,17 +277,29 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 
     private readonly Lock _asking = new();
 
-    public OrchestratorViewModel(IAssistBackend backend, IEnumerable<TargetRow> targets, Func<string, HostAgent?> agentFor)
+    /// <param name="agentFor">
+    /// A conversation about one host, for plan mode, which still runs a phase's
+    /// commands through a per-host agent.
+    /// </param>
+    /// <param name="accessFor">
+    /// A way to run a command on one host, for Ask mode, which has one
+    /// conversation and needs no agent per host at all -- only the connection.
+    /// </param>
+    public OrchestratorViewModel(
+        IAssistBackend backend,
+        IEnumerable<TargetRow> targets,
+        Func<string, HostAgent?> agentFor,
+        Func<string, IHostAccess?>? accessFor = null)
     {
+        // Falls back to the agent's own host, so a test that only cares about
+        // one of the two modes need only supply that one.
+        _accessFor = accessFor ?? (alias => agentFor(alias) is { } agent ? new Named(agent) : null);
         _backend = backend;
         _agentFor = agentFor;
         // One of each, for the life of the pane rather than the life of a run:
         // the conversation is the point of them.
         _planner = new Planner(backend);
         _planner.Thought += (_, thought) => Post(() => Thinking = thought);
-        _orchestrator = new Orchestrator(backend);
-        _orchestrator.Thought += (_, thought) => Post(() => Thinking = thought);
-        _orchestrator.Reported += (_, finding) => Post(() => Place(finding));
         foreach (var target in targets)
         {
             // Everything that reads the ticks, not just the list of them.
@@ -313,10 +341,6 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 
     [ObservableProperty]
     public partial bool IsRunning { get; private set; }
-
-    /// <summary>The collated answer, once every host has reported.</summary>
-    [ObservableProperty]
-    public partial string Collated { get; private set; } = "";
 
     /// <summary>
     /// The instruction the findings below are answers to.
@@ -455,57 +479,96 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     }
 
     /// <summary>One question, every selected host, then one call to collate them.</summary>
+    /// <summary>
+    /// One assistant, asked once, reaching whichever of the ticked hosts it
+    /// decides to.
+    ///
+    /// It used to open a conversation per host and a further one to collate
+    /// what they each reported. This is one, and it chooses where to look: the
+    /// rows below are its transcript, with the host named on every command,
+    /// rather than a card per host with a summary underneath.
+    /// </summary>
     private async Task Fan()
     {
-        Forget(Findings);
-        Collated = "";
+        Rows.Clear();
         Refusal = null;
         var instruction = Instruction.Trim();
         Asked = instruction;
 
-        // The order the hosts were ticked in, not the order they answer in. A
-        // run across a rack is read as a list, and a list that reorders itself
-        // as each host finishes is one nobody can follow -- least of all on the
-        // second reading, when it comes out differently.
-        _order = Chosen
-            .Select((alias, index) => (alias, index))
-            .ToDictionary(ticked => ticked.alias, ticked => ticked.index, StringComparer.Ordinal);
-
-        // A row per ticked host before any of them answers, each following its
-        // own agent: a fan-out takes as long as its slowest host, and a list
-        // that stays empty until then looks like nothing is happening.
-        foreach (var alias in Chosen)
-        {
-            var row = new FindingRow(alias);
-            if (AgentFor(alias) is { } agent)
-                row.Watch(agent);
-            Findings.Add(row);
-        }
-
         Thinking = "";
         IsThinkingOpen = true;
 
+        var fleet = Fleet();
         await Working(async token =>
         {
-            var run = await _orchestrator.Ask(instruction, Ticked(), MayRunCommands, token);
+            var answer = await fleet.Ask(instruction, MayRunCommands, token);
             Post(() =>
             {
-                Collated = run.Collated;
-                Progress = $"{run.HostsAsked} hosts · {run.CommandsRun} commands";
+                Progress = $"{Chosen.Count} hosts · {answer.CommandsRun} commands";
                 IsThinkingOpen = false;
             });
 
-            // The summariser was handed these as its own question. The planner
-            // was not there at all, and a plan asked for next is about these
-            // hosts in the state this run left them.
-            _planner.Record(Reported(run));
+            // The planner was not there at all, and a plan asked for next is
+            // about these hosts in the state this run left them.
+            _planner.Record($"# Asked across {Chosen.Count} hosts: {instruction}\n\n{answer.Text}");
         });
     }
 
     /// <summary>
-    /// Where a finding goes: after every finding whose host was ticked before
-    /// it, whatever order they happen to answer in.
+    /// The fleet assistant for this run, following its transcript into the
+    /// pane.
+    ///
+    /// One per run rather than one per pane: a fleet conversation is about a
+    /// set of hosts, and the set is whatever was ticked when Run was pressed.
     /// </summary>
+    private FleetAgent Fleet()
+    {
+        var fleet = new FleetAgent(
+            _backend,
+            [.. Targets.Where(target => target.IsChosen)
+                .Select(target => new FleetHost(target.Alias, () => _accessFor(target.Alias)))],
+            this);
+
+        fleet.Added += (_, entry) => Post(() =>
+        {
+            _rows[entry] = new AssistRow { Entry = entry };
+            Rows.Add(_rows[entry]);
+            if (entry is TranscriptEntry.Answer answer)
+                Thinking = answer.Reasoning;
+        });
+        fleet.Updated += (_, entry) => Post(() =>
+        {
+            if (_rows.TryGetValue(entry, out var row))
+                row.Refresh();
+            if (entry is TranscriptEntry.Answer answer && answer.Reasoning.Length > 0)
+                Thinking = answer.Reasoning;
+        });
+
+        // Which host it has, while it has it. A pane showing that host says so
+        // for as long as the command is running.
+        fleet.Working += (_, step) => Post(() => Driving?.Invoke(this, step));
+        return fleet;
+    }
+
+    /// <summary>
+    /// What the assistant is doing on which host, for the window to show.
+    ///
+    /// Raised on the way into a command and again on the way out, so a pane can
+    /// say the assistant has this host and then that it has let go.
+    /// </summary>
+    public event EventHandler<FleetStep>? Driving;
+
+    /// <summary>The fleet conversation, as the pane draws it.</summary>
+    public ObservableCollection<AssistRow> Rows { get; } = [];
+
+    // By reference, not by value, for the reason AssistantViewModel's own copy
+    // of this records: a step is a record whose state changes as it runs, so
+    // its hash changes with it. Keyed by value, the row for a command becomes
+    // unfindable the moment the command finishes, and every step stays on
+    // screen saying "running" forever -- which is exactly what it did.
+    private readonly Dictionary<TranscriptEntry, AssistRow> _rows =
+        new(ReferenceEqualityComparer.Instance);
+
     /// <summary>
     /// Empties a list of rows and lets go of the agents they were following.
     ///
@@ -519,30 +582,12 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         rows.Clear();
     }
 
-    private void Place(HostFinding finding)
-    {
-        // The row is already there, waiting, in the order the hosts were ticked.
-        if (Findings.FirstOrDefault(row => row.Alias == finding.Alias) is { } waiting)
-        {
-            waiting.Finding = finding;
-        }
-        else
-        {
-            var mine = _order.GetValueOrDefault(finding.Alias, int.MaxValue);
-            var at = Findings.Count(placed => _order.GetValueOrDefault(placed.Alias, int.MaxValue) < mine);
-            Findings.Insert(at, new FindingRow(finding));
-        }
-
-        Progress = $"{Findings.Count(row => row.Finding is not null)} of {_order.Count} reported";
-    }
-
     /// <summary>Asks for a plan and runs none of it.</summary>
     private async Task Draft()
     {
         Phases.Clear();
         Forget(Findings);
         Refusal = null;
-        Collated = "";
         var goal = Instruction.Trim();
         // The goal stands above the plan for the same reason the question stands
         // above the findings: review is the only thing between a model and a
@@ -658,20 +703,8 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             // found out whether any of it worked.
             var reported = Reported(result);
             _planner.Record(reported);
-            _orchestrator.Record(reported);
         });
     }
-
-    /// <summary>What a fan-out amounts to: what was asked, and what each host said.</summary>
-    private static string Reported(OrchestratedRun run) =>
-        string.Join('\n', [
-            $"# Asked across {run.Findings.Count} hosts: {run.Instruction}",
-            .. run.Findings.SelectMany(finding => new[]
-            {
-                $"## {finding.Alias} ({finding.Label})",
-                finding.Text,
-            }),
-        ]).Replace("\r", "").Trim();
 
     /// <summary>
     /// What a run amounts to, in the shape the summariser already reads: each
@@ -875,22 +908,6 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             return null;
         return _agents[alias] = built;
     }
-
-    private IReadOnlyList<OrchestratorTarget> Ticked() =>
-    [
-        .. Targets
-            .Where(target => target.IsChosen)
-            .Select(target => new OrchestratorTarget(
-                target.Alias,
-                // Still only built for a host that is actually asked, so a run
-                // over eight hosts does not open eight connections it will not
-                // use -- but built once and kept, so the host remembers.
-                () => AgentFor(target.Alias),
-                // The ticks were taken from the inventory when this pane opened,
-                // so a host that will not resolve now is one that has been
-                // deleted since.
-                "It is not in the inventory any more.")),
-    ];
 
     private async Task Working(Func<CancellationToken, Task> work)
     {
