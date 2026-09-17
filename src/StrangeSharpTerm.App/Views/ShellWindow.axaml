@@ -276,6 +276,7 @@
                                  OpenPanes="{Binding OpenPanes}"
                                  Axis="{Binding Axis}"
                                  IsTiled="{Binding IsTiled}"
+                                 Driving="{Binding Driving}"
                                  FocusCommand="{Binding FocusPaneCommand}" />
 
             <TextBlock Grid.Row="3" Classes="muted" Margin="24" TextWrapping="Wrap"

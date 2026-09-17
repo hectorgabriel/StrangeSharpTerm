@@ -1016,10 +1016,56 @@ public sealed partial class ShellViewModel : ObservableObject
                 // would make a run across eight hosts depend on which of them
                 // had a window open and what was last printed in it.
                 ? Agent(target, () => null, inARun: true)(() => model!)
+                : null,
+            // Ask mode needs the connection and nothing else: one assistant
+            // decides what to run and where, so there is no conversation per
+            // host to build.
+            alias => Known(alias) is { } target
+                ? new SshHostAccess(
+                    target.Name,
+                    _sessions.Commands(target),
+                    _sessions.Health(target),
+                    () => null)
                 : null);
+
+        // Which host it has, marked on the tile showing that host, for as long
+        // as it has it.
+        model.Driving += (_, step) => Mark(step);
 
         Dock = _orchestrator = _orchestratorView(model);
     }
+
+    /// <summary>
+    /// Marks every open pane for a host while the assistant is working in it.
+    ///
+    /// Every pane rather than the focused one: a host can be open twice, and
+    /// marking one of them would be telling half the truth. Nothing at all
+    /// where a host has no pane, which is the ordinary case for a run over a
+    /// rack -- and the run does not depend on it either way.
+    /// </summary>
+    private void Mark(FleetStep step) =>
+        Driving = step.Running
+            ?
+            [
+                .. Workspace.Panes
+                    .Where(pane => pane.IsTerminal && Named(pane.ConnectionId) == step.Host)
+                    .Select(pane => pane.Id),
+            ]
+            : [];
+
+    /// <summary>What the inventory calls the host a pane belongs to.</summary>
+    private string? Named(NodeId? connection) =>
+        connection is { } id ? Inventory.Tree.Connections.GetValueOrDefault(id)?.Name : null;
+
+    /// <summary>
+    /// The panes the assistant has hold of just now.
+    ///
+    /// The layout outlines them while it does, which is the whole of "watch it
+    /// work": a tile that is being driven says so, and stops saying so the
+    /// moment the command comes back.
+    /// </summary>
+    [ObservableProperty]
+    public partial IReadOnlyList<NodeId> Driving { get; private set; } = [];
 
     /// <summary>The fan-out, once someone has asked for it. One per window.</summary>
     private Control? _orchestrator;

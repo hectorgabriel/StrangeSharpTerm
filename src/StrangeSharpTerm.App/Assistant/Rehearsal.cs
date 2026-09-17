@@ -1,3 +1,4 @@
+using System.Text;
 using Avalonia.Controls;
 using StrangeSharpTerm.Model;
 using StrangeSharpTerm.Terminal;
@@ -242,10 +243,14 @@ internal static class Rehearsal
         var shell = new ShellViewModel(
             new InventoryViewModel(null, new InventoryTree(connections: connections)),
             new RehearsedSessions(),
-            (_, _) => Screen(),
             assist: settings,
-            backends: _ => new RehearsedBackend(RehearsedBackend.Says(
-                "Nothing in this window reached a server: it is a rehearsal of the layout.")),
+            backends: _ => new RehearsedBackend(
+                RehearsedBackend.FleetRuns("web-01", "df -h /", "how full", "c1"),
+                RehearsedBackend.FleetRuns("web-02", "df -h /", "and here", "c2"),
+                RehearsedBackend.FleetRuns("db-primary", "df -h /", "and here", "c3"),
+                RehearsedBackend.FleetRuns("bastion", "df -h /", "and here", "c4"),
+                RehearsedBackend.Says(
+                    "`web-01` is the one to look at -- **98% full**. The other three are under half.")),
             assistKeys: Keys());
 
         var window = new Views.ShellWindow(shell) { Width = 1280, Height = 820 };
@@ -256,51 +261,42 @@ internal static class Rehearsal
                 await shell.OpenTerminal(connection);
 
             shell.ToggleTilesCommand.Execute(null);
-            shell.Inventory.Selection = connections[0].Id;
-            shell.OpenAssistantCommand.Execute(null);
+
+            // And then the fleet assistant working through them, so the thing
+            // this window is for -- watching one assistant drive several hosts
+            // -- is something you can see rather than read about.
+            shell.AskSeveralHostsCommand.Execute(null);
+            if ((shell.Dock as Views.OrchestratorView)?.DataContext is OrchestratorViewModel fleet)
+            {
+                foreach (var target in fleet.Targets)
+                    target.IsChosen = true;
+                fleet.MayRunCommands = true;
+                fleet.Instruction = "how full is the disk on each of these?";
+                await fleet.RunCommand.ExecuteAsync(null);
+            }
         }, Avalonia.Threading.DispatcherPriority.Background);
 
         return window;
-    }
-
-    /// <summary>
-    /// What a session looks like when there is no session: a prompt and the last
-    /// thing someone typed at it, one screen per host in the order they open.
-    /// </summary>
-    private static Control Screen()
-    {
-        var text = Screens[_screen++ % Screens.Length];
-        return new Border
-        {
-            Background = Avalonia.Application.Current?.FindResource("BackgroundBrush") as Avalonia.Media.IBrush,
-            Padding = new Avalonia.Thickness(10),
-            Child = new TextBlock
-            {
-                FontFamily = "monospace",
-                FontSize = 12,
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                Text = text,
-            },
-        };
     }
 
     private static int _screen;
 
     private static readonly string[] Screens =
     [
-        "deploy@web-01:~$ df -h /\nFilesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        49G   "
-            + "46G  1.2G  98% /\ndeploy@web-01:~$ ",
-        "deploy@web-02:~$ uptime\n 14:22:01 up 12 days,  3:41,  1 user,  load average: 1.85, 1.98, 2.11\n"
+        "deploy@web-01:~$ df -h /\r\nFilesystem      Size  Used Avail Use% Mounted on\r\n/dev/sda1        49G   "
+            + "46G  1.2G  98% /\r\ndeploy@web-01:~$ ",
+        "deploy@web-02:~$ uptime\r\n 14:22:01 up 12 days,  3:41,  1 user,  load average: 1.85, 1.98, 2.11\r\n"
             + "deploy@web-02:~$ ",
-        "postgres@db-primary:~$ pg_isready\n/var/run/postgresql:5432 - accepting connections\n"
+        "postgres@db-primary:~$ pg_isready\r\n/var/run/postgresql:5432 - accepting connections\r\n"
             + "postgres@db-primary:~$ ",
-        "deploy@bastion:~$ who\ndeploy   pts/0        14:02 (10.0.0.4)\ndeploy@bastion:~$ ",
+        "deploy@bastion:~$ who\r\ndeploy   pts/0        14:02 (10.0.0.4)\r\ndeploy@bastion:~$ ",
     ];
 
     /// <summary>Every host answering from nowhere, so a whole window can be arranged without a network.</summary>
     private sealed class RehearsedSessions : IHostSessions
     {
-        public TerminalSession Shell(Connection connection) => new(new QuietChannel());
+        public TerminalSession Shell(Connection connection) =>
+            new(new QuietChannel(Screens[_screen++ % Screens.Length]));
 
         public IRemoteFiles Files(Connection connection) => throw new NotSupportedException("rehearsed");
 
@@ -317,8 +313,18 @@ internal static class Rehearsal
         {
             public ServerMetrics Collect() => Metrics;
 
-            public CommandResult Run(string command, TimeSpan timeout) =>
-                new(0, "Nothing ran: this window is a rehearsal.", "");
+            public CommandResult Run(string command, TimeSpan timeout)
+            {
+                // Slow enough that the pane being driven is visibly being
+                // driven: the mark on a tile is worth nothing if it comes and
+                // goes faster than anyone can see it. A real server takes about
+                // this long to answer anything worth asking.
+                Thread.Sleep(2500);
+                return new CommandResult(0, Df, "");
+            }
+
+            private const string Df =
+                "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        49G   46G  1.2G  98% /";
         }
 
         /// <summary>
@@ -327,16 +333,18 @@ internal static class Rehearsal
         /// Not an empty MemoryStream: reading one returns zero, which a terminal
         /// reads as the end of the shell and answers by asking again, forever.
         /// </summary>
-        private sealed class QuietChannel : ITerminalChannel
+        private sealed class QuietChannel(string greeting) : ITerminalChannel
         {
-            public Stream Stream { get; } = new Silence();
+            public Stream Stream { get; } = new Silence(greeting);
 
             public void Resize(int columns, int rows) { }
 
             public void Dispose() => Stream.Dispose();
 
-            private sealed class Silence : Stream
+            private sealed class Silence(string greeting) : Stream
             {
+                private ReadOnlyMemory<byte> _left = Encoding.UTF8.GetBytes(greeting);
+
                 public override bool CanRead => true;
 
                 public override bool CanSeek => false;
@@ -349,7 +357,22 @@ internal static class Rehearsal
 
                 public override void Flush() { }
 
-                public override int Read(byte[] buffer, int offset, int count) => Block();
+                /// <summary>
+                /// What the host said when the session opened, and then nothing
+                /// ever again -- which is a quiet shell rather than a closed
+                /// one. Returning zero would be the end of the session, and a
+                /// terminal reading an ended stream asks again forever.
+                /// </summary>
+                public override int Read(byte[] buffer, int offset, int count)
+                {
+                    if (_left.IsEmpty)
+                        return Block();
+
+                    var taken = Math.Min(count, _left.Length);
+                    _left.Span[..taken].CopyTo(buffer.AsSpan(offset));
+                    _left = _left[taken..];
+                    return taken;
+                }
 
                 public override long Seek(long offset, SeekOrigin origin) => 0;
 

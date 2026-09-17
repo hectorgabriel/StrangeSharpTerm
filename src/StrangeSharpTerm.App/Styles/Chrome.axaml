@@ -149,6 +149,13 @@
         <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
     </Style>
 
+    <!-- A tile the assistant is running something in. The accent, because it
+         is the same thing the focus outline means: this is where what is
+         happening is happening. -->
+    <Style Selector="Border.tilename.driven">
+        <Setter Property="Background" Value="{DynamicResource SelectionBrush}" />
+    </Style>
+
     <!-- The name above a tile. Quiet, and the accent once it has the keyboard:
          in a window showing eight servers, which one a keystroke reaches is the
          thing that has to be obvious. -->
