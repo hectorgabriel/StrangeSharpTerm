@@ -263,6 +263,28 @@ public class WorkspaceAgentTests
     }
 
     [Fact]
+    public async Task AndNotIntoANewFileEither()
+    {
+        // Not the same failure and just as bad: a .env.production copied from a
+        // scrubbed .env is a deploy whose password is the word that hid the
+        // password.
+        var workspace = new FakeWorkspace().With(".env", "DB_PASSWORD=hunter2\n");
+        var gate = new RecordingGate();
+        var agent = Agent(
+            workspace,
+            gate,
+            ScriptedBackend.Calls(
+                WorkspaceTools.WriteFile,
+                new { path = ".env.production", content = "DB_PASSWORD=[redacted]\n", why = "copy it for production" }),
+            ScriptedBackend.Says("I cannot copy that."));
+
+        await agent.Ask("make a production copy", Editing, TestContext.Current.CancellationToken);
+
+        gate.Asked.ShouldBeEmpty();
+        workspace.Written.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task AFileThatAlreadySaysExactlyThatIsNotAQuestionForAnybody()
     {
         var workspace = new FakeWorkspace().With("app.py", "print()");
