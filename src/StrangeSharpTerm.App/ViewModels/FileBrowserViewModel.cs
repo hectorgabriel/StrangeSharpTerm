@@ -234,25 +234,14 @@ public sealed partial class FileBrowserViewModel : ObservableObject
     ///
     /// Always with forward slashes: this is a remote POSIX path, and
     /// <see cref="System.IO.Path"/> would helpfully turn it into a Windows one on
-    /// Windows.
+    /// Windows. The rules live in <see cref="PosixPath"/>, which the workspace
+    /// decides what is inside a folder with — two answers to "what is the parent
+    /// of this path" is one more than anything should have.
     /// </summary>
-    public static string? Parent(string path)
-    {
-        var trimmed = path.TrimEnd('/');
-        if (trimmed.Length == 0)
-            return null;
-        var cut = trimmed.LastIndexOf('/');
-        return cut switch
-        {
-            < 0 => null,
-            0 => "/",
-            _ => trimmed[..cut],
-        };
-    }
+    public static string? Parent(string path) => PosixPath.Parent(path);
 
-    /// <summary>A remote path joined the remote way, whatever this machine is.</summary>
-    public static string Join(string directory, string name) =>
-        directory.EndsWith('/') ? directory + name : $"{directory}/{name}";
+    /// <inheritdoc cref="PosixPath.Join"/>
+    public static string Join(string directory, string name) => PosixPath.Join(directory, name);
 
     private static string DownloadsFolder()
     {

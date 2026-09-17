@@ -392,6 +392,106 @@ internal static class Rehearsal
     private static TargetRow Target(string alias, bool connected, bool chosen) =>
         new() { Alias = alias, IsConnected = connected, IsChosen = chosen };
 
+    /// <summary>
+    /// An invented project, so the workspace pane can be looked at without a
+    /// server: a tree with something in it, and files worth opening.
+    /// </summary>
+    internal static IRemoteFiles Project()
+    {
+        var files = new RehearsedFiles("/home/deploy");
+        files.Put("/home/deploy/srv/app/app.py",
+            "from flask import Flask\n\napp = Flask(__name__)\n\n\n@app.route(\"/\")\ndef index():\n"
+            + "    return \"hello\"\n");
+        files.Put("/home/deploy/srv/app/requirements.txt", "flask==3.0.3\ngunicorn==22.0.0\n");
+        files.Put("/home/deploy/srv/app/conf/nginx.conf",
+            "server {\n  listen 80;\n  server_name app.example.com;\n\n  location / {\n"
+            + "    proxy_pass http://127.0.0.1:8000;\n  }\n}\n");
+        files.Put("/home/deploy/srv/app/conf/gunicorn.py", "bind = \"127.0.0.1:8000\"\nworkers = 2\n");
+        files.Put("/home/deploy/srv/app/deploy/service.unit",
+            "[Unit]\nDescription=app\n\n[Service]\nExecStart=/srv/app/.venv/bin/gunicorn\n");
+        return files;
+    }
+
+    /// <summary>The workspace pane over that project, with a file open in it.</summary>
+    internal static Window WorkspacePane()
+    {
+        var model = new HostWorkspaceViewModel(Project(), "web-01", "/home/deploy/srv/app");
+        var window = Window("Workspace — web-01", new WorkspaceView(model), 1000, 720);
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+        {
+            await model.RefreshCommand.ExecuteAsync(null);
+            // A folder open and a file in the editor: the empty pane says what
+            // the folder is for, and this says what the pane is.
+            if (model.Tree.FirstOrDefault(node => node.Name == "conf") is { } conf)
+            {
+                conf.IsExpanded = true;
+                await conf.Fill();
+            }
+            await model.OpenFile("conf/nginx.conf");
+        }, Avalonia.Threading.DispatcherPriority.Background);
+
+        return window;
+    }
+
+    /// <summary>
+    /// The assistant stopped at a write, with the diff in the bar.
+    ///
+    /// The riskiest surface the workspace adds, and the one nobody could
+    /// otherwise look at: it needs a folder, an API key and a model that decides
+    /// to change a file. What is being looked at is whether the change is
+    /// readable at the moment somebody has to approve it.
+    /// </summary>
+    internal static Window FileWritePane()
+    {
+        var host = new RehearsedHost("web-01", Metrics, Tail);
+        var workspace = new RemoteWorkspaceAccess(
+            new RemoteWorkspace(Project(), "/home/deploy/srv/app"));
+
+        var backend = new RehearsedBackend(
+            RehearsedBackend.Calls(
+                WorkspaceTools.ReadFile, new { path = "conf/nginx.conf" }, "f1"),
+            RehearsedBackend.Calls(
+                WorkspaceTools.WriteFile,
+                new
+                {
+                    path = "conf/nginx.conf",
+                    content = "server {\n  listen 80;\n  server_name app.example.com;\n\n"
+                        + "  client_max_body_size 25m;\n\n  location / {\n"
+                        + "    proxy_pass http://127.0.0.1:8000;\n"
+                        + "    proxy_read_timeout 120s;\n  }\n}\n",
+                    why = "raise the upload limit and the proxy timeout",
+                },
+                "f2"),
+            RehearsedBackend.Says(
+                "Two lines, both in `conf/nginx.conf`:\n\n"
+                + "- `client_max_body_size 25m` — the 413s are uploads over 1M, which is the default\n"
+                + "- `proxy_read_timeout 120s` — gunicorn has two workers and the export takes about 90s\n\n"
+                + "It needs a reload to take:\n\n```sh\nsudo nginx -s reload\n```"));
+
+        var settings = new AssistSettings();
+        AssistantViewModel? model = null;
+        model = new AssistantViewModel(
+            new HostAgent(backend, host, settings, new Late(() => model!), null, workspace),
+            settings,
+            _ => { },
+            () => workspace.RootLabel)
+        {
+            ShowsAlias = true,
+        };
+        model.MayEditFiles = true;
+
+        var window = Window("Assistant writing a file — web-01", new AssistantView(model), 680, 760);
+        Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
+        {
+            await model.LookCommand.ExecuteAsync(null);
+            model.Question = "uploads over a megabyte are 413ing and the export times out";
+            await model.AskCommand.ExecuteAsync(null);
+        }, Avalonia.Threading.DispatcherPriority.Background);
+
+        return window;
+    }
+
     private static Window Window(string title, Control pane, int width, int height) =>
         new()
         {
@@ -401,6 +501,72 @@ internal static class Rehearsal
             Content = pane,
             Background = Avalonia.Application.Current?.FindResource("BackgroundBrush") as Avalonia.Media.IBrush,
         };
+
+    /// <summary>
+    /// A project in memory, invented.
+    ///
+    /// Here rather than in the tests for the same reason the rehearsed provider
+    /// is: the workspace pane cannot be looked at without a server, and a
+    /// surface nobody can look at is a surface nothing is found in.
+    /// </summary>
+    private sealed class RehearsedFiles(string home) : IRemoteFiles
+    {
+        private readonly Dictionary<string, byte[]> _files = [];
+        private readonly HashSet<string> _directories = ["/", "/home", home];
+
+        public string Home => home;
+
+        internal void Put(string path, string content)
+        {
+            _files[path] = Encoding.UTF8.GetBytes(content);
+            for (var parent = PosixPath.Parent(path); parent is not null; parent = PosixPath.Parent(parent))
+                _directories.Add(parent);
+        }
+
+        public IReadOnlyList<RemoteEntry> List(string path) =>
+        [
+            .. _directories.Where(directory => PosixPath.Parent(directory) == path)
+                .Select(directory => new RemoteEntry(
+                    PosixPath.Name(directory), directory, true, false, 4096, new DateTime(2026, 9, 1, 9, 12, 0))),
+            .. _files.Where(file => PosixPath.Parent(file.Key) == path)
+                .Select(file => new RemoteEntry(
+                    PosixPath.Name(file.Key), file.Key, false, false, file.Value.Length,
+                    new DateTime(2026, 9, 2, 16, 4, 0))),
+        ];
+
+        public RemoteEntry? Stat(string path)
+        {
+            if (_directories.Contains(path))
+                return new RemoteEntry(PosixPath.Name(path), path, true, false, 4096, new DateTime(2026, 9, 1));
+            return _files.TryGetValue(path, out var content)
+                ? new RemoteEntry(
+                    PosixPath.Name(path), path, false, false, content.Length, new DateTime(2026, 9, 2, 16, 4, 0))
+                : null;
+        }
+
+        public byte[] Read(string path, long limit) =>
+            _files.TryGetValue(path, out var content) ? content : throw new FileNotFoundException(path);
+
+        public void Write(string path, byte[] content) => _files[path] = content;
+
+        public void Download(string remotePath, string localPath) { }
+
+        public void Upload(string localPath, string remotePath) { }
+
+        public void Delete(RemoteEntry entry)
+        {
+            _files.Remove(entry.Path);
+            _directories.Remove(entry.Path);
+        }
+
+        public void Rename(string path, string newPath)
+        {
+            if (_files.Remove(path, out var content))
+                _files[newPath] = content;
+        }
+
+        public void CreateDirectory(string path) => _directories.Add(path);
+    }
 
     /// <summary>The pane is its own gate, and does not exist until the agent it holds does.</summary>
     private sealed class Late(Func<ICommandGate> gate) : ICommandGate

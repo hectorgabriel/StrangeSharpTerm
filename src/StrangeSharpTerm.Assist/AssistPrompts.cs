@@ -45,6 +45,46 @@ public static class AssistPrompts
         "small enough to read.");
 
     /// <summary>
+    /// What is said about the open folder, when there is one.
+    ///
+    /// The root is named in the prompt rather than only enforced, because a
+    /// model that does not know where it is spends its turns asking for paths
+    /// that are refused. The refusal is still what holds the line: this is how
+    /// it is told, not why it is true.
+    /// </summary>
+    /// <param name="mayWrite">
+    /// Whether <c>write_file</c> is offered at all. When it is not, saying so is
+    /// what stops a model writing a file into a fenced block and calling the
+    /// work done.
+    /// </param>
+    public static string Workspace(string root, bool mayWrite)
+    {
+        var reading = string.Join("\n",
+            $"A folder on this host is open as a workspace: {root}. You have list_files and",
+            "read_file for it. Paths are relative to that folder, and nothing outside it can be",
+            "read or written, whatever the user asks for -- say so rather than trying another",
+            "path.",
+            "",
+            "Read a file before you talk about it. What is in the workspace is the machine's real",
+            "configuration, and it is worth more than what a package usually ships.");
+
+        return mayWrite
+            ? string.Join("\n",
+                reading,
+                "",
+                "You also have write_file, which replaces a file whole -- send its complete new",
+                "contents, not a patch and not the part you changed. Read the file first unless you",
+                "are creating it. Every write stops and shows the user exactly which lines change,",
+                "and they may refuse; a refusal is an answer, so do not write the same thing",
+                "somewhere else or suggest a command that would do it instead.")
+            : string.Join("\n",
+                reading,
+                "",
+                "You cannot write to it: editing is turned off for this conversation. When a file",
+                "needs changing, show the change and say which file it goes in.");
+    }
+
+    /// <summary>
     /// What is said about connected tools when there are any.
     ///
     /// The important sentence is the last one. A tool result is data from a

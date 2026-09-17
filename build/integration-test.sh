@@ -113,6 +113,28 @@ check "700 KiB round-trips by SHA-256" \
     "$(shasum -a 256 < "$WORK/downloaded.bin" | cut -d' ' -f1)"
 
 echo
+echo "workspace:"
+# The rule the pane and the assistant's file tools both go through: a root, and
+# nothing outside it. Proved against a real server, because a path that climbs
+# out of the folder is exactly the case a unit test can only check as text.
+WS="$SANDBOX/project"
+mkdir -p "$WS/conf"
+printf 'server {\n  listen 80;\n}\n' > "$WS/conf/nginx.conf"
+check "a file inside the folder reads back" \
+    "$(run workspace "$TARGET" --root "$WS" --cat conf/nginx.conf | tail -3 | head -1)" \
+    "server {"
+check "a file saved from the workspace lands on the server" \
+    "$(run workspace "$TARGET" --root "$WS" --write conf/extra.conf --content 'listen 8080;' >/dev/null; \
+        cat "$WS/conf/extra.conf")" \
+    "listen 8080;"
+check "a path climbing out of the folder is refused" \
+    "$(run workspace "$TARGET" --root "$WS" --cat ../../../../etc/hostname | grep -c '^refused=')" \
+    "1"
+check "an absolute path elsewhere is refused too" \
+    "$(run workspace "$TARGET" --root "$WS" --cat /etc/hostname | grep -c '^refused=')" \
+    "1"
+
+echo
 echo "failure classification:"
 check "a bad user reports authentication, not a mystery" \
     "$(run exec "nosuchuser@127.0.0.1:$PORT" true 2>&1 >/dev/null | head -1)" \

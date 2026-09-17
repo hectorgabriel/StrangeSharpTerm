@@ -72,6 +72,10 @@ ICONS = {
     "plug": "(connect)",
     "unplug": "(disconnect)",
     "panel-left": "(toggle sidebar)",
+    # The workspace: a tree that can be added to, and a file that can be saved.
+    "file-plus": "(new file in the workspace)",
+    "folder-plus": "(new folder in the workspace)",
+    "save": "(write the open file back)",
 }
 
 

@@ -82,13 +82,29 @@ public abstract record TranscriptEntry
 
         public StepState State { get; set; } = StepState.Waiting;
 
-        /// <summary>Why a person was asked. Empty when the policy let it through.</summary>
-        public string Gate { get; init; } = "";
+        /// <summary>
+        /// Why a person was asked. Empty when the policy let it through.
+        ///
+        /// Settable, because a write is judged twice: by where the path is,
+        /// before anything is read, and then by how much it changes, which is
+        /// only known once the file has been read. The row says the second one.
+        /// </summary>
+        public string Gate { get; set; } = "";
 
         public bool IsDestructive { get; init; }
 
         /// <summary>Where the call goes, for a connected tool. Null for a command, which goes to this host.</summary>
         public string? Destination { get; init; }
+
+        /// <summary>
+        /// The substance of it, where the one line above is not enough to
+        /// decide by: the lines a write would change, shown with the question
+        /// rather than behind it.
+        /// </summary>
+        public string Detail { get; set; } = "";
+
+        /// <summary>Whether this row is a file in the workspace rather than a command.</summary>
+        public bool IsFile { get; init; }
 
         /// <summary>The server's own claim that its tool only reads. Shown, never acted on.</summary>
         public bool ReadOnlyClaim { get; init; }

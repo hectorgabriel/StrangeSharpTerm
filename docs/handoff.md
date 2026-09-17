@@ -16,9 +16,10 @@ means; this says only what is done, what is in flight, and what to do first.
 | **M4** done | the window (sidebar, tabs, host detail, splits, broadcast), the theme system, the host and folder editors, the menu bar, the command palette, and the headless UI driver. `docs/adr/0004` and `0005` record the decisions |
 | **M8** done, as far as an account allows | `build/package.sh` (bundle, ad-hoc or Developer ID, disk image, notarisation written and gated), `build/install.sh`, `build/package.ps1`, `build/make-icon.sh`, and a CI job that packages both platforms on every push. `docs/adr/0008` records what a free Apple account can and cannot do, and the three things that only showed up by running it |
 | **M7** done | `StrangeSharpTerm.Mcp`: both transports over the official SDK, tool namespacing, the grant rules, OAuth with a loopback redirect and platform-store tokens — then the Connected tools section, the server editor, `stctl mcp`, and `IExternalTools`, the seam that puts a connected tool through the assistant's own gate and budget. `docs/adr/0007` records what the SDK owns and what cannot be delegated |
+| **M9** done | The workspace: `RemoteWorkspace` and `PosixPath` in Transport, `FilePolicy`, `Diff` and the three file tools in Assist, then the pane (⇧⌘E, a tree, an editor, ⌘S), the folder remembered per host in `preferences.json`, `stctl workspace`, and four checks in the integration gate. `docs/adr/0009` records why the permission is a folder rather than a rule about paths |
 | **M6** done | `StrangeSharpTerm.Assist`: the two providers behind one seam, `CommandPolicy`, `Redaction`, the agent loop, the orchestrator and run plans — then the assistant pane (⌥⌘A), the orchestrator pane with its plan mode (⇧⌥⌘A), the settings section, `stctl ask`, and four `--demo-*` flags. `docs/adr/0006` records the one departure from the plan |
 
-882 tests. **M8 is done** on macOS as far as a free Apple account allows; the
+1042 tests. **M8 is done** on macOS as far as a free Apple account allows; the
 Windows half is CI's to confirm, and a red Windows job is a failure rather than
 something to fix later.
 
@@ -47,12 +48,21 @@ written. At the time of writing: nothing.
 4. **One shortcut is still unbound**: ⌃⌘X (disconnect), which cannot be
    translated to Windows as it stands — `docs/adr/0005` says why.
 5. **What the panes do not do yet.** The browser has no rename and no
-   new-folder, though `IRemoteFiles` carries both calls, and no progress for a
-   large transfer. Tunnels are read from the host's settings and cannot be added
+   new-folder, though `IRemoteFiles` carries both calls and the workspace pane
+   now does both — the browser is the older of the two surfaces and the one to
+   fold into the other if either goes. Neither has progress for a large
+   transfer. Tunnels are read from the host's settings and cannot be added
    or edited there — the host editor deliberately leaves forwards alone and
    preserves them, so an editor for them is the missing half. The dashboard is
    asked for one probe at a time; the Swift app refreshed on a timer.
-6. **Screenshots**, the other half of what the plan's CI table asks for at
+6. **What the workspace does not do yet.** No syntax highlighting — the editor
+   is a text box, a gutter and a save button, and `docs/adr/0009` says why that
+   is the deliberate floor rather than an omission. No search across the folder
+   (`grep` through `run_command` is the answer today), no drag-and-drop onto the
+   tree, and one folder per host: opening a second would make "the folder open
+   on this host" a question with two answers, which is exactly what the
+   assistant's file tools are judged against.
+7. **Screenshots**, the other half of what the plan's CI table asks for at
    M4-M5. The driver is in place (`tests/StrangeSharpTerm.App.WindowTests`);
    what is missing is rendering. `CaptureRenderedFrame` returns a bitmap, but
    only with Skia behind the headless platform (`UseHeadlessDrawing = false`
@@ -109,6 +119,14 @@ says. Three things it took to get right:
   `ssh-keygen` given a mangled empty passphrase by PowerShell quoting, a
   `window-change` sent before the server had a pty, and a credential service
   name that must be a URI there and a plain string on macOS.
+- **The workspace has two demo flags of its own.** `--demo-workspace` is the
+  pane over an invented project, and `--demo-file-write` is the surface that
+  most needed looking at: the assistant stopped at a write, with the lines it
+  would change in the approval bar. It needs a folder, a key and a model that
+  decides to change a file, so without a fixture it is the one gate nobody could
+  ever see. Looking at it is what found the row saying "It writes
+  conf/nginx.conf." without saying how much of it changes, and an editor tab
+  that never said which of four files you were typing into.
 - **UI work needs looking at, not only testing.** The Avalonia DevTools MCP
   attaches to a **Debug** build (`WithDeveloperTools()` is inside `#if DEBUG`)
   and can click, type and screenshot — but its synthetic clicks do **not** open a

@@ -49,6 +49,14 @@ internal sealed class RehearsedBackend(params IReadOnlyList<AssistEvent>[] turns
         new AssistEvent.Finished(AssistStop.ToolUse),
     ];
 
+    /// <summary>A call to one of the workspace's file tools.</summary>
+    internal static IReadOnlyList<AssistEvent> Calls(string tool, object arguments, string id) =>
+    [
+        new AssistEvent.Call(new AssistToolCall(
+            id, tool, System.Text.Json.JsonSerializer.Serialize(arguments))),
+        new AssistEvent.Finished(AssistStop.ToolUse),
+    ];
+
     public async IAsyncEnumerable<AssistEvent> Stream(
         AssistRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)

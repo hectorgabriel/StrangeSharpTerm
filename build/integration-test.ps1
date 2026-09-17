@@ -120,6 +120,31 @@ try {
     $actual = if (Test-Path $downloaded) { (Get-FileHash $downloaded -Algorithm SHA256).Hash } else { 'missing' }
     Check '700 KiB round-trips by SHA-256' $actual $expected
 
+    Write-Host "`nworkspace:"
+    # The rule the pane and the assistant's file tools both go through: a root,
+    # and nothing outside it. Windows is where the surprises are, and this is a
+    # POSIX path built on a machine whose own paths are not.
+    $project = Join-Path $sandbox 'project'
+    New-Item -ItemType Directory -Path (Join-Path $project 'conf') -Force | Out-Null
+    # LF, deliberately: a file written by this machine and read back through the
+    # workspace must not come back as a CRLF file.
+    [System.IO.File]::WriteAllText((Join-Path $project 'conf/nginx.conf'), "server {`n  listen 80;`n}`n")
+    $remoteRoot = '/' + ($project -replace '\\', '/')
+
+    $read = (& $stctl --key $clientKey --known-hosts $knownHosts workspace $target --root $remoteRoot --cat conf/nginx.conf 2>&1 | Out-String)
+    Check 'a file inside the folder reads back' `
+        $(if ($read -match 'listen 80;') { 'read' } else { $read.Trim() }) 'read'
+    Check 'its line endings are read as the file has them' `
+        $(if ($read -match 'newline=lf') { 'lf' } else { 'crlf' }) 'lf'
+
+    & $stctl --key $clientKey --known-hosts $knownHosts workspace $target --root $remoteRoot --write conf/extra.conf --content 'listen 8080;' 2>&1 | Out-Null
+    Check 'a file saved from the workspace lands on the server' `
+        $(if (Test-Path (Join-Path $project 'conf/extra.conf')) { 'yes' } else { 'no' }) 'yes'
+
+    $escaped = (& $stctl --key $clientKey --known-hosts $knownHosts workspace $target --root $remoteRoot --cat ../../../../Windows/win.ini 2>&1 | Out-String)
+    Check 'a path climbing out of the folder is refused' `
+        $(if ($escaped -match 'refused=') { 'refused' } else { $escaped.Trim() }) 'refused'
+
     Write-Host "`nfailure classification:"
     # Merged into one stream: stderr alone comes back empty through pwsh's redirection.
     $authError = (& $stctl --key $clientKey --known-hosts $knownHosts exec "nosuchuser@127.0.0.1:$Port" true 2>&1 | Out-String)

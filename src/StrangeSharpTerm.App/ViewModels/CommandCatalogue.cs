@@ -75,6 +75,11 @@ public static class CommandCatalogue
 
             new("host.edit", "Edit Host…", CommandGroup.Edit, shell.EditSelectedCommand,
                 Gesture: new KeyGesture(Key.E, command)),
+            // ⌘S means the file in front of you, and there is only ever one:
+            // the workspace pane with the keyboard in it. Greyed out otherwise,
+            // rather than saving something you were not looking at.
+            new("file.save", "Save File", CommandGroup.File, shell.SaveFileCommand,
+                Gesture: new KeyGesture(Key.S, command)),
             new("host.delete", "Delete Host…", CommandGroup.Edit, shell.DeleteSelectedCommand),
             // No shortcut: the Swift app's table has none for the library, and
             // it is opened rarely enough that the menu is the right place.
@@ -95,6 +100,10 @@ public static class CommandCatalogue
                 Gesture: new KeyGesture(Key.B, command | KeyModifiers.Alt)),
             new("session.files", "Browse Files", CommandGroup.Session, shell.BrowseFilesCommand,
                 Gesture: new KeyGesture(Key.B, command | KeyModifiers.Shift)),
+            // ⇧⌘E, which is the Explorer everywhere that has one, and free here:
+            // the Swift app's table never had a workspace to bind.
+            new("session.workspace", "Open Folder", CommandGroup.Session, shell.OpenWorkspaceCommand,
+                Gesture: new KeyGesture(Key.E, command | KeyModifiers.Shift)),
             // No shortcut: the Swift app's keyboard table has none for tunnels,
             // and inventing one risks colliding with a shortcut it does define.
             new("session.tunnels", "Tunnels", CommandGroup.Session, shell.OpenTunnelsCommand),

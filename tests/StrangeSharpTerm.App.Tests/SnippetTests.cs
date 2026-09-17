@@ -48,6 +48,12 @@ public class SnippetTests
         public void Rename(string path, string newPath) { }
 
         public void CreateDirectory(string path) { }
+
+        public StrangeSharpTerm.Transport.RemoteEntry? Stat(string path) => null;
+
+        public byte[] Read(string path, long limit) => [];
+
+        public void Write(string path, byte[] content) { }
     }
 
     private sealed class Fixture

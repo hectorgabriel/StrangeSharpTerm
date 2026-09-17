@@ -47,6 +47,37 @@ public interface IRemoteFiles
     void Rename(string path, string newPath);
 
     void CreateDirectory(string path);
+
+    /// <summary>
+    /// What the server says about one entry, or null where there is nothing.
+    ///
+    /// Asked rather than inferred from a listing, because the two questions an
+    /// editor has -- does this exist, and has it changed since I opened it --
+    /// are about one file and a listing is about a directory of them.
+    /// </summary>
+    RemoteEntry? Stat(string path);
+
+    /// <summary>
+    /// A file's bytes, up to <paramref name="limit"/>.
+    ///
+    /// Bounded because an editor is pointed at a path by a person or a model,
+    /// and a three gigabyte log opened into memory is the same mistake either
+    /// way. What comes back short says so through its length; deciding what to
+    /// do about that belongs above this.
+    /// </summary>
+    byte[] Read(string path, long limit);
+
+    /// <summary>
+    /// Replaces a file's contents, creating it where there is none.
+    ///
+    /// Written through the existing file rather than to a temporary one that is
+    /// then renamed. Rename is the atomic way and it is the wrong way here: a
+    /// new file carries the mode and ownership of whoever wrote it, so saving
+    /// <c>/etc/nginx/nginx.conf</c> that way would quietly turn a root-owned
+    /// 0644 file into one owned by the account that saved it. Truncating in
+    /// place keeps the inode and everything hanging off it.
+    /// </summary>
+    void Write(string path, byte[] content);
 }
 
 /// <summary>
@@ -98,6 +129,53 @@ public sealed class SftpFiles(SftpClient client) : IRemoteFiles
     public void Rename(string path, string newPath) => client.RenameFile(path, newPath);
 
     public void CreateDirectory(string path) => client.CreateDirectory(path);
+
+    public RemoteEntry? Stat(string path)
+    {
+        // Asking and catching, rather than Exists followed by Get: two round
+        // trips that can disagree with each other, and the disagreement is
+        // exactly the case this is asked about.
+        try
+        {
+            var file = client.Get(path);
+            return new RemoteEntry(
+                file.Name,
+                file.FullName,
+                file.IsDirectory,
+                file.IsSymbolicLink,
+                file.IsRegularFile ? file.Length : 0,
+                file.LastWriteTime);
+        }
+        catch (Renci.SshNet.Common.SftpPathNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    public byte[] Read(string path, long limit)
+    {
+        using var remote = client.OpenRead(path);
+        var buffer = new MemoryStream();
+        // Copied a block at a time with a ceiling rather than read whole: the
+        // point of the limit is not to have the file in memory before deciding
+        // it was too large.
+        var block = new byte[81920];
+        while (buffer.Length < limit)
+        {
+            var read = remote.Read(block, 0, (int)Math.Min(block.Length, limit - buffer.Length));
+            if (read == 0)
+                break;
+            buffer.Write(block, 0, read);
+        }
+        return buffer.ToArray();
+    }
+
+    public void Write(string path, byte[] content)
+    {
+        using var remote = client.Open(path, FileMode.Create, FileAccess.Write);
+        remote.Write(content, 0, content.Length);
+        remote.Flush();
+    }
 
     /// <summary>
     /// Depth first, because SFTP will not remove a directory that still has

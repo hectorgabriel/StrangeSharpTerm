@@ -16,6 +16,9 @@
     <!-- The same double the other test project uses. One file rather than two
          copies: what a host can be asked for is one interface. -->
     <Compile Include="../StrangeSharpTerm.App.Tests/FakeSessions.cs" Link="FakeSessions.cs" />
+    <!-- Likewise: a server's filesystem in a dictionary, which the workspace
+         pane needs on both sides of the window boundary. -->
+    <Compile Include="../StrangeSharpTerm.App.Tests/MemoryFiles.cs" Link="MemoryFiles.cs" />
   </ItemGroup>
 
   <ItemGroup>

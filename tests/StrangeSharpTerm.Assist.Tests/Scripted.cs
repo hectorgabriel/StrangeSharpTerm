@@ -37,6 +37,13 @@ internal sealed class ScriptedBackend(params IReadOnlyList<AssistEvent>[] turns)
         new AssistEvent.Finished(AssistStop.ToolUse),
     ];
 
+    internal static IReadOnlyList<AssistEvent> Calls(string tool, object arguments, string id = "call_1") =>
+    [
+        new AssistEvent.Call(new AssistToolCall(
+            id, tool, System.Text.Json.JsonSerializer.Serialize(arguments))),
+        new AssistEvent.Finished(AssistStop.ToolUse),
+    ];
+
     public async IAsyncEnumerable<AssistEvent> Stream(
         AssistRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -165,5 +172,57 @@ internal sealed class RecordingBackend(List<string> asked, string answer) : IAss
         await Task.Yield();
         yield return new AssistEvent.Say(answer);
         yield return new AssistEvent.Finished(AssistStop.EndTurn);
+    }
+}
+
+/// <summary>
+/// A workspace held in a dictionary.
+///
+/// The agent's file tools are a gate, a budget and a policy, and none of those
+/// needs SFTP: what is being checked is what stops, what does not, and what goes
+/// back to the model when something is refused.
+/// </summary>
+internal sealed class FakeWorkspace(string root = "/home/ops/srv/app") : IWorkspaceAccess
+{
+    private readonly Dictionary<string, string> _files = [];
+
+    public string Root { get; set; } = root;
+
+    public string RootLabel => Root.Length == 0 ? "" : "~/srv/app";
+
+    /// <summary>Every path actually written, with what landed there.</summary>
+    internal Dictionary<string, string> Written { get; } = [];
+
+    internal FakeWorkspace With(string relative, string content)
+    {
+        _files[relative] = content;
+        return this;
+    }
+
+    public Task<string> List(string path, CancellationToken cancellationToken = default) =>
+        Task.FromResult(string.Join('\n', _files.Keys.Order()));
+
+    public Task<FileText> Read(string path, CancellationToken cancellationToken = default) =>
+        _files.TryGetValue(path, out var content)
+            ? Task.FromResult(new FileText(
+                PosixPath.Join(Root, path), path, content, "\n", false, false, content.Length, new DateTime(2026, 9, 2)))
+            : Task.FromException<FileText>(new FileNotFoundException($"There is no {path} in this workspace."));
+
+    public Task<FileChange> Plan(string path, string text, CancellationToken cancellationToken = default)
+    {
+        var exists = _files.TryGetValue(path, out var before);
+        return Task.FromResult(new FileChange(
+            PosixPath.Join(Root, path),
+            path,
+            text,
+            !exists,
+            Diff.Between(before ?? "", text)));
+    }
+
+    public Task Write(FileChange change, CancellationToken cancellationToken = default)
+    {
+        _files[change.Relative] = change.Text;
+        Written[change.Relative] = change.Text;
+        return Task.CompletedTask;
     }
 }

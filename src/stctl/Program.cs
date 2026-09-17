@@ -268,6 +268,65 @@ get.SetAction(parsed => WithSession(parsed, session =>
 var sftp = new Command("sftp", "Move files over SFTP.") { put, get };
 root.Add(sftp);
 
+// ------------------------------------------------------------- workspace
+//
+// A folder on the host, with the rule that nothing outside it is touched --
+// the same RemoteWorkspace the pane and the assistant's file tools both go
+// through. Here so the integration gate can prove the rule against a real
+// server: that a path climbing out of the root is refused before anything is
+// sent, and that a file saved from here comes back byte for byte.
+var rootOption = new Option<string>("--root")
+{
+    Description = "The folder to open, absolute or relative to the account's own directory.",
+    Required = true,
+};
+var listOption = new Option<string?>("--list") { Description = "List this directory inside the workspace." };
+var catOption = new Option<string?>("--cat") { Description = "Print this file from inside the workspace." };
+var writeOption = new Option<string?>("--write") { Description = "Write this file inside the workspace." };
+var contentOption = new Option<string?>("--content") { Description = "What to write, as text." };
+
+var workspace = new Command("workspace", "Open a folder on the host and read or write inside it.")
+{
+    target, rootOption, listOption, catOption, writeOption, contentOption,
+};
+workspace.SetAction(parsed => WithSession(parsed, session =>
+{
+    var folder = new RemoteWorkspace(new SftpFiles(session.OpenSftp()), parsed.GetValue(rootOption)!);
+    Console.WriteLine($"root={folder.Root}");
+
+    try
+    {
+        if (parsed.GetValue(listOption) is { } directory)
+        {
+            foreach (var entry in folder.List(directory))
+                Console.WriteLine($"{(entry.IsDirectory ? "d" : "-")} {folder.Relative(entry.Path)}");
+        }
+
+        if (parsed.GetValue(writeOption) is { } written)
+        {
+            folder.Write(written, parsed.GetValue(contentOption) ?? "");
+            Console.WriteLine($"wrote={written}");
+        }
+
+        if (parsed.GetValue(catOption) is { } file)
+        {
+            var read = folder.Read(file);
+            Console.WriteLine($"bytes={read.Length} binary={(read.IsBinary ? "yes" : "no")} newline={(read.Newline == "\n" ? "lf" : "crlf")}");
+            Console.Write(read.Text);
+        }
+    }
+    catch (WorkspaceBoundsException e)
+    {
+        // The refusal is the point, so it is reported as one rather than as a
+        // crash: the integration gate asserts on this line.
+        Console.WriteLine($"refused={e.Message}");
+        return 0;
+    }
+
+    return 0;
+}));
+root.Add(workspace);
+
 // ------------------------------------------------------------------- ask
 //
 // One real assistant turn against a real host and a real provider. Every piece

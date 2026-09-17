@@ -402,6 +402,27 @@ same certificate plus a packaging identity, and a zip is what can be tested toda
 Still to do: the parity review against the Swift app, then archiving the Swift
 `StrangeTerm` repo (it keeps its name; see Repository).
 
+**M9 — The workspace. Done.** Not in the original plan, and not a port: the Swift
+app never had it. It is where two things the plan *did* leave open meet. The
+browser could move files and not edit one, and the assistant could run commands
+on a host without being able to read the configuration it was reasoning about —
+"is this ours or the upstream's?" is usually answered by a file.
+
+A workspace is a root on a host and the rule that nothing outside it is touched.
+`RemoteWorkspace` holds both, the pane draws it, and the same object is what the
+assistant's `list_files`, `read_file` and `write_file` are judged against: the
+folder a person opened is the permission. Reading inside it is unattended,
+writing stops at the gate showing the lines that change, and outside it is
+refused rather than asked. `docs/adr/0009` records why the permission is a folder
+rather than a policy about paths, what that cannot promise (a symbolic link
+resolves on the server, and this resolves paths as text), and the three things
+that only showed up by building it.
+
+This is also the honest replacement for what the Swift app's File Provider
+extension was for — see "Deliberately not carried over" in the README. Editing a
+remote file no longer needs a macOS capability, or a mirror on disk, or a sync
+story: it needs a pane and a connection the app already has.
+
 ## Packaging — what actually gets easier
 
 Escaping Xcode does **not** escape notarization. Distributing to another Mac still means

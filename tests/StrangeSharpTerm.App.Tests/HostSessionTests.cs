@@ -29,6 +29,12 @@ public class HostSessionTests
         public void Rename(string path, string newPath) { }
 
         public void CreateDirectory(string path) { }
+
+        public Transport.RemoteEntry? Stat(string path) => null;
+
+        public byte[] Read(string path, long limit) => [];
+
+        public void Write(string path, byte[] content) { }
     }
 
     private sealed class Tunnels : Transport.ITunnels
