@@ -39,6 +39,16 @@ internal sealed class RehearsedBackend(params IReadOnlyList<AssistEvent>[] turns
         new AssistEvent.Finished(AssistStop.ToolUse),
     ];
 
+    /// <summary>The same, for a fleet conversation, where every call names its host.</summary>
+    internal static IReadOnlyList<AssistEvent> FleetRuns(string host, string command, string why, string id) =>
+    [
+        new AssistEvent.Call(new AssistToolCall(
+            id,
+            AssistTools.RunCommand,
+            System.Text.Json.JsonSerializer.Serialize(new { host, command, why }))),
+        new AssistEvent.Finished(AssistStop.ToolUse),
+    ];
+
     public async IAsyncEnumerable<AssistEvent> Stream(
         AssistRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)

@@ -127,19 +127,23 @@ internal static class Rehearsal
     {
         var answers = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["web-01"] = "Affected, and it is the reason the disk is nearly full: /var/log/journal is 37G of a "
-                + "49G filesystem and journald.conf sets no size cap.",
-            ["web-02"] = "Affected, less severely — journal at 8.1G with the disk 61% full. Same missing cap, so it "
-                + "grows without limit.",
-            ["db-primary"] = "Not affected. SystemMaxUse=1G is already set and the journal is 940M.",
+            ["web-01"] = "Archived and active journals take up 37.0G in the file system.",
+            ["web-02"] = "Archived and active journals take up 8.1G in the file system.",
+            ["db-primary"] = "Archived and active journals take up 940.0M in the file system.",
         };
 
-        var collator = new RehearsedBackend(RehearsedBackend.Says(
-            "Two of the three hosts that answered have an uncapped journal, and on one of them it is already the "
-            + "reason the disk is nearly full.\n\n"
-            + "web-01 is the urgent one — 37G of journal on a 49G disk. web-02 has the same missing cap but only "
-            + "8.1G so far. db-primary already sets SystemMaxUse=1G and is fine; that is the setting to copy.\n\n"
-            + "bastion was not connected, so nothing here covers it."));
+        var collator = new RehearsedBackend(
+            RehearsedBackend.FleetRuns("web-01", "journalctl --disk-usage", "how much the journal holds", "c1"),
+            RehearsedBackend.FleetRuns("web-02", "journalctl --disk-usage", "the same, here", "c2"),
+            RehearsedBackend.FleetRuns("db-primary", "journalctl --disk-usage", "and here", "c3"),
+            RehearsedBackend.Says(
+                "Two of the three have an **uncapped journal**, and on one of them it is already the reason the "
+                + "disk is nearly full.\n\n"
+                + "- `web-01` is the urgent one — 37G of journal on a 49G disk\n"
+                + "- `web-02` has the same missing cap, but only 8.1G so far\n"
+                + "- `db-primary` already sets `SystemMaxUse=1G` and is fine\n\n"
+                + "That last one is the setting to copy:\n\n"
+                + "```sh\njournalctl --vacuum-size=1G\n```"));
 
         var settings = new AssistSettings();
         var model = new OrchestratorViewModel(
@@ -154,13 +158,15 @@ internal static class Rehearsal
                 Target("staging-app", true, false),
                 Target("vps-paris", true, false),
             ],
-            alias => answers.TryGetValue(alias, out var answer)
-                ? new HostAgent(
-                    new RehearsedBackend(RehearsedBackend.Says(answer)),
-                    new RehearsedHost(alias, Metrics, Tail),
-                    settings,
-                    new StandingAnswer(true))
-                : null);
+            _ => null,
+            alias =>
+            {
+                if (!answers.TryGetValue(alias, out var printed))
+                    return null;
+                var host = new RehearsedHost(alias, Metrics, Tail);
+                host.Answers["journalctl --disk-usage"] = printed;
+                return host;
+            });
 
         var window = Window("Orchestrator", new OrchestratorView(model), 820, 760);
 

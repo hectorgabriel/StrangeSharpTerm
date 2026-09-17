@@ -121,6 +121,56 @@ public static class AssistTools
         """);
 
     /// <summary>
+    /// The same tool, for an assistant looking at several hosts at once.
+    ///
+    /// The host is an argument here, which is exactly what the per-host agent
+    /// avoids: there, one conversation is about one machine and the host is
+    /// implied by which agent is asking. A fleet has one conversation about all
+    /// of them, so every call has to say which one it means.
+    /// </summary>
+    public static AssistTool FleetRunner(IReadOnlyList<string> hosts) => new(
+        RunCommand,
+        "Run a shell command on one of the hosts and return its output. Read-only commands "
+            + "run immediately; anything else stops and asks the user, who may refuse.",
+        $$"""
+        {
+          "type": "object",
+          "properties": {
+            "host": {
+              "type": "string",
+              "description": "Which host to run it on, by the name the user gave it.",
+              "enum": [{{string.Join(", ", hosts.Select(host => JsonSerializer.Serialize(host)))}}]
+            },
+            "command": {
+              "type": "string",
+              "description": "The command to run, exactly as it would be typed."
+            },
+            "why": {
+              "type": "string",
+              "description": "One short sentence, for the user to read, saying what this is for."
+            }
+          },
+          "required": ["host", "command", "why"]
+        }
+        """);
+
+    /// <summary>The host a fleet call names, or empty when it named none this run knows.</summary>
+    public static string ReadHost(string? arguments)
+    {
+        if (string.IsNullOrWhiteSpace(arguments))
+            return "";
+
+        try
+        {
+            return Field(JsonDocument.Parse(arguments).RootElement, "host");
+        }
+        catch (JsonException)
+        {
+            return "";
+        }
+    }
+
+    /// <summary>
     /// Reads a call's arguments.
     ///
     /// A model sometimes sends a number, a missing field, or JSON that is nearly
@@ -142,10 +192,18 @@ public static class AssistTools
         {
             return ("", "");
         }
-
-        static string Field(JsonElement root, string name) =>
-            root.ValueKind == JsonValueKind.Object && root.TryGetProperty(name, out var value)
-                ? value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : value.ToString()
-                : "";
     }
+
+    /// <summary>
+    /// One field of a call's arguments, as a string whatever the model sent.
+    ///
+    /// Shared by both readers, and forgiving in the same way: a number where a
+    /// string belongs is read rather than refused, and a field that is not
+    /// there comes back empty for the gate to turn down like anything else it
+    /// cannot read.
+    /// </summary>
+    private static string Field(JsonElement root, string name) =>
+        root.ValueKind == JsonValueKind.Object && root.TryGetProperty(name, out var value)
+            ? value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : value.ToString()
+            : "";
 }
