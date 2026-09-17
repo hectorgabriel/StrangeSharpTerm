@@ -694,8 +694,11 @@ public sealed class HostAgent(
             // marker into the real one, turning a password into the word
             // [redacted]. The diff would show it and a person might still miss
             // it, so it never reaches the gate.
-            if (change.Text.Contains(Redaction.Marker, StringComparison.Ordinal)
-                && !change.Creates)
+            //
+            // A new file too, which is not the same failure and is just as bad:
+            // a .env.production copied from a scrubbed .env is a deploy whose
+            // password is the word that hid the password.
+            if (change.Text.Contains(Redaction.Marker, StringComparison.Ordinal))
             {
                 step.State = StepState.Refused;
                 step.Output = $"It would write {Redaction.Marker} into the file.";
@@ -703,8 +706,8 @@ public sealed class HostAgent(
                 return (false, new AssistToolResult(
                     call.Id,
                     $"This write contains {Redaction.Marker}, which is what this app puts in place of a "
-                        + "secret before you see it. Writing it back would destroy the real value. Leave "
-                        + "those lines out of your change, or ask the user to edit them.",
+                        + "secret before you see it -- it is not the real value and must not be written "
+                        + "anywhere. Leave those lines out of your change, or ask the user to fill them in.",
                     Failed: true));
             }
 
