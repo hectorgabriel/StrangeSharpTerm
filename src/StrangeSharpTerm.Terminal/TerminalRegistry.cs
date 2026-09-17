@@ -87,6 +87,15 @@ public sealed class TerminalRegistry
     public string? RecentText(NodeId session, int maxLines = 200) => Session(session)?.RecentText(maxLines);
 
     /// <summary>
+    /// Writes into what one pane shows, if that pane is open.
+    ///
+    /// Silent when it is not: saying what the assistant is doing is worth
+    /// having where someone is watching and worth nothing where nobody is, and
+    /// a run must not depend on which hosts happen to have a window.
+    /// </summary>
+    public void Show(NodeId session, string text) => Session(session)?.Show(text);
+
+    /// <summary>
     /// Mirrors keystrokes from one pane to the others in the group.
     ///
     /// Nothing is echoed back to the origin: it has already written the bytes

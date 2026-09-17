@@ -31,6 +31,14 @@ public sealed class TerminalSession : IDisposable
     private readonly ITerminalChannel _channel;
     private readonly Engine _engine;
     private readonly TeeStream _stream;
+
+    /// <summary>
+    /// What the control actually reads: the channel's bytes, and any this app
+    /// wants shown, in the order they arrived.
+    /// </summary>
+    private readonly FeedStream _feed = new();
+
+    private readonly CancellationTokenSource _pumping = new();
     private readonly Lock _gate = new();
     private string _title = "";
     private bool _ended;
@@ -45,8 +53,64 @@ public sealed class TerminalSession : IDisposable
             Rows = Options.Rows,
             Scrollback = Options.Scrollback,
         });
-        _stream = new TeeStream(channel.Stream, Consume, MarkEnded);
+        _stream = new TeeStream(_feed, channel.Stream, Consume, MarkEnded);
+
+        // One reader of the channel, on a thread of its own, feeding everything
+        // it gets to the one thing above. Nothing else may read the channel:
+        // two readers each get half of what arrives, which is an escape
+        // sequence torn down the middle.
+        _pump = Task.Factory.StartNew(
+            Pump,
+            _pumping.Token,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
     }
+
+    private readonly Task _pump;
+
+    /// <summary>
+    /// Moves what the server says into the feed, until it stops saying
+    /// anything.
+    ///
+    /// A channel that returns nothing has closed, and that is the end of the
+    /// session: the feed is completed so the reader above sees the same end it
+    /// used to see from the channel itself.
+    /// </summary>
+    private void Pump()
+    {
+        var buffer = new byte[8192];
+        try
+        {
+            while (!_pumping.IsCancellationRequested)
+            {
+                var read = _channel.Stream.Read(buffer, 0, buffer.Length);
+                if (read <= 0)
+                    break;
+                _feed.Feed(buffer.AsSpan(0, read));
+            }
+        }
+        catch (Exception)
+        {
+            // A channel torn down under us is how a session ends when the far
+            // end goes away, and it is reported as the end rather than thrown
+            // out of a background thread nobody is waiting on.
+        }
+        finally
+        {
+            _feed.Complete();
+        }
+    }
+
+    /// <summary>
+    /// Writes into what the pane shows, and nowhere else.
+    ///
+    /// It arrives on the same path the server's own output does, so the control
+    /// draws it exactly as it draws anything else -- and the far end never sees
+    /// a byte of it. This is how the app can say what it is doing on a host in
+    /// the window you are watching, without typing into your shell and without
+    /// racing whatever you are typing.
+    /// </summary>
+    public void Show(string text) => _feed.Feed(Encoding.UTF8.GetBytes(text));
 
     public NodeId Id { get; } = NodeId.New();
 
@@ -195,8 +259,16 @@ public sealed class TerminalSession : IDisposable
 
     public void Dispose()
     {
-        _stream.Dispose();
+        // The channel first: the pump is blocked reading it, and closing it is
+        // what lets that read return so the thread can finish.
+        _pumping.Cancel();
         _channel.Dispose();
+        _feed.Complete();
+        _pump.Wait(TimeSpan.FromSeconds(2));
+
+        _stream.Dispose();
+        _feed.Dispose();
+        _pumping.Dispose();
         _engine.Dispose();
     }
 

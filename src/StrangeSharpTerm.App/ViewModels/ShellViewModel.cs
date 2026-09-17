@@ -1028,8 +1028,9 @@ public sealed partial class ShellViewModel : ObservableObject
                     () => null)
                 : null);
 
-        // Which host it has, marked on the tile showing that host, for as long
-        // as it has it.
+        // Which host it has, said in the pane showing that host and marked on
+        // its tile, for as long as it has it. The command itself still goes
+        // over the exec channel; this is only the window saying so.
         model.Driving += (_, step) => Mark(step);
 
         Dock = _orchestrator = _orchestratorView(model);
@@ -1043,15 +1044,18 @@ public sealed partial class ShellViewModel : ObservableObject
     /// where a host has no pane, which is the ordinary case for a run over a
     /// rack -- and the run does not depend on it either way.
     /// </summary>
-    private void Mark(FleetStep step) =>
-        Driving = step.Running
-            ?
-            [
-                .. Workspace.Panes
-                    .Where(pane => pane.IsTerminal && Named(pane.ConnectionId) == step.Host)
-                    .Select(pane => pane.Id),
-            ]
-            : [];
+    private void Mark(FleetStep step)
+    {
+        var panes = Workspace.Panes
+            .Where(pane => pane.IsTerminal && Named(pane.ConnectionId) == step.Host)
+            .Select(pane => pane.Id)
+            .ToArray();
+
+        foreach (var pane in panes)
+            _terminals.Show(pane, step.Running ? Narration.Starting(step) : Narration.Finished(step));
+
+        Driving = step.Running ? panes : [];
+    }
 
     /// <summary>What the inventory calls the host a pane belongs to.</summary>
     private string? Named(NodeId? connection) =>
