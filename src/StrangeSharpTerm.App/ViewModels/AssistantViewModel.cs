@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using StrangeSharpTerm.App.Assistant;
 using StrangeSharpTerm.Assist;
 
 namespace StrangeSharpTerm.App.ViewModels;
@@ -180,12 +181,14 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
         AssistSettings settings,
         Action<string> stage,
         Func<string?>? workspace = null,
-        Func<string?>? localWorkspace = null)
+        Func<string?>? localWorkspace = null,
+        Func<string>? connectedTools = null)
     {
         _agent = agent;
         _stage = stage;
         _workspace = workspace;
         _localWorkspace = localWorkspace;
+        _connectedTools = connectedTools;
         MayRunCommands = settings.AllowCommandsByDefault;
 
         _agent.Added += (_, entry) => Post(() =>
@@ -219,6 +222,14 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
                 return;
             Rows.Remove(row);
             OnPropertyChanged(nameof(IsEmpty));
+        });
+        _agent.Cleared += (_, _) => Post(() =>
+        {
+            _rows.Clear();
+            Rows.Clear();
+            _asked.Clear();
+            OnPropertyChanged(nameof(IsEmpty));
+            RetryCommand.NotifyCanExecuteChanged();
         });
     }
 
@@ -399,12 +410,58 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
         }
     }
 
+    /// <summary>What <c>/mcp</c> answers with. Supplied by the window, which owns the servers.</summary>
+    private readonly Func<string>? _connectedTools;
+
+    /// <summary>
+    /// Handles a line that is a command rather than a question.
+    ///
+    /// Nothing here leaves the machine: these are questions about the app, and
+    /// asking a model about the app it is running inside gets an answer that
+    /// sounds right and was checked against nothing.
+    /// </summary>
+    /// <returns>Whether the line was one, and so must not be sent.</returns>
+    public bool Handle(string text)
+    {
+        if (!ChatCommands.Looks(text))
+            return false;
+
+        switch (ChatCommands.Name(text))
+        {
+            case ChatCommands.Clear:
+                _agent.Clear();
+                break;
+
+            case ChatCommands.Mcp:
+                _agent.Say(_connectedTools?.Invoke() ?? ConnectedToolsReport.Of(null));
+                break;
+
+            case ChatCommands.Help:
+                _agent.Say(ChatCommands.Listing);
+                break;
+
+            default:
+                _agent.Say(ChatCommands.Unknown(ChatCommands.Name(text)));
+                break;
+        }
+
+        return true;
+    }
+
     [RelayCommand(CanExecute = nameof(CanAsk))]
     public async Task Ask()
     {
         var question = Question.Trim();
         if (question.Length == 0 || IsAsking)
             return;
+
+        // Before anything is remembered or sent: a command is not a question,
+        // and walking back through what you asked should not offer you /clear.
+        if (Handle(question))
+        {
+            Question = "";
+            return;
+        }
 
         Question = "";
         Remember(question);

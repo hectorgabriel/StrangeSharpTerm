@@ -49,8 +49,8 @@ public class FleetAgentTests
             ScriptedBackend.Says("web-01 is full."),
             ScriptedBackend.Says("web-02 is not."));
 
-        await agent.Ask("is web-01 full?", Hosts(hosts), mayRunCommands: false, TestContext.Current.CancellationToken);
-        await agent.Ask("and the other one?", Hosts(hosts), mayRunCommands: false, TestContext.Current.CancellationToken);
+        await agent.Ask("is web-01 full?", Hosts(hosts), mayRunCommands: false, cancellationToken: TestContext.Current.CancellationToken);
+        await agent.Ask("and the other one?", Hosts(hosts), mayRunCommands: false, cancellationToken: TestContext.Current.CancellationToken);
 
         // Question, answer, question: the second one can refer to the first.
         var second = backend.Requests[^1].Messages;
@@ -75,11 +75,11 @@ public class FleetAgentTests
             ScriptedBackend.Says("Fine."),
             ScriptedBackend.Says("Also fine."));
 
-        await agent.Ask("all of them?", Hosts(hosts), mayRunCommands: false, TestContext.Current.CancellationToken);
+        await agent.Ask("all of them?", Hosts(hosts), mayRunCommands: false, cancellationToken: TestContext.Current.CancellationToken);
 
         var fewer = hosts.Where(pair => pair.Key == "db-primary")
             .ToDictionary(pair => pair.Key, pair => pair.Value);
-        await agent.Ask("just the database now", Hosts(fewer), mayRunCommands: false, TestContext.Current.CancellationToken);
+        await agent.Ask("just the database now", Hosts(fewer), mayRunCommands: false, cancellationToken: TestContext.Current.CancellationToken);
 
         backend.Requests[0].Messages[0].Text.ShouldNotBeNull().ShouldContain("web-01");
         backend.Requests[^1].Messages[^1].Text.ShouldNotBeNull().ShouldNotContain("web-01");
@@ -94,7 +94,7 @@ public class FleetAgentTests
             Runs("db-primary", "df -h /", "c2"),
             ScriptedBackend.Says("web-01 is full; db-primary is not."));
 
-        var answer = await agent.Ask("is the disk full anywhere?", Hosts(hosts), mayRunCommands: true, TestContext.Current.CancellationToken);
+        var answer = await agent.Ask("is the disk full anywhere?", Hosts(hosts), mayRunCommands: true, cancellationToken: TestContext.Current.CancellationToken);
 
         answer.CommandsRun.ShouldBe(2);
         answer.Text.ShouldBe("web-01 is full; db-primary is not.");
@@ -122,7 +122,7 @@ public class FleetAgentTests
             ScriptedBackend.Says("Fine."));
         hosts["web-02"].Answer = _ => new CommandOutcome(0, "up 3 days");
 
-        await agent.Ask("how long up?", Hosts(hosts), mayRunCommands: true, TestContext.Current.CancellationToken);
+        await agent.Ask("how long up?", Hosts(hosts), mayRunCommands: true, cancellationToken: TestContext.Current.CancellationToken);
 
         var results = backend.Requests[^1].Messages.SelectMany(message => message.ToolResults).ToArray();
         results.ShouldHaveSingleItem().Output.ShouldStartWith("web-02:");
@@ -137,7 +137,7 @@ public class FleetAgentTests
             Runs("web-99", "rm -rf /", "c1"),
             ScriptedBackend.Says("Sorry."));
 
-        await agent.Ask("tidy up", Hosts(hosts), mayRunCommands: true, TestContext.Current.CancellationToken);
+        await agent.Ask("tidy up", Hosts(hosts), mayRunCommands: true, cancellationToken: TestContext.Current.CancellationToken);
 
         hosts.Values.ShouldAllBe(host => host.Ran.Count == 0);
         var result = backend.Requests[^1].Messages.SelectMany(message => message.ToolResults).ShouldHaveSingleItem();
@@ -159,7 +159,7 @@ public class FleetAgentTests
             Runs("db-primary", "systemctl restart postgres", "c1"),
             ScriptedBackend.Says("Refused, so nothing changed."));
 
-        await agent.Ask("restart postgres", Hosts(hosts), mayRunCommands: true, TestContext.Current.CancellationToken);
+        await agent.Ask("restart postgres", Hosts(hosts), mayRunCommands: true, cancellationToken: TestContext.Current.CancellationToken);
 
         gate.Asked.ShouldHaveSingleItem().Host.ShouldBe("db-primary");
         hosts["db-primary"].Ran.ShouldBeEmpty();
@@ -178,7 +178,7 @@ public class FleetAgentTests
         turns.Add(ScriptedBackend.Says("That is all I could look at."));
 
         var (agent, hosts, _) = Fleet(new RecordingGate(), [.. turns]);
-        var answer = await agent.Ask("look at everything", Hosts(hosts), mayRunCommands: true, TestContext.Current.CancellationToken);
+        var answer = await agent.Ask("look at everything", Hosts(hosts), mayRunCommands: true, cancellationToken: TestContext.Current.CancellationToken);
 
         answer.CommandsRun.ShouldBe(AssistLimits.RunBudget);
         hosts["web-01"].Ran.Count.ShouldBe(AssistLimits.RunBudget);
@@ -190,7 +190,7 @@ public class FleetAgentTests
     {
         var (agent, hosts, backend) = Fleet(new RecordingGate(), ScriptedBackend.Says("I would need to look."));
 
-        await agent.Ask("is the disk full?", Hosts(hosts), mayRunCommands: false, TestContext.Current.CancellationToken);
+        await agent.Ask("is the disk full?", Hosts(hosts), mayRunCommands: false, cancellationToken: TestContext.Current.CancellationToken);
 
         backend.Requests.ShouldHaveSingleItem().Tools.ShouldBeEmpty();
         hosts.Values.ShouldAllBe(host => host.Ran.Count == 0);
@@ -211,7 +211,7 @@ public class FleetAgentTests
         var steps = new List<AssistStep>();
         agent.Working += (_, step) => steps.Add(step);
 
-        await agent.Ask("how full?", Hosts(hosts), mayRunCommands: true, TestContext.Current.CancellationToken);
+        await agent.Ask("how full?", Hosts(hosts), mayRunCommands: true, cancellationToken: TestContext.Current.CancellationToken);
 
         steps.Count.ShouldBe(2);
         steps[0].ShouldSatisfyAllConditions(

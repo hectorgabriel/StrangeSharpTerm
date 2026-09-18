@@ -18,9 +18,10 @@ means; this says only what is done, what is in flight, and what to do first.
 | **M7** done | `StrangeSharpTerm.Mcp`: both transports over the official SDK, tool namespacing, the grant rules, OAuth with a loopback redirect and platform-store tokens — then the Connected tools section, the server editor, `stctl mcp`, and `IExternalTools`, the seam that puts a connected tool through the assistant's own gate and budget. `docs/adr/0007` records what the SDK owns and what cannot be delegated |
 | **M9** done | The workspace: `RemoteWorkspace` and `PosixPath` in Transport, `FilePolicy`, `Diff` and the three file tools in Assist, then the pane (⇧⌘E, a tree, an editor, ⌘S), the folder remembered per host in `preferences.json`, `stctl workspace`, and four checks in the integration gate. `docs/adr/0009` records why the permission is a folder rather than a rule about paths |
 | **M9** extended | This machine's files, through the same seam: `LocalFiles` over `System.IO` behind `IRemoteFiles`, so the tree, the editor, the root rule, the policy and the gate are the one implementation. The left panel gained a `Hosts \| Files` switch, the pane's view split into a tree control and an editor control, and the assistant gained `list_local_files`, `read_local_file` and `write_local_file` — separate names, never an argument. Nothing is open here until a folder is chosen |
+| **M9** extended again | The fan-out's folder and the panes' commands: `WorkspaceCalls` extracted so both agents gate a write with one implementation, `FleetAgent` given this machine's folder (and never the hosts'), and `/clear`, `/mcp`, `/help` handled in both panes without a round trip. `ConnectedToolsReport` reads the hub rather than asking a model about the app it runs inside |
 | **M6** done | `StrangeSharpTerm.Assist`: the two providers behind one seam, `CommandPolicy`, `Redaction`, the agent loop, the orchestrator and run plans — then the assistant pane (⌥⌘A), the orchestrator pane with its plan mode (⇧⌥⌘A), the settings section, `stctl ask`, and four `--demo-*` flags. `docs/adr/0006` records the one departure from the plan |
 
-1073 tests. **M8 is done** on macOS as far as a free Apple account allows; the
+1102 tests. **M8 is done** on macOS as far as a free Apple account allows; the
 Windows half is CI's to confirm, and a red Windows job is a failure rather than
 something to fix later.
 
@@ -122,6 +123,11 @@ says. Three things it took to get right:
   `ssh-keygen` given a mangled empty passphrase by PowerShell quoting, a
   `window-change` sent before the server had a pty, and a credential service
   name that must be a URI there and a plain string on macOS.
+- **A disabled button makes a command look broken.** The orchestrator's Run is
+  greyed until hosts are ticked, so typing `/help` with nothing selected did
+  nothing at all -- and `/help` is exactly what you type *before* you know what
+  to do. Commands are exempt from needing hosts. The lesson generalises: a
+  guard written for the main path will refuse the escape hatch too.
 - **A JSON schema inside a C# raw string is not checked by anything.** A tool's
   schema is JSON in a `"""` literal, so the compiler is happy with a quote that
   JSON is not: an edit lost the backslashes in `Use \".\" for the root itself`

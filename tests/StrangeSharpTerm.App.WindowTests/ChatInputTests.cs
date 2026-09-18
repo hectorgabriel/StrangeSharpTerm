@@ -130,39 +130,5 @@ public class ChatInputTests
         });
     }
 
-    private sealed class Quiet(string alias) : IHostAccess
-    {
-        public string Alias => alias;
 
-        public Task<HostSnapshot> Look(bool metrics, bool tail, int lines, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new HostSnapshot());
-
-        public Task<CommandOutcome> Run(string command, TimeSpan timeout, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new CommandOutcome(0, ""));
-    }
-
-    private sealed class Canned(params IReadOnlyList<AssistEvent>[] turns) : IAssistBackend
-    {
-        private int _turn;
-
-        public string ProviderName => "Canned";
-
-        public string Model => "canned-1";
-
-        public static IReadOnlyList<AssistEvent> Says(string text) =>
-            [new AssistEvent.Say(text), new AssistEvent.Finished(AssistStop.EndTurn)];
-
-        public async IAsyncEnumerable<AssistEvent> Stream(
-            AssistRequest request,
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            var turn = _turn < turns.Length ? turns[_turn] : Says("Nothing more.");
-            _turn++;
-            foreach (var streamed in turn)
-            {
-                await Task.Yield();
-                yield return streamed;
-            }
-        }
-    }
 }
