@@ -55,6 +55,47 @@ count in the sentence above them. Approving a write you have not read is
 approving a file you have not read. This is why `IWorkspaceAccess` has both
 `Plan` and `Write` — a person has to fit between them.
 
+## The same thing again, for this machine
+
+The first version of this was rooted on a host, over SFTP. The seam it is built
+on — `IRemoteFiles`, "files on the far end" — turns out to describe a local
+filesystem just as well, so `LocalFiles` implements it over `System.IO` and
+everything above is unchanged: the same tree, the same editor, the same root
+rule, the same policy, the same gate. A folder on this machine is a workspace in
+exactly the sense a folder on a server is.
+
+Three decisions it needed of its own:
+
+**Paths stay POSIX, even on Windows.** A drive is addressed as `/C:/Users/you`,
+leading slash and all. That is not an invention — Windows OpenSSH's own
+sftp-server says it that way, and the integration test has been speaking it
+since M2. The alternative was teaching `PosixPath`, `RemoteWorkspace` and
+everything holding them about drive letters and backslashes, which would give
+the one thing that decides whether a path is inside a workspace two dialects.
+One dialect, translated at the edge, is the cheaper promise to keep.
+
+**The tree lives in the left panel and the editor does not.** 260 pixels is
+plenty for names and nowhere near enough for a line of code, so the sidebar
+gained a `Hosts | Files` switch and the editor opens as a pane where the
+sessions are. That split the pane's view into two controls; a host's folder
+composes both and looks exactly as it did.
+
+**Nothing is open here until somebody chooses a folder.** A host's workspace
+defaults to the account's own directory, because connecting already put you
+there. This one defaults to nothing and asks. Defaulting to `~` would be a
+browser's habit and the wrong one when the root is the whole of what an
+assistant may read: nobody chose their entire home directory, and `~/.ssh` is in
+it.
+
+**The tools are separate names, not an argument.** `read_file` is the host's and
+`read_local_file` is this machine's, rather than one tool with a `where` field.
+The argument would be chosen by the model, and which computer a write lands on
+is exactly what a person is being asked to approve — it cannot be a field the
+gate has to parse and trust. It also means a conversation can have one folder
+open and not the other, which is the ordinary case. Every gate names the machine
+in the words it asks in: "It writes conf/nginx.conf on this machine. 3 lines
+added."
+
 ## What this costs, and what it does not buy
 
 **It cannot see through a symbolic link.** Paths are resolved as text, before
@@ -110,6 +151,10 @@ afternoon matters more.
 decision depend on parsing an argument the model chose. Reading is safe and
 writing is not, so they are separate tools, and the safe one is the one that can
 be offered alone.
+
+**One `file` tool with a `where: "host" | "local"` argument.** Same objection as
+the `operation` argument, and worse: the gate would be asking a person to
+approve a write whose destination it learned from the thing being gated.
 
 **A local mirror the system editor opens.** It is what a File Provider extension
 would have given on macOS — and M8 of the Swift app is exactly the milestone

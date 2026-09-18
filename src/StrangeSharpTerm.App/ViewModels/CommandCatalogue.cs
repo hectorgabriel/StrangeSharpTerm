@@ -125,6 +125,12 @@ public static class CommandCatalogue
                 Gesture: new KeyGesture(Key.OemBackslash, command)),
             new("view.sidebar", "Show Hosts", CommandGroup.View, shell.ToggleSidebarCommand,
                 Gesture: new KeyGesture(Key.B, command)),
+            // The two halves of the left panel, in the menu and the palette
+            // because the switch at the top of it is only findable once you
+            // know it is there. No shortcuts: ⌘B already has the panel, and the
+            // Swift app's table has nothing to port here.
+            new("view.files", "Files on This Machine", CommandGroup.View, shell.ShowFilesCommand),
+            new("view.hosts", "Hosts", CommandGroup.View, shell.ShowHostsCommand),
         ];
 
         // ⌘1–⌘9, as the Swift app's ForEach(1...9) generated them. Nine items

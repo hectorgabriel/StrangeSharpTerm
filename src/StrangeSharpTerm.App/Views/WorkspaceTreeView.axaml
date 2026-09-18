@@ -1,0 +1,140 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:StrangeSharpTerm.App.ViewModels"
+             xmlns:views="clr-namespace:StrangeSharpTerm.App.Views"
+             x:Class="StrangeSharpTerm.App.Views.WorkspaceTreeView"
+             x:DataType="vm:HostWorkspaceViewModel">
+    <!--
+        A folder and what is in it: the half of a workspace that is a tree.
+
+        Its own control because it has two homes. Split beside the editor it
+        makes the pane a host's folder is opened in; alone in the sidebar it is
+        this machine's files, with the editor in a pane of its own. The view
+        model is the same one either way, which is what keeps the two from
+        drifting apart.
+    -->
+    <UserControl.Resources>
+        <views:IconConverter x:Key="Icon" />
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+
+        <!-- The folder, on a line of its own: this has to fit a 260px sidebar,
+             and a path sharing a row with four buttons is a path trimmed to
+             "~/Documents/Proje". -->
+        <TextBox Grid.Row="0" Margin="8,8,8,2" Text="{Binding RootDraft, Mode=TwoWay}"
+                 FontFamily="monospace" FontSize="11" IsVisible="{Binding HasRoot}"
+                 Watermark="A folder" ToolTip.Tip="{Binding RootTip}"
+                 KeyDown="RootKeyed" />
+
+        <!-- What can be done to it. Three buttons and a menu rather than seven
+             buttons, because three of them are what anybody uses every minute. -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="8,0,8,4"
+              IsVisible="{Binding HasRoot}">
+            <TextBlock Grid.Column="0" Classes="muted" FontSize="11" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" Text="{Binding Where}" />
+
+            <Button Grid.Column="1" Classes="row" Padding="6" Margin="4,0,0,0" ToolTip.Tip="Open this folder"
+                    Command="{Binding OpenRootCommand}">
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconFolderOpen, Converter={StaticResource Icon}}" />
+            </Button>
+            <Button Grid.Column="2" Classes="row" Padding="6" ToolTip.Tip="Read it again"
+                    Command="{Binding RefreshCommand}">
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconRefreshCw, Converter={StaticResource Icon}}" />
+            </Button>
+            <Button Grid.Column="3" Classes="row" Padding="6" ToolTip.Tip="New file"
+                    Command="{Binding NewFileCommand}">
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconFilePlus, Converter={StaticResource Icon}}" />
+            </Button>
+
+            <!-- The rest, where they cost no width. A flyout rather than more
+                 buttons: what is in here is used occasionally and half of it
+                 depends on what is selected. -->
+            <Button Grid.Column="4" Classes="row" Padding="6" ToolTip.Tip="More">
+                <Button.Flyout>
+                    <MenuFlyout>
+                        <MenuItem Header="New folder…" Command="{Binding NewFolderCommand}" />
+                        <MenuItem Header="Rename…" Command="{Binding RenameCommand}" />
+                        <MenuItem Header="Delete…" Command="{Binding DeleteCommand}" />
+                        <MenuItem Header="-" IsEnabled="False" />
+                        <MenuItem Header="{Binding UploadTip}" Command="{Binding UploadCommand}"
+                                  IsVisible="{Binding !IsLocal}" />
+                        <MenuItem Header="{Binding DownloadTip}" Command="{Binding DownloadCommand}"
+                                  IsVisible="{Binding !IsLocal}" />
+                        <MenuItem Header="{Binding SendTip}" Command="{Binding SendCommand}"
+                                  IsVisible="{Binding CanSend}" />
+                    </MenuFlyout>
+                </Button.Flyout>
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconEllipsis, Converter={StaticResource Icon}}" />
+            </Button>
+        </Grid>
+
+        <!-- Naming something, where the thing will appear rather than in a
+             window over the top of it. -->
+        <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto,Auto" Margin="8,0,8,4"
+              IsVisible="{Binding IsNaming}">
+            <TextBlock Grid.Column="0" Classes="muted" VerticalAlignment="Center" Margin="0,0,8,0"
+                       FontSize="11" TextTrimming="CharacterEllipsis" Text="{Binding NamingLabel}" />
+            <TextBox Grid.Column="1" Name="NameField" Text="{Binding NameDraft, Mode=TwoWay}"
+                     FontFamily="monospace" KeyDown="NameKeyed" />
+            <Button Grid.Column="2" Margin="4,0,0,0" Content="Create"
+                    Command="{Binding ConfirmNameCommand}" />
+            <Button Grid.Column="3" Classes="row" Padding="6" ToolTip.Tip="Cancel"
+                    Command="{Binding CancelNameCommand}">
+                <Path Classes="icon" Width="14" Height="14"
+                      Data="{Binding Source=IconX, Converter={StaticResource Icon}}" />
+            </Button>
+        </Grid>
+
+        <!-- What went wrong, or what just happened. -->
+        <StackPanel Grid.Row="3" Margin="8,0,8,4">
+            <Border Classes="banner" IsVisible="{Binding Failure, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Text="{Binding Failure}" TextWrapping="Wrap" FontSize="11" />
+            </Border>
+            <TextBlock Classes="muted" FontSize="11" Margin="2,2"
+                       IsVisible="{Binding Note, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Text="{Binding Note}" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <TreeView Grid.Row="4" Margin="4,0,0,4" Background="Transparent"
+                  ItemsSource="{Binding Tree}"
+                  SelectedItem="{Binding Selected, Mode=TwoWay}"
+                  KeyDown="TreeKeyed">
+            <TreeView.Styles>
+                <!-- Expanding a folder is what reads it, so the tree's own
+                     state has to be the view model's. -->
+                <Style Selector="TreeViewItem" x:DataType="vm:WorkspaceNode">
+                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                </Style>
+            </TreeView.Styles>
+            <TreeView.ItemTemplate>
+                <TreeDataTemplate ItemsSource="{Binding Children}" x:DataType="vm:WorkspaceNode">
+                    <Grid ColumnDefinitions="Auto,*" Margin="0,1" DoubleTapped="Opened">
+                        <Path Grid.Column="0" Classes="icon" Width="13" Height="13" Margin="0,0,6,0"
+                              Data="{Binding IconKey, Converter={StaticResource Icon}}" />
+                        <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                </TreeDataTemplate>
+            </TreeView.ItemTemplate>
+        </TreeView>
+
+        <TextBlock Grid.Row="4" Classes="muted" FontSize="11" Margin="16,12" VerticalAlignment="Top"
+                   TextWrapping="Wrap" IsVisible="{Binding !Tree.Count}"
+                   Text="Nothing here." />
+
+        <!-- Until a folder is chosen there is deliberately nothing open, so the
+             panel says what it is for and offers the one thing to do. -->
+        <StackPanel Grid.Row="4" Margin="16,12" VerticalAlignment="Top" Spacing="10"
+                    IsVisible="{Binding !HasRoot}">
+            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                       Text="Choose a folder on this machine to work in. It is the only place the assistant will be able to read or write here, so pick the project rather than your home directory." />
+            <Button HorizontalAlignment="Left" Content="Choose a folder…"
+                    Command="{Binding ChooseFolderCommand}" />
+        </StackPanel>
+    </Grid>
+</UserControl>

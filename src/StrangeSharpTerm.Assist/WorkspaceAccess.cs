@@ -71,8 +71,34 @@ public static class WorkspaceTools
 
     public const string WriteFile = "write_file";
 
-    /// <summary>Whether this name is one of these.</summary>
-    public static bool Owns(string name) => name is ListFiles or ReadFile or WriteFile;
+    /// <summary>
+    /// The same three, for the folder open on the machine the app is running
+    /// on.
+    ///
+    /// Separate names rather than a <c>where</c> argument on the first three.
+    /// The argument would be chosen by the model, and which machine a write
+    /// lands on is exactly the thing a person is being asked to approve -- it
+    /// cannot be a field the gate has to parse and trust. Two sets of names
+    /// also mean a conversation can have one folder open and not the other,
+    /// which is the ordinary case.
+    /// </summary>
+    public const string ListLocalFiles = "list_local_files";
+
+    public const string ReadLocalFile = "read_local_file";
+
+    public const string WriteLocalFile = "write_local_file";
+
+    /// <summary>Whether this name is one of these, on either machine.</summary>
+    public static bool Owns(string name) =>
+        name is ListFiles or ReadFile or WriteFile
+            or ListLocalFiles or ReadLocalFile or WriteLocalFile;
+
+    /// <summary>Whether the name is one of the ones about this machine.</summary>
+    public static bool IsLocal(string name) =>
+        name is ListLocalFiles or ReadLocalFile or WriteLocalFile;
+
+    /// <summary>Whether the name is one that changes a file rather than reading one.</summary>
+    public static bool Writes(string name) => name is WriteFile or WriteLocalFile;
 
     /// <summary>What a model is told it may read. Offered whenever a workspace is open.</summary>
     public static IReadOnlyList<AssistTool> Reading { get; } =
@@ -128,6 +154,71 @@ public static class WorkspaceTools
             "path": {
               "type": "string",
               "description": "The file, relative to the workspace root."
+            },
+            "content": {
+              "type": "string",
+              "description": "The file's complete new contents."
+            },
+            "why": {
+              "type": "string",
+              "description": "One short sentence, for the user to read, saying what this change is for."
+            }
+          },
+          "required": ["path", "content", "why"]
+        }
+        """);
+
+    /// <summary>What a model is told it may read on this machine.</summary>
+    public static IReadOnlyList<AssistTool> ReadingLocal { get; } =
+    [
+        new(
+            ListLocalFiles,
+            "List a directory in the folder open on the user's own machine -- the computer running "
+                + "this app, not the remote host. Paths are relative to that folder's root; nothing "
+                + "outside it can be listed.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "The directory, relative to the local folder's root. Use \".\" for the root itself."
+                }
+              },
+              "required": ["path"]
+            }
+            """),
+        new(
+            ReadLocalFile,
+            "Read a text file in the folder open on the user's own machine -- the computer running "
+                + "this app, not the remote host. Paths are relative to that folder's root.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "The file, relative to the local folder's root."
+                }
+              },
+              "required": ["path"]
+            }
+            """),
+    ];
+
+    /// <summary>The one that writes to this machine. Behind the same switch and the same gate.</summary>
+    public static AssistTool LocalWriter { get; } = new(
+        WriteLocalFile,
+        "Replace a file's contents in the folder open on the user's own machine -- the computer "
+            + "running this app, not the remote host. The whole file is written, so send its whole "
+            + "new contents. The user sees exactly what changes, on which machine, and may refuse.",
+        """
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "The file, relative to the local folder's root."
             },
             "content": {
               "type": "string",

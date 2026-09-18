@@ -10,16 +10,23 @@ Swift/SwiftUI app. No Swift code carries over; the design does.
 
 ## Status
 
-**M9 — the workspace.** A folder on a host, open: a tree down one side and the
-files you are editing beside it, in a pane that splits next to the shell on the
-same machine. ⇧⌘E opens it, ⌘S saves, and the file goes back in the line endings
-it already had — which is what stops a Windows machine rewriting every line of a
-Linux host's `nginx.conf` to change one.
+**M9 — the workspace.** A folder open, with a tree down one side and the files
+you are editing beside it. On a host it is a pane that splits next to the shell
+on the same machine (⇧⌘E); on **this** machine it is the **Files** side of the
+left panel, with the editor opening where the sessions are. ⌘S saves either, and
+a file goes back in the line endings it already had — which is what stops a
+Windows machine rewriting every line of a Linux host's `nginx.conf` to change
+one. A file on your Mac can be sent straight to the folder a host has open.
 
 The folder is also the permission. The same root is what the assistant may work
 in: it gets `list_files` and `read_file` as soon as you open one, `write_file`
 only where **Edit files** is on, and nothing at all outside the root — that is
 refused rather than asked, because you answered it when you chose the folder.
+Your own machine's folder has its own three (`read_local_file` and the rest),
+separate names rather than an argument saying which computer, because which one
+a write lands on is the thing being approved and must not be a field the gate has
+to trust. Nothing here is open until you choose a folder: defaulting to `~` would
+be handing over a home directory nobody offered.
 Every write stops at the same gate a command does, showing **the lines that
 change**, because "it would like to write nginx.conf" is not a question anybody
 can answer. Files are redacted like everything else before they are sent, and a
@@ -187,7 +194,8 @@ src/StrangeSharpTerm.Model/       value types: inventory, settings, forwards
 src/StrangeSharpTerm.Store/       inventory JSON, ssh_config parser and importer
 src/StrangeSharpTerm.Security/    known_hosts, credential storage
 src/StrangeSharpTerm.Transport/   SSH.NET connection pool, SFTP, probes,
-                                  the rooted workspace and its path rules
+                                  the rooted workspace and its path rules,
+                                  and this machine's files behind the same seam
 src/StrangeSharpTerm.Terminal/    XTerm.NET engine bound to an SSH channel
 src/StrangeSharpTerm.Assist/      providers, the agent loop, the command and
                                   file gates, redaction, diffs, orchestration

@@ -76,6 +76,19 @@ public partial class App : Application
         // --demo-connect opens a shell on a host first. Half of what the palette
         // offers needs one — a snippet has nowhere to be typed without it — so
         // without this the snippets could not be looked at at all.
+        // --demo-files opens the Files side of the panel on a folder given on
+        // the command line, because the one thing that cannot be arranged from
+        // a fixture is a person choosing a directory in a picker.
+        if (Argument(arguments, "--demo-files") is { } folder)
+            Dispatcher.UIThread.Post(
+                async () =>
+                {
+                    await model.ShowFilesCommand.ExecuteAsync(null);
+                    model.LocalFiles.RootDraft = folder;
+                    await model.LocalFiles.OpenRootCommand.ExecuteAsync(null);
+                },
+                DispatcherPriority.Background);
+
         if (arguments.Contains("--demo-palette"))
             Dispatcher.UIThread.Post(
                 async () =>

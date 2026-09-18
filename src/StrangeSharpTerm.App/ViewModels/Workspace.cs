@@ -38,6 +38,15 @@ public abstract record PaneKind
     /// </summary>
     public sealed record Workspace : PaneKind;
 
+    /// <summary>
+    /// The files being edited on this machine.
+    ///
+    /// The editor without a tree beside it, because the tree is in the sidebar:
+    /// this machine's folder is open whether or not anything is connected, so
+    /// it lives where the hosts live rather than in a pane of its own.
+    /// </summary>
+    public sealed record Editor : PaneKind;
+
     /// <summary>This host's port forwards, and which of them are up.</summary>
     public sealed record Tunnels : PaneKind;
 
@@ -50,11 +59,12 @@ public abstract record PaneKind
 
 /// <summary>One pane in a tab.</summary>
 /// <param name="ConnectionId">
-/// The host this pane is about, and null when it is about several. Optional for
-/// the orchestrator alone: naming one of its hosts would be a lie with
-/// consequences, because disconnecting a host closes the panes belonging to it,
-/// and a fan-out across eight servers should not vanish because one was
-/// disconnected.
+/// The host this pane is about, and null when it is about none or several.
+/// Optional for two kinds: naming one of the orchestrator's hosts would be a lie
+/// with consequences, because disconnecting a host closes the panes belonging to
+/// it, and a fan-out across eight servers should not vanish because one was
+/// disconnected; and the editor holds this machine's files, which no server has
+/// anything to do with.
 /// </param>
 public sealed record Pane
 {

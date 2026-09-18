@@ -36,24 +36,101 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
     /// <c>preferences.json</c>. A view model that wrote the file itself would be
     /// one that could not be built without one.
     /// </param>
+    /// <param name="isLocal">
+    /// Whether the folder is on this machine rather than on a server.
+    ///
+    /// It changes no rule -- the root is the permission either way, and the
+    /// gate is the same gate -- and it changes every sentence: "download to this
+    /// machine" is meaningless when the file is already on it, and a person
+    /// approving a write needs to know which machine it lands on.
+    /// </param>
     public HostWorkspaceViewModel(
         IRemoteFiles files,
         string host,
         string? root = null,
         IDialogService? dialogs = null,
         Func<Action, Task>? offThread = null,
-        Action<string>? remember = null)
+        Action<string>? remember = null,
+        bool isLocal = false)
     {
         _files = files;
         Host = host;
+        IsLocal = isLocal;
         _dialogs = dialogs ?? new ScriptedDialogService();
         _run = offThread ?? (work => Task.Run(work));
         _remember = remember;
-        Workspace = new RemoteWorkspace(files, root is { Length: > 0 } chosen ? chosen : files.Home);
-        RootDraft = Workspace.RootLabel;
+        // No folder until somebody names one, where this machine is concerned.
+        // Defaulting to the account's own directory would be a browser's habit
+        // and the wrong one here: the root is the whole of what this app and the
+        // assistant may touch, and nobody chose their entire home directory.
+        // A host's folder still defaults to the account there, which is where a
+        // connection already puts you.
+        Workspace = root is { Length: > 0 } chosen ? new RemoteWorkspace(files, chosen)
+            : isLocal ? null
+            : new RemoteWorkspace(files, files.Home);
+        RootDraft = Workspace?.RootLabel ?? "";
     }
 
     public string Host { get; }
+
+    /// <summary>Whether this folder is on this machine. See the constructor.</summary>
+    public bool IsLocal { get; }
+
+    /// <summary>Where a write lands, for anything that has to name it.</summary>
+    public string Where => IsLocal ? "this machine" : Host;
+
+    public string UploadTip => IsLocal ? "Copy a file in…" : $"Upload into this folder on {Host}…";
+
+    public string DownloadTip => IsLocal ? "Copy elsewhere…" : "Download to this machine…";
+
+    public string SaveTip => IsLocal ? "Write it back" : $"Write it back to {Host}";
+
+    /// <summary>
+    /// What the path box says when you hover it: the whole root, because the
+    /// box itself is 240 pixels wide and a project path is not.
+    /// </summary>
+    public string RootTip => Root.Length == 0
+        ? "The folder this workspace is rooted at"
+        : $"{Root} — the only folder the assistant may touch on {Where}";
+
+    /// <summary>
+    /// What the empty editor says, which is also where the one rule worth
+    /// knowing is written down.
+    /// </summary>
+    public string EmptyEditorNote => IsLocal
+        ? "Open a file from the sidebar. The assistant can read and write anything in this folder on this machine, and nothing outside it."
+        : "Open a file from the tree. The assistant can read and write anything in this folder, and nothing outside it.";
+
+    /// <summary>
+    /// Sending a local file to the folder a host has open.
+    ///
+    /// The one thing the two workspaces do together, and the reason the local
+    /// one is worth having beside the remote one rather than instead of it:
+    /// "get this file onto that server" is the sentence, and it used to need a
+    /// file picker and a guess at the destination.
+    /// </summary>
+    public Func<WorkspaceNode, Task>? Sender { get; set; }
+
+    /// <summary>What the host's folder is called, for the menu item to name it. Empty when none is open.</summary>
+    [ObservableProperty]
+    public partial string SendTarget { get; set; } = "";
+
+    public bool CanSend => IsLocal && SendTarget.Length > 0 && Selected is { IsDirectory: false };
+
+    public string SendTip => SendTarget.Length > 0 ? $"Send to {SendTarget}" : "Send to the open host";
+
+    partial void OnSendTargetChanged(string value)
+    {
+        OnPropertyChanged(nameof(CanSend));
+        OnPropertyChanged(nameof(SendTip));
+    }
+
+    [RelayCommand]
+    public async Task Send()
+    {
+        if (Selected is { IsDirectory: false } node && Sender is { } send)
+            await send(node);
+    }
 
     /// <summary>
     /// The folder itself, which is also what the assistant is given.
@@ -63,9 +140,12 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
     /// against the old one — which is the honest answer, because that call was
     /// approved against the folder that was open when it was asked.
     /// </summary>
-    public RemoteWorkspace Workspace { get; private set; }
+    public RemoteWorkspace? Workspace { get; private set; }
 
-    public string Root => Workspace.RootLabel;
+    /// <summary>Whether a folder has been chosen at all. Only ever false for this machine's.</summary>
+    public bool HasRoot => Workspace is not null;
+
+    public string Root => Workspace?.RootLabel ?? "";
 
     /// <summary>What is typed into the root bar, which is not the root until Enter.</summary>
     [ObservableProperty]
@@ -134,6 +214,7 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
     partial void OnSelectedChanged(WorkspaceNode? value)
     {
         OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(CanSend));
         DownloadCommand.NotifyCanExecuteChanged();
         DeleteCommand.NotifyCanExecuteChanged();
         RenameCommand.NotifyCanExecuteChanged();
@@ -165,17 +246,37 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Something slow that belongs to this folder but was asked for from
+    /// outside it: sending a file to a host, so far.
+    ///
+    /// It goes through the same busy flag, the same banner and the same note as
+    /// everything else here, because to whoever is watching the pane it is the
+    /// same kind of event.
+    /// </summary>
+    public async Task Copying(string description, Action work, string note)
+    {
+        await Do(description, work);
+        if (Failure is null)
+            Note = note;
+    }
+
     /// <summary>Reads the root again, keeping whichever folders are open on screen open.</summary>
     [RelayCommand]
     public async Task Refresh()
     {
+        // Nothing to do until a folder has been chosen, which on this machine
+        // is a deliberate act rather than a default.
+        if (Workspace is not { } folder)
+            return;
+
         var expanded = Tree.SelectMany(node => node.Reachable())
             .Where(node => node.IsExpanded)
             .Select(node => node.Relative)
             .ToHashSet(StringComparer.Ordinal);
 
         IReadOnlyList<RemoteEntry> entries = [];
-        await Do($"Reading {Root}", () => entries = Workspace.List("."));
+        await Do($"Reading {Root}", () => entries = folder.List("."));
         if (Failure is not null)
             return;
 
@@ -202,13 +303,18 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
     }
 
     private WorkspaceNode Node(RemoteEntry entry) =>
-        new(entry, Workspace.Relative(entry.Path), Fill);
+        new(entry, Workspace?.Relative(entry.Path) ?? entry.Path, Fill);
 
     /// <summary>Reads one directory into the row that was expanded.</summary>
     private async Task Fill(WorkspaceNode node)
     {
+        // Nothing to do until a folder has been chosen, which on this machine
+        // is a deliberate act rather than a default.
+        if (Workspace is not { } folder)
+            return;
+
         IReadOnlyList<RemoteEntry> entries = [];
-        await Do($"Reading {node.Relative}", () => entries = Workspace.List(node.Relative));
+        await Do($"Reading {node.Relative}", () => entries = folder.List(node.Relative));
         if (Failure is not null)
         {
             // An unreadable directory stops looking openable rather than
@@ -243,6 +349,7 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
         };
 
         var candidate = new RemoteWorkspace(_files, absolute);
+        var first = Workspace is null;
         var exists = false;
         await Do($"Opening {wanted}", () => exists = candidate.Stat(".") is { IsDirectory: true });
         if (Failure is not null)
@@ -250,7 +357,7 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
 
         if (!exists)
         {
-            Failure = $"{wanted} is not a directory on {Host}.";
+            Failure = $"{wanted} is not a directory on {Where}.";
             return;
         }
 
@@ -258,16 +365,36 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
             return;
 
         Workspace = candidate;
-        RootDraft = Workspace.RootLabel;
+        RootDraft = candidate.RootLabel;
         OnPropertyChanged(nameof(Root));
-        _remember?.Invoke(Workspace.Root);
-        RootChanged?.Invoke(this, Workspace.Root);
+        if (first)
+            OnPropertyChanged(nameof(HasRoot));
+        _remember?.Invoke(candidate.Root);
+        RootChanged?.Invoke(this, candidate.Root);
         Note = null;
         await Refresh();
     }
 
     /// <summary>The folder changed. The window listens, to remember it and to tell the assistant.</summary>
     public event EventHandler<string>? RootChanged;
+
+    /// <summary>
+    /// Asks for a folder, and opens it.
+    ///
+    /// The first thing this machine's side of the sidebar offers, because until
+    /// somebody answers it there is deliberately nothing open. A picker rather
+    /// than a typed path for the first one: choosing what an assistant may read
+    /// is not a moment to be guessing at spelling.
+    /// </summary>
+    [RelayCommand]
+    public async Task ChooseFolder()
+    {
+        if (await _dialogs.PickFolder("Choose a folder to work in") is not { Length: > 0 } chosen)
+            return;
+
+        RootDraft = chosen;
+        await OpenRoot();
+    }
 
     /// <summary>Opens a file in an editor, or a directory in the tree.</summary>
     [RelayCommand]
@@ -293,6 +420,11 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
     /// </summary>
     public async Task OpenFile(string relative)
     {
+        // Nothing to do until a folder has been chosen, which on this machine
+        // is a deliberate act rather than a default.
+        if (Workspace is not { } folder)
+            return;
+
         if (Open.FirstOrDefault(editor => editor.Relative == relative) is { } already)
         {
             Current = already;
@@ -300,7 +432,7 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
         }
 
         FileText? read = null;
-        await Do($"Opening {relative}", () => read = Workspace.Read(relative));
+        await Do($"Opening {relative}", () => read = folder.Read(relative));
         if (Failure is not null || read is null)
             return;
 
@@ -308,7 +440,11 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
         {
             // Said rather than shown. A JPEG in a text box is a screenful of
             // replacement characters and a save that would corrupt the file.
-            Failure = $"{read.Relative} is not a text file. Download it instead.";
+            // Nothing to suggest where the file is already here: "download it"
+            // is advice about a server, and this one is on the desk.
+            Failure = IsLocal
+                ? $"{read.Relative} is not a text file."
+                : $"{read.Relative} is not a text file. Download it instead.";
             return;
         }
 
@@ -372,7 +508,7 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanSave))]
     public async Task Save()
     {
-        if (Current is not { } editor)
+        if (Current is not { } editor || Workspace is not { } folder)
             return;
 
         if (editor.IsTruncated)
@@ -382,7 +518,7 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
         }
 
         RemoteEntry? now = null;
-        await Do($"Checking {editor.Relative}", () => now = Workspace.Stat(editor.Path));
+        await Do($"Checking {editor.Relative}", () => now = folder.Stat(editor.Path));
         if (Failure is not null)
             return;
 
@@ -390,7 +526,7 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
         {
             var when = now.Modified.ToString("HH:mm:ss");
             if (!await _dialogs.Confirm(
-                    $"{editor.Title} changed on {Host}",
+                    $"{editor.Title} changed on {Where}",
                     $"Somebody or something wrote to it at {when}, after you opened it. Saving replaces that.",
                     "Save anyway"))
             {
@@ -400,12 +536,12 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
 
         await Do(
             $"Saving {editor.Relative}",
-            () => Workspace.Write(editor.Relative, editor.Text, editor.Newline, editor.HasByteOrderMark));
+            () => folder.Write(editor.Relative, editor.Text, editor.Newline, editor.HasByteOrderMark));
         if (Failure is not null)
             return;
 
         RemoteEntry? written = null;
-        await Do($"Checking {editor.Relative}", () => written = Workspace.Stat(editor.Path));
+        await Do($"Checking {editor.Relative}", () => written = folder.Stat(editor.Path));
         editor.Saved(written?.Modified ?? DateTime.UtcNow);
         SaveCommand.NotifyCanExecuteChanged();
         Note = $"Saved {editor.Relative}";
@@ -416,6 +552,11 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
     [RelayCommand]
     public async Task Upload()
     {
+        // Nothing to do until a folder has been chosen, which on this machine
+        // is a deliberate act rather than a default.
+        if (Workspace is not { } folder)
+            return;
+
         var into = Directory();
         var chosen = await _dialogs.PickFiles($"Upload to {(into.Length == 0 ? Root : into)}");
         if (chosen.Count == 0)
@@ -426,7 +567,7 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
             () =>
             {
                 foreach (var local in chosen)
-                    Workspace.Upload(local, PosixPath.Join(into, System.IO.Path.GetFileName(local)));
+                    folder.Upload(local, PosixPath.Join(into, System.IO.Path.GetFileName(local)));
             });
 
         Note = Failure is null ? $"Uploaded {chosen.Count} file{(chosen.Count == 1 ? "" : "s")}" : null;
@@ -442,12 +583,12 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(HasSelection))]
     public async Task Download()
     {
-        if (Selected is not { IsDirectory: false } node)
+        if (Selected is not { IsDirectory: false } node || Workspace is not { } folder)
             return;
 
         var destination = System.IO.Path.Combine(DownloadsFolder(), node.Name);
         Note = null;
-        await Do($"Downloading {node.Name}", () => Workspace.Download(node.Relative, destination));
+        await Do($"Downloading {node.Name}", () => folder.Download(node.Relative, destination));
         if (Failure is null)
             Note = $"Saved to {destination}";
     }
@@ -456,7 +597,7 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(HasSelection))]
     public async Task Delete()
     {
-        if (Selected is not { } node)
+        if (Selected is not { } node || Workspace is not { } folder)
             return;
 
         var detail = node.IsDirectory
@@ -465,7 +606,7 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
         if (!await _dialogs.Confirm($"Delete {node.Name}?", detail, "Delete"))
             return;
 
-        await Do($"Deleting {node.Name}", () => Workspace.Delete(node.Entry));
+        await Do($"Deleting {node.Name}", () => folder.Delete(node.Entry));
         if (Failure is null && Open.FirstOrDefault(editor => editor.Relative == node.Relative) is { } editor)
         {
             // The file is gone; the tab holding it is not a document any more.
@@ -504,10 +645,10 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
     private WorkspaceNode? _renaming;
 
     [RelayCommand]
-    public void NewFile() => Name(Naming.File, "New file in " + Where(), "");
+    public void NewFile() => Name(Naming.File, "New file in " + NamingInto(), "");
 
     [RelayCommand]
-    public void NewFolder() => Name(Naming.Folder, "New folder in " + Where(), "");
+    public void NewFolder() => Name(Naming.Folder, "New folder in " + NamingInto(), "");
 
     [RelayCommand(CanExecute = nameof(HasSelection))]
     public void Rename()
@@ -538,6 +679,11 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
     [RelayCommand]
     public async Task ConfirmName()
     {
+        // Nothing to do until a folder has been chosen, which on this machine
+        // is a deliberate act rather than a default.
+        if (Workspace is not { } folder)
+            return;
+
         var name = NameDraft.Trim();
         if (name.Length == 0)
         {
@@ -555,16 +701,16 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
                 return;
             var parent = PosixPath.Parent(renaming.Relative);
             var moved = parent is null or "" ? name : PosixPath.Join(parent, name);
-            await Do($"Renaming {renaming.Name}", () => Workspace.Rename(renaming.Relative, moved));
+            await Do($"Renaming {renaming.Name}", () => folder.Rename(renaming.Relative, moved));
             await Refresh();
             return;
         }
 
         var into = PosixPath.Join(Directory(), name);
         if (naming == Naming.Folder)
-            await Do($"Creating {name}", () => Workspace.CreateDirectory(into));
+            await Do($"Creating {name}", () => folder.CreateDirectory(into));
         else
-            await Do($"Creating {name}", () => Workspace.CreateFile(into));
+            await Do($"Creating {name}", () => folder.CreateFile(into));
 
         await Refresh();
         if (Failure is null && naming == Naming.File)
@@ -583,7 +729,8 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
         null => "",
     };
 
-    private string Where()
+    /// <summary>Where a new file or folder would go, as the naming bar says it.</summary>
+    private string NamingInto()
     {
         var into = Directory();
         return into.Length == 0 ? Root : into;
@@ -600,6 +747,11 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
     /// </summary>
     public async Task Changed(FileChange change)
     {
+        // Nothing to do until a folder has been chosen, which on this machine
+        // is a deliberate act rather than a default.
+        if (Workspace is not { } folder)
+            return;
+
         var clash = false;
         if (Open.FirstOrDefault(editor => editor.Relative == change.Relative) is { } editor)
         {
@@ -607,7 +759,7 @@ public sealed partial class HostWorkspaceViewModel : ObservableObject
             if (!clash)
             {
                 FileText? read = null;
-                await Do($"Reading {change.Relative}", () => read = Workspace.Read(change.Relative));
+                await Do($"Reading {change.Relative}", () => read = folder.Read(change.Relative));
                 if (read is not null)
                     editor.Reloaded(read);
             }

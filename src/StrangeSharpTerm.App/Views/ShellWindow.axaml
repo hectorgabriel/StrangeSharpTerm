@@ -63,15 +63,30 @@
                  header starts below them; on Windows the inset is nothing. -->
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto"
                   Margin="{x:Static views:ShellWindow.HeaderMargin}">
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
-                    <TextBlock Text="Hosts" FontWeight="SemiBold" VerticalAlignment="Center" />
-                    <Border Classes="chip" VerticalAlignment="Center">
-                        <TextBlock Classes="muted" Text="{Binding Inventory.ConnectionCount}" FontSize="11" />
-                    </Border>
+                <!-- Which of the two the panel is showing. The same pair of
+                     buttons the tab strip uses for tabs and tiles, and the dock
+                     for its two conversations: a word rather than a glyph, and
+                     the one in use is lit. -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                    <Button Classes="row" Classes.selected="{Binding SidebarShowsHosts}" Padding="8,3"
+                            Command="{Binding ShowHostsCommand}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="Hosts" FontSize="12" VerticalAlignment="Center" />
+                            <Border Classes="chip" VerticalAlignment="Center" Padding="6,1">
+                                <TextBlock Classes="muted" Text="{Binding Inventory.ConnectionCount}" FontSize="10" />
+                            </Border>
+                        </StackPanel>
+                    </Button>
+                    <Button Classes="row" Classes.selected="{Binding SidebarShowsFiles}" Padding="8,3"
+                            ToolTip.Tip="Files on this machine"
+                            Command="{Binding ShowFilesCommand}">
+                        <TextBlock Text="Files" FontSize="12" VerticalAlignment="Center" />
+                    </Button>
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
-                    <Button Classes="row" Padding="6" ToolTip.Tip="Add">
+                    <Button Classes="row" Padding="6" ToolTip.Tip="Add"
+                            IsVisible="{Binding SidebarShowsHosts}">
                         <Button.Flyout>
                             <MenuFlyout>
                                 <MenuItem Header="New host…" Command="{Binding NewHostCommand}" />
@@ -90,9 +105,22 @@
             </Grid>
 
             <TextBox Grid.Row="1" Margin="12,0,12,8" PlaceholderText="Search"
+                     IsVisible="{Binding SidebarShowsHosts}"
                      Text="{Binding Inventory.Search, Mode=TwoWay}" />
 
-            <ScrollViewer Grid.Row="2">
+            <!-- This machine's files: the same tree a host's folder gets, in
+                 the panel rather than in a pane. Opening one of them puts the
+                 editor where the sessions are. -->
+            <!-- Wrapped rather than bound with $parent[Window]: reaching up for
+                 the window's DataContext resolves before the window has one,
+                 and the binding fails once and silently. The panel keeps the
+                 shell's own DataContext, so its visibility is an ordinary
+                 binding; only what is inside it looks at the folder. -->
+            <Panel Grid.Row="1" Grid.RowSpan="2" IsVisible="{Binding SidebarShowsFiles}">
+                <views:WorkspaceTreeView DataContext="{Binding LocalFiles}" />
+            </Panel>
+
+            <ScrollViewer Grid.Row="2" IsVisible="{Binding SidebarShowsHosts}">
                 <StackPanel Margin="8,0,8,12">
                     <ItemsControl ItemsSource="{Binding Inventory.Rows}">
                         <ItemsControl.ItemTemplate>

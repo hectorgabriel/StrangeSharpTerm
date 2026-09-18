@@ -1,0 +1,83 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:StrangeSharpTerm.App.ViewModels"
+             xmlns:views="clr-namespace:StrangeSharpTerm.App.Views"
+             x:Class="StrangeSharpTerm.App.Views.WorkspaceEditorView"
+             x:DataType="vm:HostWorkspaceViewModel">
+    <!--
+        The files being edited: the half of a workspace that is a document.
+
+        Split from the tree because the two have different homes when the folder
+        is this machine's — the tree goes in the sidebar, where 260 pixels is
+        plenty for names and nowhere near enough for a line of code, and this
+        goes in a pane in the middle.
+    -->
+    <UserControl.Resources>
+        <views:IconConverter x:Key="Icon" />
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,*,Auto" Background="{DynamicResource BackgroundBrush}">
+
+        <!-- The files being edited. A dot on the tab is unsaved work, which is
+             what every editor means by it. -->
+        <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled"
+                      IsVisible="{Binding Open.Count}">
+            <ItemsControl ItemsSource="{Binding Open}" Margin="4,2,4,0">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:FileEditorViewModel">
+                        <Border Classes="tab" Classes.active="{Binding IsCurrent}"
+                                Margin="0,2,4,4" Padding="8,3">
+                            <Grid ColumnDefinitions="Auto,Auto">
+                                <Button Grid.Column="0" Classes="row" Padding="2,0"
+                                        Content="{Binding TabTitle}"
+                                        ToolTip.Tip="{Binding Relative}"
+                                        Command="{Binding $parent[UserControl].((vm:HostWorkspaceViewModel)DataContext).ShowCommand}"
+                                        CommandParameter="{Binding}" />
+                                <Button Grid.Column="1" Classes="row" Padding="4,0" Margin="4,0,0,0"
+                                        ToolTip.Tip="Close"
+                                        Command="{Binding $parent[UserControl].((vm:HostWorkspaceViewModel)DataContext).CloseCommand}"
+                                        CommandParameter="{Binding}">
+                                    <Path Classes="icon" Width="9" Height="9"
+                                          Data="{Binding Source=IconX, Converter={StaticResource Icon}}" />
+                                </Button>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- The file itself, with its line numbers beside it. -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,*" Margin="4,0,4,0" DataContext="{Binding Current}"
+              IsVisible="{Binding $parent[UserControl].((vm:HostWorkspaceViewModel)DataContext).HasOpenFile}">
+            <Border Grid.Column="0" Background="{DynamicResource SurfaceBrush}" Padding="6,7,4,0">
+                <TextBlock Name="Gutter" Classes="muted" FontFamily="monospace" FontSize="12"
+                           TextAlignment="Right" Text="{Binding Lines}" />
+            </Border>
+            <TextBox Grid.Column="1" Name="Editor" AcceptsReturn="True" AcceptsTab="True"
+                     FontFamily="monospace" FontSize="12" TextWrapping="NoWrap"
+                     BorderThickness="0" CornerRadius="0"
+                     Text="{Binding Text, Mode=TwoWay}" />
+        </Grid>
+
+        <TextBlock Grid.Row="1" Classes="muted" Margin="24" VerticalAlignment="Top" TextWrapping="Wrap"
+                   IsVisible="{Binding !HasOpenFile}" Text="{Binding EmptyEditorNote}" />
+
+        <!-- What is open, what it would save, and whether anything is in flight. -->
+        <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" Margin="10,4,10,8">
+            <TextBlock Grid.Column="0" Classes="muted" FontSize="11" VerticalAlignment="Center"
+                       IsVisible="{Binding IsBusy}" Text="Working…" />
+            <TextBlock Grid.Column="1" Classes="muted" FontSize="11" Margin="8,0"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                       Text="{Binding Where}" />
+            <Button Grid.Column="2" Content="Save" ToolTip.Tip="{Binding SaveTip}"
+                    Command="{Binding SaveCommand}" />
+        </Grid>
+    </Grid>
+</UserControl>
