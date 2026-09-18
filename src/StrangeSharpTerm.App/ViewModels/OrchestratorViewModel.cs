@@ -285,12 +285,22 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// A way to run a command on one host, for Ask mode, which has one
     /// conversation and needs no agent per host at all -- only the connection.
     /// </param>
+    /// <param name="localWorkspace">
+    /// The folder open on the machine this app is running on, asked for each
+    /// time rather than captured: it is opened and closed while the pane is.
+    /// </param>
     public OrchestratorViewModel(
         IAssistBackend backend,
         IEnumerable<TargetRow> targets,
         Func<string, HostAgent?> agentFor,
-        Func<string, IHostAccess?>? accessFor = null)
+        Func<string, IHostAccess?>? accessFor = null,
+        IWorkspaceAccess? localWorkspace = null,
+        Func<string?>? localRoot = null,
+        Func<string>? connectedTools = null)
     {
+        _localWorkspace = localWorkspace;
+        _localRoot = localRoot;
+        _connectedTools = connectedTools;
         // Falls back to the agent's own host, so a test that only cares about
         // one of the two modes need only supply that one.
         _accessFor = accessFor ?? (alias => agentFor(alias) is { } agent ? new Named(agent) : null);
@@ -338,6 +348,32 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 
     [ObservableProperty]
     public partial bool MayRunCommands { get; set; }
+
+    /// <summary>
+    /// Whether it may write to the folder open on this machine.
+    ///
+    /// This machine's and not the hosts': a run is where one instruction becomes
+    /// an action on eight servers, and changing a file on one of them stays a
+    /// job for the pane about that server. What this is for is the other
+    /// direction -- reading a runbook here, and writing what a run found
+    /// somewhere that is not a chat window.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool MayEditFiles { get; set; }
+
+    /// <summary>The folder open on this machine, for the switch to name. Empty when there is none.</summary>
+    public string LocalRoot => _localRoot?.Invoke() ?? "";
+
+    public bool HasLocalFiles => LocalRoot.Length > 0;
+
+    private Func<string?>? _localRoot;
+
+    /// <summary>Says the folder changed, so the switch and its label catch up.</summary>
+    public void LocalFilesChanged()
+    {
+        OnPropertyChanged(nameof(LocalRoot));
+        OnPropertyChanged(nameof(HasLocalFiles));
+    }
 
     [ObservableProperty]
     public partial bool IsRunning { get; private set; }
@@ -440,7 +476,18 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 
     public bool HasPlan => Phases.Count > 0;
 
-    public bool CanRun => !IsRunning && Chosen.Count > 0 && Instruction.Trim().Length > 0;
+    /// <summary>
+    /// Whether the button does anything.
+    ///
+    /// A command is exempt from needing hosts. /help with nothing ticked is a
+    /// perfectly sensible thing to type -- it is how you find out what you can
+    /// type -- and a button that stayed grey for it would look broken rather
+    /// than strict.
+    /// </summary>
+    public bool CanRun =>
+        !IsRunning
+        && Instruction.Trim().Length > 0
+        && (Chosen.Count > 0 || ChatCommands.Looks(Instruction));
 
     /// <summary>What the button says: writing a plan is not running one.</summary>
     public string RunLabel => IsPlanning ? (HasPlan ? "Run the plan" : "Plan it") : "Run";
@@ -469,9 +516,49 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     [RelayCommand]
     public void Choose(OrchestratorMode mode) => Mode = mode;
 
+    /// <summary>What <c>/mcp</c> answers with. Supplied by the window, which owns the servers.</summary>
+    private Func<string>? _connectedTools;
+
+    /// <inheritdoc cref="AssistantViewModel.Handle"/>
+    public bool Handle(string text)
+    {
+        if (!ChatCommands.Looks(text))
+            return false;
+
+        var fleet = _fleet ??= Fleet();
+        switch (ChatCommands.Name(text))
+        {
+            case ChatCommands.Clear:
+                fleet.Clear();
+                break;
+
+            case ChatCommands.Mcp:
+                fleet.Say(_connectedTools?.Invoke() ?? Assistant.ConnectedToolsReport.Of(null));
+                break;
+
+            case ChatCommands.Help:
+                fleet.Say(ChatCommands.Listing);
+                break;
+
+            default:
+                fleet.Say(ChatCommands.Unknown(ChatCommands.Name(text)));
+                break;
+        }
+
+        return true;
+    }
+
     [RelayCommand(CanExecute = nameof(CanRun))]
     public async Task Run()
     {
+        // A command is not an instruction, and must not become a run across
+        // eight hosts because it started with a slash.
+        if (Handle(Instruction.Trim()))
+        {
+            Instruction = "";
+            return;
+        }
+
         if (IsPlanning && !HasPlan)
         {
             await Draft();
@@ -518,7 +605,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         var hosts = Ticked();
         await Working(async token =>
         {
-            var answer = await fleet.Ask(instruction, hosts, MayRunCommands, token);
+            var answer = await fleet.Ask(instruction, hosts, MayRunCommands, MayEditFiles, token);
             Post(() =>
             {
                 Progress = $"{Chosen.Count} hosts · {answer.CommandsRun} commands";
@@ -550,9 +637,25 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// </summary>
     private FleetAgent? _fleet;
 
+    private readonly IWorkspaceAccess? _localWorkspace;
+
+    /// <summary>A file on this machine was written by the run. The sidebar and the editor listen.</summary>
+    public event EventHandler<FileChange>? WroteHere;
+
     private FleetAgent Fleet()
     {
-        var fleet = new FleetAgent(_backend, this);
+        var fleet = new FleetAgent(_backend, this, null, _localWorkspace);
+
+        fleet.WroteHere += (_, change) => Post(() => WroteHere?.Invoke(this, change));
+
+        fleet.Cleared += (_, _) => Post(() =>
+        {
+            _rows.Clear();
+            Rows.Clear();
+            Asked = "";
+            Thinking = "";
+            Progress = "";
+        });
 
         fleet.Added += (_, entry) => Post(() =>
         {

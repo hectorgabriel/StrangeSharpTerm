@@ -96,6 +96,26 @@ open and not the other, which is the ordinary case. Every gate names the machine
 in the words it asks in: "It writes conf/nginx.conf on this machine. 3 lines
 added."
 
+## The fan-out gets this machine's folder, and not the hosts'
+
+The orchestrator asks one thing across every ticked host. Giving it the hosts'
+files would mean one approval could rewrite a file on eight servers, which is
+the largest thing a single click could do in this app and not a thing worth
+making easy. Changing a file on a server stays a job for the pane about that
+server, where you are looking at one machine.
+
+What a run genuinely wants is the other direction, and it gets that: read the
+runbook here, compare it with what eight machines actually have, and write the
+findings somewhere that is not a chat window. So the fleet assistant is offered
+`list_local_files`, `read_local_file` and `write_local_file` and nothing else —
+a call naming a host's file is turned down with somewhere to go rather than
+silently failing.
+
+The gate, the policy, the budget and the diff are the same code either way:
+`WorkspaceCalls` is one implementation both agents use, because the one thing
+that must not differ between "the assistant about this host" and "the assistant
+about all of them" is what stops a write.
+
 ## What this costs, and what it does not buy
 
 **It cannot see through a symbolic link.** Paths are resolved as text, before

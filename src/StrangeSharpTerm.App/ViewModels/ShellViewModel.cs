@@ -178,9 +178,11 @@ public sealed partial class ShellViewModel : ObservableObject
         LocalFiles.RootChanged += (_, _) =>
         {
             // Every conversation, not one: this folder belongs to no host, so
-            // all of them gain and lose its tools together.
+            // all of them gain and lose its tools together -- the fan-out
+            // included.
             foreach (var conversation in _conversations.Values)
                 conversation.WorkspaceChanged();
+            (_orchestrator?.DataContext as OrchestratorViewModel)?.LocalFilesChanged();
         };
         LocalFiles.Saveability += (_, _) =>
         {
@@ -1235,7 +1237,10 @@ public sealed partial class ShellViewModel : ObservableObject
                 text => (Focused(connection.Id) is { } id ? _terminals.Session(id) : ActiveTerminal())?.Send(text),
                 // What the header names and the Edit files switch depends on.
                 () => _workspaces.GetValueOrDefault(connection.Id)?.Workspace?.RootLabel,
-                () => LocalFiles.Workspace?.RootLabel)
+                () => LocalFiles.Workspace?.RootLabel,
+                // What /mcp answers with, read out of the hub rather than asked
+                // of a model that cannot see a server which failed to start.
+                () => ConnectedToolsReport.Of(_tools))
             {
                 // The dock's own header names the host, and at this width two
                 // labels for it leave neither any room.
@@ -1348,7 +1353,17 @@ public sealed partial class ShellViewModel : ObservableObject
                     _sessions.Commands(target),
                     _sessions.Health(target),
                     () => null)
-                : null);
+                : null,
+            // This machine's folder, and not the hosts'. A run is where one
+            // instruction becomes an action on eight servers; reading a runbook
+            // here and writing down what it found is the direction that is
+            // worth having, and the other one stays a job for the pane about
+            // one machine.
+            new RemoteWorkspaceAccess(() => LocalFiles.Workspace),
+            () => LocalFiles.Workspace?.RootLabel,
+            () => ConnectedToolsReport.Of(_tools));
+
+        model.WroteHere += async (_, change) => await LocalFiles.Changed(change);
 
         // Which host it has, said in the pane showing that host and marked on
         // its tile, for as long as it has it. The command itself still goes

@@ -567,3 +567,185 @@ public class LocalWorkspaceAgentTests
         here.Written.ShouldContainKey("notes.md");
     }
 }
+
+/// <summary>
+/// The fan-out's folder, which is this machine's and not the hosts'.
+///
+/// A run is where one instruction becomes an action on eight servers. What it
+/// gets is the other direction: read the runbook here, compare it with what the
+/// machines actually have, write the findings down.
+/// </summary>
+public class FleetWorkspaceTests
+{
+    private static IReadOnlyList<FleetHost> Hosts(params string[] aliases) =>
+        [.. aliases.Select(alias => new FleetHost(alias, () => new FakeHost(alias)))];
+
+    [Fact]
+    public async Task ItIsOfferedThisMachinesFilesAndNeverTheHosts()
+    {
+        var backend = new ScriptedBackend(ScriptedBackend.Says("Noted."));
+        var agent = new FleetAgent(backend, new StandingAnswer(true), null, new FakeWorkspace("/Users/you/runbooks"));
+
+        await agent.Ask(
+            "compare the configs",
+            Hosts("web-01", "web-02"),
+            mayRunCommands: true,
+            mayEditFiles: true,
+            TestContext.Current.CancellationToken);
+
+        var offered = backend.Requests.Single().Tools.Select(tool => tool.Name).ToArray();
+        offered.ShouldBe([
+            AssistTools.RunCommand,
+            WorkspaceTools.ListLocalFiles,
+            WorkspaceTools.ReadLocalFile,
+            WorkspaceTools.WriteLocalFile,
+        ]);
+        // Not read_file or write_file: a write fanned out across eight servers
+        // from one approval is the thing this deliberately cannot do.
+        offered.ShouldNotContain(WorkspaceTools.WriteFile);
+    }
+
+    [Fact]
+    public async Task AskingForAHostsFilesIsTurnedDownWithSomewhereToGo()
+    {
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Calls(WorkspaceTools.ReadFile, new { path = "conf/nginx.conf" }),
+            ScriptedBackend.Says("I will ask about one host instead."));
+        var agent = new FleetAgent(backend, new StandingAnswer(true), null, new FakeWorkspace("/Users/you/runbooks"));
+
+        await agent.Ask(
+            "read nginx.conf everywhere",
+            Hosts("web-01"),
+            mayRunCommands: true,
+            mayEditFiles: true,
+            TestContext.Current.CancellationToken);
+
+        var told = backend.Requests[1].Messages.SelectMany(message => message.ToolResults).Single();
+        told.Failed.ShouldBeTrue();
+        told.Output.ShouldContain("Ask about one host on its own");
+    }
+
+    [Fact]
+    public async Task WritingHereStopsAtTheSameGateWithTheSameDiff()
+    {
+        var here = new FakeWorkspace("/Users/you/runbooks").With("findings.md", "# Findings\n");
+        var gate = new RecordingGate(answer: true);
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Calls(
+                WorkspaceTools.WriteLocalFile,
+                new
+                {
+                    path = "findings.md",
+                    content = "# Findings\n\n- web-01 is uncapped\n",
+                    why = "write down what the run found",
+                }),
+            ScriptedBackend.Says("Written."));
+        var agent = new FleetAgent(backend, gate, null, here);
+
+        await agent.Ask(
+            "check them and write it down",
+            Hosts("web-01", "web-02"),
+            mayRunCommands: true,
+            mayEditFiles: true,
+            TestContext.Current.CancellationToken);
+
+        var asked = gate.Asked.Single();
+        asked.Host.ShouldBe("this machine");
+        asked.Detail.ShouldNotBeNull().ShouldContain("+ - web-01 is uncapped");
+        here.Written["findings.md"].ShouldContain("uncapped");
+    }
+
+    [Fact]
+    public async Task WithTheSwitchOffItCanReadHereAndNotWrite()
+    {
+        var backend = new ScriptedBackend(ScriptedBackend.Says("Noted."));
+        var agent = new FleetAgent(backend, new StandingAnswer(true), null, new FakeWorkspace("/Users/you/runbooks"));
+
+        await agent.Ask(
+            "what does the runbook say?",
+            Hosts("web-01"),
+            mayRunCommands: true,
+            mayEditFiles: false,
+            TestContext.Current.CancellationToken);
+
+        backend.Requests.Single().Tools.Select(tool => tool.Name)
+            .ShouldNotContain(WorkspaceTools.WriteLocalFile);
+        backend.Requests.Single().System.ShouldContain("editing is turned off");
+    }
+
+    [Fact]
+    public async Task WithNoFolderHereItIsOfferedNoFileToolsAtAll()
+    {
+        var backend = new ScriptedBackend(ScriptedBackend.Says("Noted."));
+        var agent = new FleetAgent(backend, new StandingAnswer(true));
+
+        await agent.Ask(
+            "look at them",
+            Hosts("web-01"),
+            mayRunCommands: true,
+            mayEditFiles: true,
+            TestContext.Current.CancellationToken);
+
+        backend.Requests.Single().Tools.Select(tool => tool.Name).ShouldBe([AssistTools.RunCommand]);
+    }
+}
+
+/// <summary>Forgetting a conversation, in both halves of it.</summary>
+public class ClearingTests
+{
+    [Fact]
+    public async Task ClearingEmptiesTheTranscriptAndWhatTheProviderWasTold()
+    {
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Says("It is 98% full."),
+            ScriptedBackend.Says("Still 98%."));
+        var agent = new HostAgent(backend, new FakeHost("web-01"), Fixtures.Settings, new StandingAnswer(true));
+
+        await agent.Ask("how full?", cancellationToken: TestContext.Current.CancellationToken);
+        agent.Entries.ShouldNotBeEmpty();
+
+        var emptied = false;
+        agent.Cleared += (_, _) => emptied = true;
+        agent.Clear();
+
+        emptied.ShouldBeTrue();
+        agent.Entries.ShouldBeEmpty();
+        agent.CanRewind.ShouldBeFalse();
+
+        // And the next question arrives at a provider that has been told
+        // nothing: one message, not three. A clear that emptied only the screen
+        // would leave every later question carrying what nobody can see.
+        await agent.Ask("and now?", cancellationToken: TestContext.Current.CancellationToken);
+        backend.Requests[^1].Messages.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task TheFleetForgetsTheSameWay()
+    {
+        var backend = new ScriptedBackend(ScriptedBackend.Says("All fine."), ScriptedBackend.Says("Still fine."));
+        var agent = new FleetAgent(backend, new StandingAnswer(true));
+        var hosts = new[] { new FleetHost("web-01", () => new FakeHost("web-01")) };
+
+        await agent.Ask("how are they?", hosts, mayRunCommands: false,
+            cancellationToken: TestContext.Current.CancellationToken);
+        agent.Entries.ShouldNotBeEmpty();
+
+        agent.Clear();
+
+        agent.Entries.ShouldBeEmpty();
+        await agent.Ask("and now?", hosts, mayRunCommands: false,
+            cancellationToken: TestContext.Current.CancellationToken);
+        backend.Requests[^1].Messages.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void SayingSomethingPutsItInTheTranscriptAsANote()
+    {
+        var agent = new HostAgent(
+            new ScriptedBackend(), new FakeHost("web-01"), Fixtures.Settings, new StandingAnswer(true));
+
+        agent.Say("Commands, handled here.");
+
+        agent.Entries.OfType<TranscriptEntry.Note>().Single().Text.ShouldBe("Commands, handled here.");
+    }
+}

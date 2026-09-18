@@ -240,6 +240,37 @@ public sealed class HostAgent(
     /// <summary>A row was taken back, so a pane can drop it.</summary>
     public event EventHandler<TranscriptEntry>? Removed;
 
+    /// <summary>
+    /// Forgets the conversation: what is on screen, and what the provider has
+    /// been told.
+    ///
+    /// Both halves, or it is not clearing anything. The transcript is what a
+    /// person is reading and the conversation is what is resent on every turn,
+    /// and a clear that emptied only the first would leave every later question
+    /// carrying -- and paying for -- a conversation nobody can see any more.
+    ///
+    /// What it ran on a server is not untaken. Nothing here reaches one.
+    /// </summary>
+    public void Clear()
+    {
+        _conversation.Clear();
+        _entries.Clear();
+        _questions.Clear();
+        LastContext = null;
+        Cleared?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Everything was forgotten, so a pane can empty itself.</summary>
+    public event EventHandler? Cleared;
+
+    /// <summary>
+    /// Puts something the app has to say into the transcript.
+    ///
+    /// Through the same path a note from the loop takes, so a pane needs no
+    /// second way of showing one.
+    /// </summary>
+    public void Say(string text) => Append(new TranscriptEntry.Note(text));
+
     /// <summary>Asks one question and runs the loop until the model stops asking for things.</summary>
     public async Task<AgentAnswer> Ask(string question, AskOptions? options = null, CancellationToken cancellationToken = default)
     {
@@ -615,13 +646,12 @@ public sealed class HostAgent(
     }
 
     /// <summary>
-    /// One call to the open folder: listed, read, or written.
+    /// One call to a folder, on this host or on this machine.
     ///
-    /// The same gate and the same budget as a command, judged by
-    /// <see cref="FilePolicy"/> instead of <see cref="CommandPolicy"/>. Reading
-    /// runs unattended; a write is worked out first so that what stops at the
-    /// gate is the lines that change rather than the sentence "it would like to
-    /// write a file".
+    /// The work is <see cref="WorkspaceCalls"/>, which the fleet's assistant
+    /// uses too: the policy, the budget, the gate and the diff it shows must
+    /// not have two implementations. What is decided here is only which folder
+    /// the call is about and what to call the machine it lands on.
     /// </summary>
     private async Task<(bool Ran, AssistToolResult Result)> CarryFile(
         AssistToolCall call,
@@ -639,241 +669,24 @@ public sealed class HostAgent(
                 Failed: true));
         }
 
-        // Whose machine a write lands on, in the words a person is asked in. The
-        // host's own name where it is the host's, because "web-01" is what the
-        // rest of the conversation calls it.
-        var machine = local ? "this machine" : host.Alias;
-        var writing = WorkspaceTools.Writes(call.Name);
-        var (path, content, why) = writing
-            ? WorkspaceTools.ReadWrite(call.Arguments)
-            : (WorkspaceTools.ReadPath(call.Arguments), "", "");
+        var calls = new WorkspaceCalls(
+            open,
+            gate,
+            local ? "this machine" : host.Alias,
+            Append,
+            entry => Updated?.Invoke(this, entry),
+            // Only the host's own files are narrated into its pane.
+            local ? null : step => Working?.Invoke(this, step));
 
-        var operation = call.Name switch
+        calls.Wrote += (_, change) =>
         {
-            WorkspaceTools.ListFiles or WorkspaceTools.ListLocalFiles => FileOperation.List,
-            WorkspaceTools.ReadFile or WorkspaceTools.ReadLocalFile => FileOperation.Read,
-            _ => FileOperation.Write,
-        };
-        var verb = operation switch
-        {
-            FileOperation.List => "list",
-            FileOperation.Read => "read",
-            _ => "write",
-        };
-
-        var judgement = FilePolicy.Judge(operation, open.Root, path);
-        var step = new TranscriptEntry.Step
-        {
-            Host = host.Alias,
-            // The machine is part of the line, not a detail underneath it: two
-            // folders are open and the paths in them look alike.
-            Command = $"{verb} {(path.Length == 0 ? "?" : path)}{(local ? " (this machine)" : "")}",
-            Why = why,
-            Gate = judgement.Reason,
-            IsDestructive = judgement.IsDestructive,
-            IsFile = true,
-        };
-        Append(step);
-
-        // Taken before anything is decided, exactly as a command is: a model
-        // asking repeatedly for paths outside the folder is spending turns, and
-        // the budget is what bounds that.
-        if (!budget.Take())
-        {
-            step.State = StepState.Skipped;
-            Updated?.Invoke(this, step);
-            return (false, new AssistToolResult(
-                call.Id,
-                "The budget for this question is spent. Do not ask for anything else; "
-                    + "summarise what you have found so far.",
-                Failed: true));
-        }
-
-        // Outside the folder is not a question for a person. They answered it
-        // when they chose the folder, and asking again would teach them to say
-        // yes to a bar they have stopped reading.
-        if (judgement.IsRefused)
-        {
-            step.State = StepState.Refused;
-            Updated?.Invoke(this, step);
-            return (false, new AssistToolResult(call.Id, judgement.Reason, Failed: true));
-        }
-
-        try
-        {
-            if (!writing)
-                return await CarryRead(open, call, step, path, machine, cancellationToken);
-
-            var change = await open.Plan(path, content, cancellationToken);
-
-            // A model that read a scrubbed file and sent it back would write the
-            // marker into the real one, turning a password into the word
-            // [redacted]. The diff would show it and a person might still miss
-            // it, so it never reaches the gate.
-            //
-            // A new file too, which is not the same failure and is just as bad:
-            // a .env.production copied from a scrubbed .env is a deploy whose
-            // password is the word that hid the password.
-            if (change.Text.Contains(Redaction.Marker, StringComparison.Ordinal))
-            {
-                step.State = StepState.Refused;
-                step.Output = $"It would write {Redaction.Marker} into the file.";
-                Updated?.Invoke(this, step);
-                return (false, new AssistToolResult(
-                    call.Id,
-                    $"This write contains {Redaction.Marker}, which is what this app puts in place of a "
-                        + "secret before you see it -- it is not the real value and must not be written "
-                        + "anywhere. Leave those lines out of your change, or ask the user to fill them in.",
-                    Failed: true));
-            }
-
-            if (change.Diff.IsEmpty && !change.Creates)
-            {
-                // Nothing to approve and nothing to do. Saying so is better than
-                // a gate that asks a person to allow a write that changes
-                // nothing.
-                step.State = StepState.Ran;
-                step.Output = "It already says exactly that.";
-                Updated?.Invoke(this, step);
-                return (true, new AssistToolResult(
-                    call.Id,
-                    $"{change.Relative} already contains exactly that. Nothing was written."));
-            }
-
-            // Judged again now that the size of it is known: "it writes
-            // nginx.conf" and "it writes nginx.conf, and 380 of its 400 lines
-            // change" are not the same question.
-            var reason = change.Creates
-                ? $"It creates {change.Relative} on {machine}, which is not there yet."
-                : $"{judgement.Reason.TrimEnd('.')} on {machine}. {change.Diff.Summary}.";
-
-            step.Gate = reason;
-            step.Detail = change.Diff.Text;
-            Updated?.Invoke(this, step);
-
-            var allowed = await gate.Allow(
-                new PendingCommand(
-                    machine,
-                    $"write {change.Relative}",
-                    why,
-                    reason,
-                    judgement.IsDestructive,
-                    change.Diff.Text),
-                cancellationToken);
-
-            if (!allowed)
-            {
-                step.State = StepState.Refused;
-                Updated?.Invoke(this, step);
-                return (false, new AssistToolResult(
-                    call.Id,
-                    "The user refused this change. Do not write it somewhere else and do not suggest a "
-                        + "command that would make the same change. Work with what you have, or say what "
-                        + "you would need and why.",
-                    Failed: true));
-            }
-
-            step.State = StepState.Running;
-            Updated?.Invoke(this, step);
-            // Only the host's own files are narrated into its pane. A file on
-            // this machine has no terminal to say so in, and saying it in the
-            // host's would be saying it about the wrong computer.
-            if (!local)
-                Working?.Invoke(this, new AssistStep(host.Alias, step.Command, why, Running: true));
-
-            await open.Write(change, cancellationToken);
-
-            step.State = StepState.Ran;
-            step.ExitStatus = 0;
-            step.Output = change.Diff.Text;
-            Updated?.Invoke(this, step);
-            if (!local)
-                Working?.Invoke(this, new AssistStep(
-                    host.Alias, step.Command, why, Running: false, 0, change.Diff.Summary));
             if (local)
                 WroteHere?.Invoke(this, change);
             else
                 Wrote?.Invoke(this, change);
+        };
 
-            return (true, new AssistToolResult(
-                call.Id,
-                change.Creates
-                    ? $"Created {change.Relative} on {machine}."
-                    : $"Wrote {change.Relative} on {machine}: {change.Diff.Summary}."));
-        }
-        catch (OperationCanceledException)
-        {
-            if (!local)
-                Working?.Invoke(this, new AssistStep(host.Alias, step.Command, why, Running: false));
-            throw;
-        }
-        catch (Exception e)
-        {
-            step.State = StepState.Failed;
-            step.Output = e.Message;
-            Updated?.Invoke(this, step);
-            if (!local)
-                Working?.Invoke(this, new AssistStep(host.Alias, step.Command, why, Running: false));
-            return (false, new AssistToolResult(call.Id, e.Message, Failed: true));
-        }
-    }
-
-    /// <summary>
-    /// A listing or a file, which the policy lets through without asking.
-    ///
-    /// Redacted and truncated like command output, and for the same reason --
-    /// a file in a workspace is exactly where an API key lives. The count goes
-    /// back with it, because a model that rewrote a scrubbed file whole would
-    /// replace the secret with the word that hid it.
-    /// </summary>
-    private async Task<(bool Ran, AssistToolResult Result)> CarryRead(
-        IWorkspaceAccess open,
-        AssistToolCall call,
-        TranscriptEntry.Step step,
-        string path,
-        string machine,
-        CancellationToken cancellationToken)
-    {
-        step.State = StepState.Running;
-        Updated?.Invoke(this, step);
-
-        string text;
-        var note = "";
-        if (call.Name is WorkspaceTools.ListFiles or WorkspaceTools.ListLocalFiles)
-        {
-            text = await open.List(path, cancellationToken);
-        }
-        else
-        {
-            var file = await open.Read(path, cancellationToken);
-            if (file.IsBinary)
-            {
-                step.State = StepState.Failed;
-                step.Output = $"{file.Relative} is not a text file.";
-                Updated?.Invoke(this, step);
-                return (true, new AssistToolResult(
-                    call.Id,
-                    $"{file.Relative} on {machine} is not a text file ({file.Length} bytes). Nothing was read.",
-                    Failed: true));
-            }
-
-            var scrubbed = Redaction.Scrub(file.Text);
-            text = scrubbed.Text;
-            if (scrubbed.Count > 0)
-                note = $"\n\n{scrubbed.Count} secret(s) were removed from this file before you saw it. "
-                    + $"Do not write {Redaction.Marker} back into it.";
-            if (file.Truncated)
-                note += $"\n\nThis is the first {RemoteWorkspace.MaxFileBytes / 1000} kB of a "
-                    + $"{file.Length}-byte file.";
-        }
-
-        var output = Truncate(text);
-        step.State = StepState.Ran;
-        step.ExitStatus = 0;
-        step.Output = output;
-        Updated?.Invoke(this, step);
-
-        return (true, new AssistToolResult(call.Id, output + note));
+        return await calls.Carry(call, budget, cancellationToken);
     }
 
     /// <summary>
@@ -971,6 +784,9 @@ public sealed class HostAgent(
     ///
     /// The head says what the command was doing and the tail usually holds the
     /// error; cutting the tail off is how a truncation loses the answer.
+    ///
+    /// Shared with <see cref="WorkspaceCalls"/>, which truncates a file for the
+    /// same reason a command's output is truncated.
     /// </summary>
     internal static string Truncate(string output, int limit = AssistLimits.MaxOutputCharacters)
     {

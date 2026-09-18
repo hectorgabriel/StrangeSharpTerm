@@ -40,6 +40,16 @@ dotnet run --project src/stctl -- workspace user@host \
     --root '~/srv/app' --cat conf/nginx.conf
 ```
 
+Both panes take a few commands that are not questions: **`/clear`** forgets the
+conversation — what is on screen *and* what the provider has been told —
+**`/mcp`** reports the attached tool servers and what each one offers, and
+**`/help`** lists them. They are answered in the app and never sent, because a
+model asked about the app it is running inside answers plausibly and checks
+nothing. The fan-out gets this machine's folder too, so a run can read a runbook
+here and write down what it found across eight servers; it deliberately gets no
+access to the hosts' files, because one approval that rewrites a file on eight
+machines is not a thing worth making easy.
+
 **M8 — packaging.** `build/package.sh` builds `StrangeSharpTerm.app` and a disk
 image around it; `build/install.sh` puts it in `/Applications` for your own Mac
 and needs no certificate at all. `build/package.ps1` does the Windows side.

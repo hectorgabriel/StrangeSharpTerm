@@ -438,6 +438,14 @@
             <CheckBox VerticalAlignment="Center" IsChecked="{Binding MayRunCommands}">
                 <TextBlock Text="Run commands" FontSize="12" />
             </CheckBox>
+            <!-- This machine's folder, and only where one is open. A run reads
+                 the hosts and writes its findings here; changing a file on a
+                 server stays a job for the pane about that server. -->
+            <CheckBox VerticalAlignment="Center" IsVisible="{Binding HasLocalFiles}"
+                      ToolTip.Tip="{Binding LocalRoot}"
+                      IsChecked="{Binding MayEditFiles}">
+                <TextBlock Text="Write files here" FontSize="12" />
+            </CheckBox>
         </StackPanel>
 
         <Grid Grid.Row="6" ColumnDefinitions="*,Auto,Auto,Auto" Margin="12,0,12,12">

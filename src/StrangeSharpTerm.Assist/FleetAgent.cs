@@ -28,10 +28,22 @@ public sealed record FleetHost(string Alias, Func<IHostAccess?> Access);
 /// redaction as a command typed in a pane -- the host argument decides where it
 /// lands, and nothing else about it changes.
 /// </summary>
+/// <param name="localWorkspace">
+/// The folder open on the machine this app is running on, or null.
+///
+/// This machine's and not the hosts'. A fleet conversation is where one
+/// instruction becomes an action on eight servers, and a write fanned out that
+/// way from a single approval is the one thing this app should not make easy --
+/// changing a file on a server stays a job for the pane about that server. What
+/// a run genuinely wants is the other direction: read the runbook here, compare
+/// it with what eight machines actually have, and write the findings down
+/// somewhere that is not a chat window.
+/// </param>
 public sealed class FleetAgent(
     IAssistBackend backend,
     ICommandGate gate,
-    IExternalTools? tools = null)
+    IExternalTools? tools = null,
+    IWorkspaceAccess? localWorkspace = null)
 {
     /// <summary>
     /// The hosts this question is about, which are the ones ticked when it was
@@ -68,6 +80,20 @@ public sealed class FleetAgent(
     /// <summary>A row changed underneath: an answer grew, a command finished.</summary>
     public event EventHandler<TranscriptEntry>? Updated;
 
+    /// <inheritdoc cref="HostAgent.Clear"/>
+    public void Clear()
+    {
+        _conversation.Clear();
+        _entries.Clear();
+        Cleared?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Everything was forgotten, so a pane can empty itself.</summary>
+    public event EventHandler? Cleared;
+
+    /// <inheritdoc cref="HostAgent.Say"/>
+    public void Say(string text) => Append(new TranscriptEntry.Note(text));
+
     /// <summary>
     /// A command is about to run on a host, and then that it has finished.
     ///
@@ -82,6 +108,7 @@ public sealed class FleetAgent(
         string instruction,
         IReadOnlyList<FleetHost> hosts,
         bool mayRunCommands,
+        bool mayEditFiles = false,
         CancellationToken cancellationToken = default)
     {
         _hosts = hosts;
@@ -111,11 +138,11 @@ public sealed class FleetAgent(
 
             try
             {
-                var offered = Offered(mayRunCommands);
+                var offered = Offered(mayRunCommands, mayEditFiles);
                 await foreach (var streamed in backend.Stream(
                     new AssistRequest
                     {
-                        System = AssistPrompts.Fleet,
+                        System = System(mayEditFiles),
                         Messages = [.. _conversation],
                         Tools = offered,
                     },
@@ -201,14 +228,80 @@ public sealed class FleetAgent(
     private string Roster() => string.Join('\n',
         ["The hosts you can reach:", .. _hosts.Select(host => $"- {host.Alias}")]);
 
-    private IReadOnlyList<AssistTool> Offered(bool mayRunCommands)
+    /// <summary>
+    /// The folder on this machine, or null when nobody has opened one.
+    ///
+    /// Asked each turn rather than once, because a folder is opened and closed
+    /// while a conversation is going on.
+    /// </summary>
+    private IWorkspaceAccess? Here => localWorkspace is { Root.Length: > 0 } open ? open : null;
+
+    private IReadOnlyList<AssistTool> Offered(bool mayRunCommands, bool mayEditFiles)
     {
         List<AssistTool> offered = [];
         if (mayRunCommands)
             offered.Add(AssistTools.FleetRunner([.. _hosts.Select(host => host.Alias)]));
+        if (Here is not null)
+        {
+            // Reading needs no switch: opening the folder was the decision.
+            offered.AddRange(WorkspaceTools.ReadingLocal);
+            if (mayEditFiles)
+                offered.Add(WorkspaceTools.LocalWriter);
+        }
         if (tools is { } connected)
             offered.AddRange(connected.Offered);
         return offered;
+    }
+
+    private string System(bool mayEditFiles) =>
+        Here is { } here
+            ? string.Join("\n\n", AssistPrompts.Fleet, AssistPrompts.LocalWorkspace(here.RootLabel, mayEditFiles))
+            : AssistPrompts.Fleet;
+
+    /// <summary>A file on this machine was written by the assistant.</summary>
+    public event EventHandler<FileChange>? WroteHere;
+
+    /// <summary>
+    /// One call to the folder on this machine.
+    ///
+    /// The same <see cref="WorkspaceCalls"/> the per-host conversation uses:
+    /// the policy, the budget, the gate and the diff it shows have one
+    /// implementation, whichever assistant asked.
+    /// </summary>
+    private async Task<(bool Ran, AssistToolResult Result)> CarryFile(
+        AssistToolCall call,
+        ICommandBudget budget,
+        CancellationToken cancellationToken)
+    {
+        // Only this machine's tools are ever offered here, so a call naming a
+        // host's is a model asking for something it was not given.
+        if (!WorkspaceTools.IsLocal(call.Name))
+        {
+            return (false, new AssistToolResult(
+                call.Id,
+                "Files on the hosts are not available in a fleet run. Ask about one host on its own to "
+                    + "read or change a file there.",
+                Failed: true));
+        }
+
+        if (Here is not { } here)
+        {
+            return (false, new AssistToolResult(
+                call.Id,
+                "No folder is open on the user's own machine, so there is nothing to read or write there.",
+                Failed: true));
+        }
+
+        var calls = new WorkspaceCalls(
+            here,
+            gate,
+            "this machine",
+            Append,
+            entry => Updated?.Invoke(this, entry));
+
+        calls.Wrote += (_, change) => WroteHere?.Invoke(this, change);
+
+        return await calls.Carry(call, budget, cancellationToken);
     }
 
     /// <summary>One call: on which host, judged, maybe asked about, maybe run.</summary>
@@ -219,6 +312,9 @@ public sealed class FleetAgent(
     {
         if (tools is { } connected && connected.Owns(call.Name))
             return (false, new AssistToolResult(call.Id, "Connected tools are not available in a fleet run.", Failed: true));
+
+        if (WorkspaceTools.Owns(call.Name))
+            return await CarryFile(call, budget, cancellationToken);
 
         if (call.Name != AssistTools.RunCommand)
             return (false, new AssistToolResult(call.Id, $"There is no tool called {call.Name}.", Failed: true));
