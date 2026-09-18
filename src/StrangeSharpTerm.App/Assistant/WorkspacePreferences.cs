@@ -25,6 +25,16 @@ public sealed record WorkspacePreferences
     [JsonPropertyName("roots")]
     public Dictionary<string, string> Roots { get; init; } = [];
 
+    /// <summary>
+    /// The folder open on this machine, absolute.
+    ///
+    /// One of them rather than one per host, because it belongs to no host: it
+    /// is the same folder whichever server you are looking at, and the sidebar
+    /// shows it whether anything is connected at all.
+    /// </summary>
+    [JsonPropertyName("local")]
+    public string? Local { get; init; }
+
     /// <summary>What was remembered, or nothing at all.</summary>
     public static IReadOnlyDictionary<NodeId, string> Load(string? path)
     {
@@ -50,6 +60,47 @@ public sealed record WorkspacePreferences
             // directory, which is where it would have opened anyway.
             return new Dictionary<NodeId, string>();
         }
+    }
+
+    /// <summary>The folder this machine had open, or null.</summary>
+    public static string? LocalRoot(string? path)
+    {
+        if (path is null)
+            return null;
+
+        var stored = Preferences.Load(path).Rest?.GetValueOrDefault(Key);
+        if (stored is not { ValueKind: JsonValueKind.Object } section)
+            return null;
+
+        try
+        {
+            return section.Deserialize<WorkspacePreferences>()?.Local is { Length: > 0 } local ? local : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Remembers the folder open on this machine, leaving the hosts' alone.</summary>
+    public static void SaveLocal(string? path, string? root)
+    {
+        if (path is null)
+            return;
+
+        var preferences = Preferences.Load(path);
+        var rest = preferences.Rest is null
+            ? []
+            : new Dictionary<string, JsonElement>(preferences.Rest);
+
+        rest[Key] = JsonSerializer.SerializeToElement(new WorkspacePreferences
+        {
+            Roots = new Dictionary<string, string>(
+                Load(path).ToDictionary(entry => entry.Key.ToString(), entry => entry.Value)),
+            Local = root is { Length: > 0 } ? root : null,
+        });
+
+        (preferences with { Rest = rest }).Save(path);
     }
 
     /// <summary>
@@ -79,7 +130,14 @@ public sealed record WorkspacePreferences
         else
             roots.Remove(host.ToString());
 
-        rest[Key] = JsonSerializer.SerializeToElement(new WorkspacePreferences { Roots = roots });
+        rest[Key] = JsonSerializer.SerializeToElement(new WorkspacePreferences
+        {
+            Roots = roots,
+            // Carried across rather than rewritten: the two halves of this
+            // section are saved by different things at different times, and
+            // whichever writes last must not drop the other's.
+            Local = LocalRoot(path),
+        });
         (preferences with { Rest = rest }).Save(path);
     }
 }

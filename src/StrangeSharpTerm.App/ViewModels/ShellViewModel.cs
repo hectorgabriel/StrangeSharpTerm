@@ -31,6 +31,21 @@ public sealed record TabItem(NodeId Id, string Title, bool IsActive);
 /// </param>
 public sealed record PaneSlot(NodeId Id, Control View, bool IsActive, string Title = "");
 
+/// <summary>
+/// What the panel down the left-hand side is showing.
+///
+/// The mirror of <see cref="DockView"/> on the other side of the window: one
+/// panel, two things it can be, and a switch at the top saying which.
+/// </summary>
+public enum SidebarView
+{
+    /// <summary>The inventory: folders and the servers in them.</summary>
+    Hosts,
+
+    /// <summary>This machine's own files, rooted at a folder somebody chose.</summary>
+    Files,
+}
+
 /// <summary>What the dock down the right-hand side is showing.</summary>
 public enum DockView
 {
@@ -96,7 +111,9 @@ public sealed partial class ShellViewModel : ObservableObject
         ISecretStore? toolTokens = null,
         Func<OrchestratorViewModel, Control>? orchestratorView = null,
         Func<AssistantViewModel, Control>? assistantView = null,
-        Func<HostWorkspaceViewModel, Control>? workspaceView = null)
+        Func<HostWorkspaceViewModel, Control>? workspaceView = null,
+        IRemoteFiles? localFiles = null,
+        Func<HostWorkspaceViewModel, Control>? editorView = null)
     {
         Inventory = inventory;
         _dialogs = dialogs ?? new ScriptedDialogService();
@@ -132,9 +149,44 @@ public sealed partial class ShellViewModel : ObservableObject
         // around it to run the control's XAML in.
         _assistantView = assistantView ?? (model => new AssistantView(model));
         _workspaceView = workspaceView ?? (model => new WorkspaceView(model));
+        _editorView = editorView ?? (model => new WorkspaceEditorView(model));
         // Which folder each host was last opened at. Read once, here, because
         // opening a pane should not be a file read.
         _roots = new Dictionary<NodeId, string>(WorkspacePreferences.Load(preferencesPath));
+
+        // This machine's own files. Built here and not read from until somebody
+        // opens the Files side of the sidebar: constructing it costs nothing,
+        // and listing a directory is what costs.
+        LocalFiles = new HostWorkspaceViewModel(
+            localFiles ?? new Transport.LocalFiles(),
+            Environment.MachineName,
+            WorkspacePreferences.LocalRoot(preferencesPath),
+            _dialogs,
+            remember: root => WorkspacePreferences.SaveLocal(_preferencesPath, root),
+            isLocal: true)
+        {
+            // A file picked here goes to whichever host has a folder open,
+            // which is the one thing the two workspaces do together.
+            Sender = SendToHost,
+        };
+
+        LocalFiles.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(HostWorkspaceViewModel.Current))
+                OpenLocalEditor();
+        };
+        LocalFiles.RootChanged += (_, _) =>
+        {
+            // Every conversation, not one: this folder belongs to no host, so
+            // all of them gain and lose its tools together.
+            foreach (var conversation in _conversations.Values)
+                conversation.WorkspaceChanged();
+        };
+        LocalFiles.Saveability += (_, _) =>
+        {
+            OnPropertyChanged(nameof(CanSaveFile));
+            SaveFileCommand.NotifyCanExecuteChanged();
+        };
 
         // Focusing a pane moves the sidebar with it, and deleting a host closes
         // whatever it had open. Neither half knows about the other.
@@ -278,6 +330,56 @@ public sealed partial class ShellViewModel : ObservableObject
 
     [RelayCommand]
     public void ToggleSidebar() => IsSidebarOpen = !IsSidebarOpen;
+
+    /// <summary>
+    /// What the left panel is showing: the servers, or this machine's files.
+    ///
+    /// One panel with two things in it rather than two panels, because they are
+    /// alternatives in practice -- you are picking a server to work on or a file
+    /// to work on -- and 260 pixels split in half is a tree nobody can read.
+    /// </summary>
+    [ObservableProperty]
+    public partial SidebarView SidebarShows { get; private set; } = SidebarView.Hosts;
+
+    public bool SidebarShowsHosts => SidebarShows == SidebarView.Hosts;
+
+    public bool SidebarShowsFiles => SidebarShows == SidebarView.Files;
+
+    partial void OnSidebarShowsChanged(SidebarView value)
+    {
+        OnPropertyChanged(nameof(SidebarShowsHosts));
+        OnPropertyChanged(nameof(SidebarShowsFiles));
+    }
+
+    [RelayCommand]
+    public void ShowHosts()
+    {
+        SidebarShows = SidebarView.Hosts;
+        IsSidebarOpen = true;
+    }
+
+    /// <summary>
+    /// Shows this machine's files, opening the folder the first time anybody
+    /// asks -- which is when the cost of reading a directory is worth paying.
+    /// </summary>
+    [RelayCommand]
+    public async Task ShowFiles()
+    {
+        SidebarShows = SidebarView.Files;
+        IsSidebarOpen = true;
+        if (LocalFiles.Tree.Count == 0)
+            await LocalFiles.RefreshCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>
+    /// This machine's files: the same workspace a host gets, over the same
+    /// seam, rooted here.
+    ///
+    /// Built once and kept, because the sidebar shows it whether or not
+    /// anything is connected -- it belongs to no host, and nothing can
+    /// disconnect it.
+    /// </summary>
+    public HostWorkspaceViewModel LocalFiles { get; }
 
     /// <summary>Which of the two conversations the right-hand dock is showing.</summary>
     [ObservableProperty]
@@ -926,6 +1028,91 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>How a workspace becomes something on screen. Replaced in tests.</summary>
     private readonly Func<HostWorkspaceViewModel, Control> _workspaceView;
 
+    /// <summary>How the editor half alone becomes something on screen. Likewise.</summary>
+    private readonly Func<HostWorkspaceViewModel, Control> _editorView;
+
+    /// <summary>The pane this machine's files are edited in, once one is open.</summary>
+    private NodeId? _editorPane;
+
+    /// <summary>
+    /// Puts the local editor on screen, or brings it forward.
+    ///
+    /// Opening a file in the sidebar is what asks for this: the tree is 260
+    /// pixels wide and a line of code is not, so the document goes where the
+    /// sessions are. One pane however many files are open -- they are tabs
+    /// inside it, as an editor has them.
+    /// </summary>
+    private void OpenLocalEditor()
+    {
+        if (LocalFiles.Current is null)
+            return;
+
+        if (_editorPane is { } already && Workspace.Pane(already) is not null)
+        {
+            Workspace.FocusPane(already);
+            Show();
+            return;
+        }
+
+        var pane = new Pane
+        {
+            Title = "Files",
+            Kind = new PaneKind.Editor(),
+            // No host: these files are this machine's, so disconnecting
+            // anything must not close them.
+            ConnectionId = null,
+        };
+
+        _editorPane = pane.Id;
+        Workspace.Open(pane, Panes.Count > 0 ? Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal : null);
+        _views[pane.Id] = _editorView(LocalFiles);
+        Show();
+    }
+
+    /// <summary>
+    /// Copies a file from this machine into the folder a host has open.
+    ///
+    /// The sentence this exists for is "get this file onto that server", and
+    /// until now it needed the host's own pane, its upload button and a file
+    /// picker pointed back at the folder you were already looking at.
+    ///
+    /// Into the host workspace's own root, which means the same rule applies:
+    /// the destination is a folder somebody deliberately opened.
+    /// </summary>
+    private async Task SendToHost(WorkspaceNode node)
+    {
+        if (Sending is not { } destination)
+            return;
+
+        if (LocalFiles.Workspace is not { } here)
+            return;
+
+        var (host, workspace) = destination;
+        var local = here.Resolve(node.Relative);
+
+        await LocalFiles.Copying(
+            $"Sending {node.Name} to {host}",
+            () => workspace.Upload(Transport.LocalFiles.Native(local), node.Name),
+            $"Sent {node.Name} to {host}");
+    }
+
+    /// <summary>
+    /// The one host with a folder open, and its workspace.
+    ///
+    /// One rather than a choice: with two open there is no answer to "the open
+    /// host" that is not a guess, so the menu item says which one it means and
+    /// disappears when the question is ambiguous.
+    /// </summary>
+    private (string Host, RemoteWorkspace Workspace)? Sending =>
+        _workspaces.Count == 1
+            && Inventory.Tree.Connections.GetValueOrDefault(_workspaces.Keys.Single()) is { } connection
+            && _workspaces.Values.Single().Workspace is { } open
+            ? (connection.Name, open)
+            : null;
+
+    /// <summary>Keeps the sidebar's menu item naming the host it would send to.</summary>
+    private void RefreshSendTarget() => LocalFiles.SendTarget = Sending?.Host ?? "";
+
     /// <summary>Which folder each host was last opened at, remembered between runs.</summary>
     private readonly Dictionary<NodeId, string> _roots;
 
@@ -935,10 +1122,14 @@ public sealed partial class ShellViewModel : ObservableObject
     /// The focused pane rather than "the only one open": with a workspace on two
     /// hosts side by side, saving has to mean the file you are looking at.
     /// </summary>
-    private HostWorkspaceViewModel? FocusedWorkspace =>
-        Workspace.ActivePane is { Kind: PaneKind.Workspace, ConnectionId: { } host }
-            ? _workspaces.GetValueOrDefault(host)
-            : null;
+    private HostWorkspaceViewModel? FocusedWorkspace => Workspace.ActivePane switch
+    {
+        { Kind: PaneKind.Workspace, ConnectionId: { } host } => _workspaces.GetValueOrDefault(host),
+        // The editor pane holds this machine's files, and ⌘S there means the
+        // file in front of you exactly as it does in a host's folder.
+        { Kind: PaneKind.Editor } => LocalFiles,
+        _ => null,
+    };
 
     public bool CanSaveFile => FocusedWorkspace?.CanSave == true;
 
@@ -1043,7 +1234,8 @@ public sealed partial class ShellViewModel : ObservableObject
                 // typing.
                 text => (Focused(connection.Id) is { } id ? _terminals.Session(id) : ActiveTerminal())?.Send(text),
                 // What the header names and the Edit files switch depends on.
-                () => _workspaces.GetValueOrDefault(connection.Id)?.Workspace.RootLabel)
+                () => _workspaces.GetValueOrDefault(connection.Id)?.Workspace?.RootLabel,
+                () => LocalFiles.Workspace?.RootLabel)
             {
                 // The dock's own header names the host, and at this width two
                 // labels for it leave neither any room.
@@ -1061,6 +1253,9 @@ public sealed partial class ShellViewModel : ObservableObject
                 if (_workspaces.GetValueOrDefault(connection.Id) is { } workspace)
                     await workspace.Changed(change);
             };
+            // The same for a file on this machine, which the sidebar and the
+            // editor pane are both showing.
+            model.WroteHere += async (_, change) => await LocalFiles.Changed(change);
 
             _conversations[connection.Id] = model;
             _assistants[connection.Id] = view = _assistantView(model);
@@ -1234,7 +1429,10 @@ public sealed partial class ShellViewModel : ObservableObject
                 // Asked for each time rather than captured: a folder is opened
                 // and closed while a conversation is going on, and the tools
                 // appear and go with it.
-                new RemoteWorkspaceAccess(() => _workspaces.GetValueOrDefault(connection.Id)?.Workspace));
+                new RemoteWorkspaceAccess(() => _workspaces.GetValueOrDefault(connection.Id)?.Workspace),
+                // And this machine's folder, which belongs to no host and is the
+                // same one in every conversation.
+                new RemoteWorkspaceAccess(() => LocalFiles.Workspace));
         };
 
     /// <summary>
@@ -1435,6 +1633,7 @@ public sealed partial class ShellViewModel : ObservableObject
                 : [];
 
         RefreshDock();
+        RefreshSendTarget();
 
         OnPropertyChanged(nameof(Axis));
         OnPropertyChanged(nameof(IsTiled));

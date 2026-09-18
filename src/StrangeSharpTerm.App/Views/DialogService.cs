@@ -55,6 +55,16 @@ public interface IDialogService
 
     /// <summary>Asks for files from this machine. Empty when the user picked none.</summary>
     Task<IReadOnlyList<string>> PickFiles(string title);
+
+    /// <summary>
+    /// Asks for one folder on this machine. Null when the user picked none.
+    ///
+    /// Its own call rather than a mode of <see cref="PickFiles"/>, because what
+    /// it is for is different: a folder chosen here becomes the root of a
+    /// workspace, which is to say the whole of what this app -- and the
+    /// assistant through it -- may touch on this machine.
+    /// </summary>
+    Task<string?> PickFolder(string title);
 }
 
 /// <summary>Answers without asking. For tests, and for a headless run.</summary>
@@ -163,6 +173,15 @@ public sealed class ScriptedDialogService(bool answer = false) : IDialogService
         Asked.Add((title, ""));
         return Task.FromResult(Files);
     }
+
+    /// <summary>What the folder picker answers. Null is what dismissing it looks like.</summary>
+    public string? Folder { get; set; }
+
+    public Task<string?> PickFolder(string title)
+    {
+        Asked.Add((title, ""));
+        return Task.FromResult(Folder);
+    }
 }
 
 public sealed class DialogService(Func<Window?> owner) : IDialogService
@@ -205,6 +224,24 @@ public sealed class DialogService(Func<Window?> owner) : IDialogService
         // iCloud placeholder, and uploading it would need a stream rather than a
         // name.
         return [.. chosen.Select(file => file.TryGetLocalPath()).OfType<string>()];
+    }
+
+    public async Task<string?> PickFolder(string title)
+    {
+        if (owner() is not { StorageProvider: { } storage })
+            return null;
+
+        var chosen = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false,
+        });
+
+        // A folder with no local path is somewhere this app cannot read
+        // directly -- a cloud placeholder -- and a workspace rooted at one would
+        // fail on its first listing rather than at the moment somebody could
+        // still choose differently.
+        return chosen.Count == 0 ? null : chosen[0].TryGetLocalPath();
     }
 
     /// <summary>

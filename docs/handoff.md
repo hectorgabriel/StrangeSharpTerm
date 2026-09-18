@@ -17,9 +17,10 @@ means; this says only what is done, what is in flight, and what to do first.
 | **M8** done, as far as an account allows | `build/package.sh` (bundle, ad-hoc or Developer ID, disk image, notarisation written and gated), `build/install.sh`, `build/package.ps1`, `build/make-icon.sh`, and a CI job that packages both platforms on every push. `docs/adr/0008` records what a free Apple account can and cannot do, and the three things that only showed up by running it |
 | **M7** done | `StrangeSharpTerm.Mcp`: both transports over the official SDK, tool namespacing, the grant rules, OAuth with a loopback redirect and platform-store tokens — then the Connected tools section, the server editor, `stctl mcp`, and `IExternalTools`, the seam that puts a connected tool through the assistant's own gate and budget. `docs/adr/0007` records what the SDK owns and what cannot be delegated |
 | **M9** done | The workspace: `RemoteWorkspace` and `PosixPath` in Transport, `FilePolicy`, `Diff` and the three file tools in Assist, then the pane (⇧⌘E, a tree, an editor, ⌘S), the folder remembered per host in `preferences.json`, `stctl workspace`, and four checks in the integration gate. `docs/adr/0009` records why the permission is a folder rather than a rule about paths |
+| **M9** extended | This machine's files, through the same seam: `LocalFiles` over `System.IO` behind `IRemoteFiles`, so the tree, the editor, the root rule, the policy and the gate are the one implementation. The left panel gained a `Hosts \| Files` switch, the pane's view split into a tree control and an editor control, and the assistant gained `list_local_files`, `read_local_file` and `write_local_file` — separate names, never an argument. Nothing is open here until a folder is chosen |
 | **M6** done | `StrangeSharpTerm.Assist`: the two providers behind one seam, `CommandPolicy`, `Redaction`, the agent loop, the orchestrator and run plans — then the assistant pane (⌥⌘A), the orchestrator pane with its plan mode (⇧⌥⌘A), the settings section, `stctl ask`, and four `--demo-*` flags. `docs/adr/0006` records the one departure from the plan |
 
-1042 tests. **M8 is done** on macOS as far as a free Apple account allows; the
+1073 tests. **M8 is done** on macOS as far as a free Apple account allows; the
 Windows half is CI's to confirm, and a red Windows job is a failure rather than
 something to fix later.
 
@@ -55,7 +56,9 @@ written. At the time of writing: nothing.
    or edited there — the host editor deliberately leaves forwards alone and
    preserves them, so an editor for them is the missing half. The dashboard is
    asked for one probe at a time; the Swift app refreshed on a timer.
-6. **What the workspace does not do yet.** No syntax highlighting — the editor
+6. **What the workspace does not do yet.** No drag-and-drop between the two
+   trees — sending a file from this machine to a host is a menu item on the
+   selection, not a drag. No syntax highlighting — the editor
    is a text box, a gutter and a save button, and `docs/adr/0009` says why that
    is the deliberate floor rather than an omission. No search across the folder
    (`grep` through `run_command` is the answer today), no drag-and-drop onto the
@@ -119,6 +122,20 @@ says. Three things it took to get right:
   `ssh-keygen` given a mangled empty passphrase by PowerShell quoting, a
   `window-change` sent before the server had a pty, and a credential service
   name that must be a URI there and a plain string on macOS.
+- **A JSON schema inside a C# raw string is not checked by anything.** A tool's
+  schema is JSON in a `"""` literal, so the compiler is happy with a quote that
+  JSON is not: an edit lost the backslashes in `Use \".\" for the root itself`
+  and the build stayed green all the way to the provider, which would have
+  rejected the request. `ToolSchemaTests` now parses every schema the app
+  offers and checks that everything it calls required is a property it
+  described. Anything generating code for a model wants a test that reads it
+  back.
+- **`$parent[Window]` resolves before the window has a DataContext.** A control
+  in the sidebar bound its visibility that way and the binding failed once,
+  silently, leaving the panel showing the wrong half. Wrapping it in a panel
+  that keeps the shell's own DataContext makes it an ordinary binding.
+  `STRANGESHARPTERM_TRACE=1` is what showed it — a single `[Binding]` line
+  among the harmless ones.
 - **Reading the screen is only safe once the screen is up to date.**
   `TerminalSession.Show` puts the prompt back under whatever it writes, and to
   do that it reads the line the shell is sitting on. The bytes it feeds reach

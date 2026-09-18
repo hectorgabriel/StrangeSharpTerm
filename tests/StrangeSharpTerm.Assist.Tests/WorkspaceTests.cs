@@ -59,6 +59,49 @@ public class FilePolicyTests
         FilePolicy.Judge(FileOperation.Read, Root, "").IsRefused.ShouldBeTrue();
 }
 
+/// <summary>
+/// Every tool this app offers, checked for the one thing a compiler cannot see.
+///
+/// A schema is a JSON document inside a C# raw string literal, which means the
+/// compiler is happy with a quote that JSON is not: the escaping can be lost in
+/// an edit and the build stays green all the way to the provider, which then
+/// rejects the request. That happened once, to a description containing a
+/// quoted full stop.
+/// </summary>
+public class ToolSchemaTests
+{
+    public static TheoryData<string, string> Offered()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (var tool in WorkspaceTools.Reading
+                     .Append(WorkspaceTools.Writer)
+                     .Concat(WorkspaceTools.ReadingLocal)
+                     .Append(WorkspaceTools.LocalWriter)
+                     .Append(AssistTools.Runner)
+                     .Append(AssistTools.FleetRunner(["web-01", "db-primary"])))
+        {
+            data.Add(tool.Name, tool.JsonSchema);
+        }
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(Offered))]
+    public void EverySchemaIsJsonAndSaysWhatItRequires(string name, string schema)
+    {
+        var parsed = System.Text.Json.JsonDocument.Parse(schema).RootElement;
+
+        name.ShouldNotBeEmpty();
+        parsed.GetProperty("type").GetString().ShouldBe("object");
+        parsed.TryGetProperty("properties", out var properties).ShouldBeTrue();
+
+        // Everything named as required has to be a property that exists, or the
+        // model is being asked for a field the schema never described.
+        foreach (var required in parsed.GetProperty("required").EnumerateArray())
+            properties.TryGetProperty(required.GetString()!, out _).ShouldBeTrue();
+    }
+}
+
 public class DiffTests
 {
     [Fact]
@@ -345,5 +388,182 @@ public class WorkspaceAgentTests
         var steps = agent.Entries.OfType<TranscriptEntry.Step>().ToArray();
         steps[0].State.ShouldBe(StepState.Ran);
         steps[1].State.ShouldBe(StepState.Skipped);
+    }
+}
+
+/// <summary>
+/// The agent with a folder open on each machine.
+///
+/// What these are about is the distinction: two filesystems with similar paths,
+/// one of them the person's own computer. Every one of these would pass if the
+/// two were confused for each other, except that each asserts which machine was
+/// touched.
+/// </summary>
+public class LocalWorkspaceAgentTests
+{
+    private static AskOptions Editing { get; } = new() { MayEditFiles = true };
+
+    private static HostAgent Agent(
+        FakeWorkspace? host,
+        FakeWorkspace? here,
+        ICommandGate gate,
+        params IReadOnlyList<AssistEvent>[] turns) =>
+        new(new ScriptedBackend(turns), new FakeHost("web-01"), Fixtures.Settings, gate, null, host, here);
+
+    [Fact]
+    public async Task EachFolderBringsItsOwnToolsAndNeitherBringsTheOthers()
+    {
+        var backend = new ScriptedBackend(ScriptedBackend.Says("Noted."));
+        var agent = new HostAgent(
+            backend,
+            new FakeHost("web-01"),
+            Fixtures.Settings,
+            new StandingAnswer(true),
+            null,
+            null,
+            new FakeWorkspace("/Users/you/project"));
+
+        await agent.Ask("what is here?", Editing, TestContext.Current.CancellationToken);
+
+        var offered = backend.Requests.Single().Tools.Select(tool => tool.Name).ToArray();
+        offered.ShouldBe([
+            WorkspaceTools.ListLocalFiles, WorkspaceTools.ReadLocalFile, WorkspaceTools.WriteLocalFile]);
+        // Told which computer it is looking at, because "edit the config" is
+        // ambiguous between two open folders in a way that matters.
+        backend.Requests.Single().System.ShouldContain("own machine");
+    }
+
+    [Fact]
+    public async Task WithBothOpenItIsOfferedSixAndToldWhichIsWhich()
+    {
+        var backend = new ScriptedBackend(ScriptedBackend.Says("Noted."));
+        var agent = new HostAgent(
+            backend,
+            new FakeHost("web-01"),
+            Fixtures.Settings,
+            new StandingAnswer(true),
+            null,
+            new FakeWorkspace(),
+            new FakeWorkspace("/Users/you/project"));
+
+        await agent.Ask("compare them", Editing, TestContext.Current.CancellationToken);
+
+        backend.Requests.Single().Tools.Select(tool => tool.Name).ShouldBe([
+            WorkspaceTools.ListFiles,
+            WorkspaceTools.ReadFile,
+            WorkspaceTools.WriteFile,
+            WorkspaceTools.ListLocalFiles,
+            WorkspaceTools.ReadLocalFile,
+            WorkspaceTools.WriteLocalFile,
+        ]);
+    }
+
+    [Fact]
+    public async Task AWriteToThisMachineSaysSoInTheQuestionAndInTheRow()
+    {
+        var here = new FakeWorkspace("/Users/you/project").With("notes.md", "one\n");
+        var gate = new RecordingGate(answer: true);
+        var agent = Agent(
+            null,
+            here,
+            gate,
+            ScriptedBackend.Calls(
+                WorkspaceTools.WriteLocalFile,
+                new { path = "notes.md", content = "one\ntwo\n", why = "add the second line" }),
+            ScriptedBackend.Says("Added it."));
+
+        await agent.Ask("add a line to my notes", Editing, TestContext.Current.CancellationToken);
+
+        // Whose machine, in the words the person is asked in -- not the host's
+        // name on a card about a file that lands here.
+        var asked = gate.Asked.Single();
+        asked.Host.ShouldBe("this machine");
+        asked.Reason.ShouldContain("this machine");
+
+        var step = agent.Entries.OfType<TranscriptEntry.Step>().Single();
+        step.Command.ShouldBe("write notes.md (this machine)");
+        here.Written["notes.md"].ShouldBe("one\ntwo\n");
+    }
+
+    [Fact]
+    public async Task AWriteToTheHostIsStillTheHosts()
+    {
+        var host = new FakeWorkspace().With("app.py", "print()");
+        var gate = new RecordingGate(answer: true);
+        var agent = Agent(
+            host,
+            new FakeWorkspace("/Users/you/project"),
+            gate,
+            ScriptedBackend.Calls(
+                WorkspaceTools.WriteFile,
+                new { path = "app.py", content = "print('hi')", why = "greet" }),
+            ScriptedBackend.Says("Done."));
+
+        await agent.Ask("make it greet", Editing, TestContext.Current.CancellationToken);
+
+        gate.Asked.Single().Host.ShouldBe("web-01");
+        agent.Entries.OfType<TranscriptEntry.Step>().Single().Command.ShouldBe("write app.py");
+        host.Written.ShouldContainKey("app.py");
+    }
+
+    [Fact]
+    public async Task APathOutsideTheLocalFolderIsRefusedThereToo()
+    {
+        var here = new FakeWorkspace("/Users/you/project");
+        var gate = new RecordingGate();
+        var agent = Agent(
+            null,
+            here,
+            gate,
+            ScriptedBackend.Calls(WorkspaceTools.ReadLocalFile, new { path = "../../.ssh/id_rsa" }),
+            ScriptedBackend.Says("I cannot read that."));
+
+        await agent.Ask("what is my private key?", Editing, TestContext.Current.CancellationToken);
+
+        gate.Asked.ShouldBeEmpty();
+        agent.Entries.OfType<TranscriptEntry.Step>().Single().State.ShouldBe(StepState.Refused);
+        here.Written.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AskingForALocalFileWithNoLocalFolderOpenIsToldSoPlainly()
+    {
+        var gate = new RecordingGate();
+        var agent = Agent(
+            new FakeWorkspace(),
+            null,
+            gate,
+            ScriptedBackend.Calls(WorkspaceTools.ReadLocalFile, new { path = "notes.md" }),
+            ScriptedBackend.Says("There is no folder open here."));
+
+        await agent.Ask("read my notes", Editing, TestContext.Current.CancellationToken);
+
+        // The tool was not offered, so this is a model asking for something it
+        // was not given -- answered rather than crashed on.
+        agent.Entries.OfType<TranscriptEntry.Step>().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ALocalWriteNarratesNothingIntoTheHostsPane()
+    {
+        // The pane belongs to the server. A file on this machine has no terminal
+        // to say so in, and saying it in the host's would be saying it about the
+        // wrong computer.
+        var here = new FakeWorkspace("/Users/you/project").With("notes.md", "one\n");
+        var narrated = new List<AssistStep>();
+        var agent = Agent(
+            null,
+            here,
+            new StandingAnswer(true),
+            ScriptedBackend.Calls(
+                WorkspaceTools.WriteLocalFile,
+                new { path = "notes.md", content = "two\n", why = "replace it" }),
+            ScriptedBackend.Says("Done."));
+        agent.Working += (_, step) => narrated.Add(step);
+
+        await agent.Ask("replace my notes", Editing, TestContext.Current.CancellationToken);
+
+        narrated.ShouldBeEmpty();
+        here.Written.ShouldContainKey("notes.md");
     }
 }

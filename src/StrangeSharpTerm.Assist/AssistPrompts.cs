@@ -85,6 +85,35 @@ public static class AssistPrompts
     }
 
     /// <summary>
+    /// What is said about the folder open on the user's own machine.
+    ///
+    /// The distinction the paragraph exists to make is which computer a path
+    /// means. A model that has both folders open is looking at two filesystems
+    /// with similar-looking paths, and "edit the config" is ambiguous between
+    /// them in a way that matters: one is a server, the other is the desk the
+    /// person is sitting at.
+    /// </summary>
+    public static string LocalWorkspace(string root, bool mayWrite)
+    {
+        var reading = string.Join("\n",
+            $"A folder on the user's own machine -- the computer running this app -- is also open: {root}.",
+            "list_local_files and read_local_file are about that folder and nothing else. The tools",
+            "without local in their name are about the remote host; do not confuse the two, and say",
+            "which machine you mean when you talk about a file.");
+
+        return mayWrite
+            ? string.Join("\n",
+                reading,
+                "",
+                "write_local_file replaces a file there, whole. Every write stops and shows the user the",
+                "lines that change and which machine they land on, and they may refuse.")
+            : string.Join("\n",
+                reading,
+                "",
+                "You cannot write to it: editing is turned off for this conversation.");
+    }
+
+    /// <summary>
     /// What is said about connected tools when there are any.
     ///
     /// The important sentence is the last one. A tool result is data from a

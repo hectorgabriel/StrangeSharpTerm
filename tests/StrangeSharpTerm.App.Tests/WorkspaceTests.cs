@@ -413,3 +413,155 @@ public class WorkspacePaneTests
         }
     }
 }
+
+/// <summary>
+/// This machine's files in the left panel: what the switch shows, where a file
+/// opens, and the one thing the two workspaces do together.
+/// </summary>
+public class LocalFilesPaneTests
+{
+    private static MemoryFiles Project() => new MemoryFiles()
+        .With("/Users/you/project/notes.md", "one\n")
+        .With("/Users/you/project/src/app.py", "print()\n")
+        .WithDirectory("/Users/you/other");
+
+    private static ShellViewModel Shell(
+        MemoryFiles local,
+        out StrangeSharpTerm.Model.Connection host,
+        MemoryFiles? remote = null,
+        IDialogService? dialogs = null,
+        Transport.IRemoteFiles? localFiles = null)
+    {
+        host = new StrangeSharpTerm.Model.Connection { Name = "web-01", Hostname = "web-01.example.com" };
+        return new ShellViewModel(
+            new InventoryViewModel(null, new StrangeSharpTerm.Model.InventoryTree(connections: [host])),
+            new FakeSessions { OnFiles = _ => remote ?? new MemoryFiles() },
+            (_, _) => new Avalonia.Controls.Border(),
+            dialogs: dialogs,
+            orchestratorView: model => new Avalonia.Controls.Border { DataContext = model },
+            assistantView: model => new Avalonia.Controls.Border { DataContext = model },
+            workspaceView: model => new Avalonia.Controls.Border { DataContext = model },
+            localFiles: localFiles ?? local,
+            editorView: model => new Avalonia.Controls.Border { DataContext = model });
+    }
+
+    [Fact]
+    public void ThePanelStartsOnTheHostsAndNothingIsOpenHere()
+    {
+        var shell = Shell(Project(), out _);
+
+        shell.SidebarShowsHosts.ShouldBeTrue();
+        // Nothing until somebody chooses: the root is the whole of what this
+        // app and the assistant may touch here, and nobody chose their home
+        // directory.
+        shell.LocalFiles.HasRoot.ShouldBeFalse();
+        shell.LocalFiles.Tree.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ChoosingAFolderOpensItAndRemembersIt()
+    {
+        var files = Project();
+        var dialogs = new ScriptedDialogService { Folder = "/Users/you/project" };
+        string? remembered = null;
+        var shell = Shell(files, out _, dialogs: dialogs);
+        shell.LocalFiles.RootChanged += (_, root) => remembered = root;
+
+        await shell.ShowFilesCommand.ExecuteAsync(null);
+        await shell.LocalFiles.ChooseFolderCommand.ExecuteAsync(null);
+
+        shell.SidebarShowsFiles.ShouldBeTrue();
+        shell.LocalFiles.HasRoot.ShouldBeTrue();
+        remembered.ShouldBe("/Users/you/project");
+        shell.LocalFiles.Tree.Select(node => node.Name).ShouldBe(["src", "notes.md"]);
+    }
+
+    [Fact]
+    public async Task OpeningAFileFromTheSidebarPutsTheEditorWhereTheSessionsAre()
+    {
+        // The tree is 260 pixels wide and a line of code is not.
+        var shell = Shell(Project(), out _, dialogs: new ScriptedDialogService { Folder = "/Users/you/project" });
+        await shell.LocalFiles.ChooseFolderCommand.ExecuteAsync(null);
+
+        await shell.LocalFiles.OpenFile("notes.md");
+
+        shell.Workspace.Panes.Count(pane => pane.Kind is PaneKind.Editor).ShouldBe(1);
+        shell.Tabs.Single().Title.ShouldBe("Files");
+
+        // A second file is a tab inside it, not a second pane.
+        await shell.LocalFiles.OpenFile("src/app.py");
+        shell.Workspace.Panes.Count(pane => pane.Kind is PaneKind.Editor).ShouldBe(1);
+        shell.LocalFiles.Open.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task SavingWithTheEditorFocusedWritesThisMachinesFile()
+    {
+        var files = Project();
+        var shell = Shell(files, out _, dialogs: new ScriptedDialogService { Folder = "/Users/you/project" });
+        await shell.LocalFiles.ChooseFolderCommand.ExecuteAsync(null);
+        await shell.LocalFiles.OpenFile("notes.md");
+
+        shell.LocalFiles.Current.ShouldNotBeNull().Text = "one\ntwo\n";
+        shell.CanSaveFile.ShouldBeTrue();
+        await shell.SaveFileCommand.ExecuteAsync(null);
+
+        files.Text("/Users/you/project/notes.md").ShouldBe("one\ntwo\n");
+    }
+
+    [Fact]
+    public async Task AFileHereCanBeSentToTheFolderTheHostHasOpen()
+    {
+        // The sentence this exists for: "get this file onto that server."
+        //
+        // Over a real directory rather than the fake the other tests use,
+        // because sending streams the file from its path on disk -- which is
+        // what makes it work for a tarball as well as a note, and which a
+        // dictionary standing in for a filesystem cannot exercise.
+        var directory = Path.Combine(Path.GetTempPath(), $"strangesharpterm-send-{Guid.NewGuid():N}");
+        System.IO.Directory.CreateDirectory(directory);
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "notes.md"), "one\n");
+
+            var remote = new MemoryFiles();
+            var shell = Shell(
+                new MemoryFiles(),
+                out var host,
+                remote,
+                new ScriptedDialogService { Folder = Transport.LocalFiles.Posix(directory) },
+                new Transport.LocalFiles(Transport.LocalFiles.Posix(directory)));
+
+            await shell.LocalFiles.ChooseFolderCommand.ExecuteAsync(null);
+            await shell.LocalFiles.RefreshCommand.ExecuteAsync(null);
+
+            shell.Inventory.Selection = host.Id;
+            await shell.OpenWorkspaceCommand.ExecuteAsync(null);
+
+            // The menu item names the host it would send to, and only while
+            // there is exactly one answer to "the open host".
+            shell.LocalFiles.SendTarget.ShouldBe("web-01");
+            shell.LocalFiles.Selected = shell.LocalFiles.Tree.Single(node => node.Name == "notes.md");
+            shell.LocalFiles.CanSend.ShouldBeTrue();
+
+            await shell.LocalFiles.SendCommand.ExecuteAsync(null);
+
+            shell.LocalFiles.Failure.ShouldBeNull();
+            remote.Text("/home/ops/notes.md").ShouldBe("one\n");
+            shell.LocalFiles.Note.ShouldNotBeNull().ShouldContain("Sent notes.md to web-01");
+        }
+        finally
+        {
+            System.IO.Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void WithNoHostFolderOpenThereIsNowhereToSendTo()
+    {
+        var shell = Shell(Project(), out _);
+
+        shell.LocalFiles.SendTarget.ShouldBeEmpty();
+        shell.LocalFiles.CanSend.ShouldBeFalse();
+    }
+}

@@ -418,6 +418,12 @@ rather than a policy about paths, what that cannot promise (a symbolic link
 resolves on the server, and this resolves paths as text), and the three things
 that only showed up by building it.
 
+It was extended, in the same milestone, to the machine the app runs on: the
+seam is "files on the far end", a local filesystem fits it, and the left panel
+gained a `Hosts | Files` switch rather than a second implementation of a tree.
+The assistant's local tools are separate names rather than an argument saying
+which computer — see the ADR for why that distinction is not negotiable.
+
 This is also the honest replacement for what the Swift app's File Provider
 extension was for — see "Deliberately not carried over" in the README. Editing a
 remote file no longer needs a macOS capability, or a mirror on disk, or a sync

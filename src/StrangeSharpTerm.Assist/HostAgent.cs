@@ -86,13 +86,20 @@ public sealed record AgentAnswer(
 /// workspace whose root is empty is one nobody has opened yet, and offers
 /// nothing.
 /// </param>
+/// <param name="localWorkspace">
+/// The folder open on the machine this app is running on, under the same rules
+/// and a separate set of tool names. Separate names rather than an argument
+/// saying which machine: which computer a write lands on is the substance of
+/// what a person approves, and it must not be a field the gate has to trust.
+/// </param>
 public sealed class HostAgent(
     IAssistBackend backend,
     IHostAccess host,
     AssistSettings settings,
     ICommandGate gate,
     IExternalTools? tools = null,
-    IWorkspaceAccess? workspace = null)
+    IWorkspaceAccess? workspace = null,
+    IWorkspaceAccess? localWorkspace = null)
 {
     private readonly List<AssistMessage> _conversation = [];
     private readonly List<TranscriptEntry> _entries = [];
@@ -621,29 +628,36 @@ public sealed class HostAgent(
         ICommandBudget budget,
         CancellationToken cancellationToken)
     {
-        if (Open is not { } open)
+        var local = WorkspaceTools.IsLocal(call.Name);
+        if (Folder(call.Name) is not { } open)
         {
             return (false, new AssistToolResult(
                 call.Id,
-                "No folder is open on this host any more, so there is nothing to read or write.",
+                local
+                    ? "No folder is open on the user's own machine any more, so there is nothing to read or write there."
+                    : "No folder is open on this host any more, so there is nothing to read or write.",
                 Failed: true));
         }
 
-        var writing = call.Name == WorkspaceTools.WriteFile;
+        // Whose machine a write lands on, in the words a person is asked in. The
+        // host's own name where it is the host's, because "web-01" is what the
+        // rest of the conversation calls it.
+        var machine = local ? "this machine" : host.Alias;
+        var writing = WorkspaceTools.Writes(call.Name);
         var (path, content, why) = writing
             ? WorkspaceTools.ReadWrite(call.Arguments)
             : (WorkspaceTools.ReadPath(call.Arguments), "", "");
 
         var operation = call.Name switch
         {
-            WorkspaceTools.ListFiles => FileOperation.List,
-            WorkspaceTools.ReadFile => FileOperation.Read,
+            WorkspaceTools.ListFiles or WorkspaceTools.ListLocalFiles => FileOperation.List,
+            WorkspaceTools.ReadFile or WorkspaceTools.ReadLocalFile => FileOperation.Read,
             _ => FileOperation.Write,
         };
-        var verb = call.Name switch
+        var verb = operation switch
         {
-            WorkspaceTools.ListFiles => "list",
-            WorkspaceTools.ReadFile => "read",
+            FileOperation.List => "list",
+            FileOperation.Read => "read",
             _ => "write",
         };
 
@@ -651,7 +665,9 @@ public sealed class HostAgent(
         var step = new TranscriptEntry.Step
         {
             Host = host.Alias,
-            Command = $"{verb} {(path.Length == 0 ? "?" : path)}",
+            // The machine is part of the line, not a detail underneath it: two
+            // folders are open and the paths in them look alike.
+            Command = $"{verb} {(path.Length == 0 ? "?" : path)}{(local ? " (this machine)" : "")}",
             Why = why,
             Gate = judgement.Reason,
             IsDestructive = judgement.IsDestructive,
@@ -686,7 +702,7 @@ public sealed class HostAgent(
         try
         {
             if (!writing)
-                return await CarryRead(open, call, step, path, cancellationToken);
+                return await CarryRead(open, call, step, path, machine, cancellationToken);
 
             var change = await open.Plan(path, content, cancellationToken);
 
@@ -728,8 +744,8 @@ public sealed class HostAgent(
             // nginx.conf" and "it writes nginx.conf, and 380 of its 400 lines
             // change" are not the same question.
             var reason = change.Creates
-                ? $"It creates {change.Relative}, which is not there yet."
-                : $"{judgement.Reason} {change.Diff.Summary}.";
+                ? $"It creates {change.Relative} on {machine}, which is not there yet."
+                : $"{judgement.Reason.TrimEnd('.')} on {machine}. {change.Diff.Summary}.";
 
             step.Gate = reason;
             step.Detail = change.Diff.Text;
@@ -737,7 +753,7 @@ public sealed class HostAgent(
 
             var allowed = await gate.Allow(
                 new PendingCommand(
-                    host.Alias,
+                    machine,
                     $"write {change.Relative}",
                     why,
                     reason,
@@ -759,7 +775,11 @@ public sealed class HostAgent(
 
             step.State = StepState.Running;
             Updated?.Invoke(this, step);
-            Working?.Invoke(this, new AssistStep(host.Alias, step.Command, why, Running: true));
+            // Only the host's own files are narrated into its pane. A file on
+            // this machine has no terminal to say so in, and saying it in the
+            // host's would be saying it about the wrong computer.
+            if (!local)
+                Working?.Invoke(this, new AssistStep(host.Alias, step.Command, why, Running: true));
 
             await open.Write(change, cancellationToken);
 
@@ -767,19 +787,24 @@ public sealed class HostAgent(
             step.ExitStatus = 0;
             step.Output = change.Diff.Text;
             Updated?.Invoke(this, step);
-            Working?.Invoke(this, new AssistStep(
-                host.Alias, step.Command, why, Running: false, 0, change.Diff.Summary));
-            Wrote?.Invoke(this, change);
+            if (!local)
+                Working?.Invoke(this, new AssistStep(
+                    host.Alias, step.Command, why, Running: false, 0, change.Diff.Summary));
+            if (local)
+                WroteHere?.Invoke(this, change);
+            else
+                Wrote?.Invoke(this, change);
 
             return (true, new AssistToolResult(
                 call.Id,
                 change.Creates
-                    ? $"Created {change.Relative}."
-                    : $"Wrote {change.Relative}: {change.Diff.Summary}."));
+                    ? $"Created {change.Relative} on {machine}."
+                    : $"Wrote {change.Relative} on {machine}: {change.Diff.Summary}."));
         }
         catch (OperationCanceledException)
         {
-            Working?.Invoke(this, new AssistStep(host.Alias, step.Command, why, Running: false));
+            if (!local)
+                Working?.Invoke(this, new AssistStep(host.Alias, step.Command, why, Running: false));
             throw;
         }
         catch (Exception e)
@@ -787,7 +812,8 @@ public sealed class HostAgent(
             step.State = StepState.Failed;
             step.Output = e.Message;
             Updated?.Invoke(this, step);
-            Working?.Invoke(this, new AssistStep(host.Alias, step.Command, why, Running: false));
+            if (!local)
+                Working?.Invoke(this, new AssistStep(host.Alias, step.Command, why, Running: false));
             return (false, new AssistToolResult(call.Id, e.Message, Failed: true));
         }
     }
@@ -805,6 +831,7 @@ public sealed class HostAgent(
         AssistToolCall call,
         TranscriptEntry.Step step,
         string path,
+        string machine,
         CancellationToken cancellationToken)
     {
         step.State = StepState.Running;
@@ -812,7 +839,7 @@ public sealed class HostAgent(
 
         string text;
         var note = "";
-        if (call.Name == WorkspaceTools.ListFiles)
+        if (call.Name is WorkspaceTools.ListFiles or WorkspaceTools.ListLocalFiles)
         {
             text = await open.List(path, cancellationToken);
         }
@@ -826,7 +853,7 @@ public sealed class HostAgent(
                 Updated?.Invoke(this, step);
                 return (true, new AssistToolResult(
                     call.Id,
-                    $"{file.Relative} is not a text file ({file.Length} bytes). Nothing was read.",
+                    $"{file.Relative} on {machine} is not a text file ({file.Length} bytes). Nothing was read.",
                     Failed: true));
             }
 
@@ -858,6 +885,9 @@ public sealed class HostAgent(
     /// </summary>
     public event EventHandler<FileChange>? Wrote;
 
+    /// <inheritdoc cref="Wrote"/>
+    public event EventHandler<FileChange>? WroteHere;
+
     /// <summary>
     /// The folder open on this host, or null when there is none.
     ///
@@ -866,6 +896,12 @@ public sealed class HostAgent(
     /// is opened and go again when it is closed, in the same conversation.
     /// </summary>
     private IWorkspaceAccess? Open => workspace is { Root.Length: > 0 } open ? open : null;
+
+    /// <inheritdoc cref="Open"/>
+    private IWorkspaceAccess? Here => localWorkspace is { Root.Length: > 0 } open ? open : null;
+
+    /// <summary>Which folder a call is about, by the name it used.</summary>
+    private IWorkspaceAccess? Folder(string tool) => WorkspaceTools.IsLocal(tool) ? Here : Open;
 
     /// <summary>What the provider is offered this turn.</summary>
     private IReadOnlyList<AssistTool> Offered(AskOptions how)
@@ -880,6 +916,12 @@ public sealed class HostAgent(
             if (how.MayEditFiles)
                 offered.Add(WorkspaceTools.Writer);
         }
+        if (Here is not null)
+        {
+            offered.AddRange(WorkspaceTools.ReadingLocal);
+            if (how.MayEditFiles)
+                offered.Add(WorkspaceTools.LocalWriter);
+        }
         if (tools is { } connected)
             offered.AddRange(connected.Offered);
         return offered;
@@ -892,6 +934,9 @@ public sealed class HostAgent(
 
         if (Open is { } open)
             parts.Add(AssistPrompts.Workspace(open.RootLabel, how.MayEditFiles));
+
+        if (Here is { } here)
+            parts.Add(AssistPrompts.LocalWorkspace(here.RootLabel, how.MayEditFiles));
 
         // Only about servers that are not this one. The workspace's tools are
         // this host's own files, so the paragraph about third parties would be

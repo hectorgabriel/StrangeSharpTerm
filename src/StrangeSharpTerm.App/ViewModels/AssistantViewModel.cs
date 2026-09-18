@@ -179,11 +179,13 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
         HostAgent agent,
         AssistSettings settings,
         Action<string> stage,
-        Func<string?>? workspace = null)
+        Func<string?>? workspace = null,
+        Func<string?>? localWorkspace = null)
     {
         _agent = agent;
         _stage = stage;
         _workspace = workspace;
+        _localWorkspace = localWorkspace;
         MayRunCommands = settings.AllowCommandsByDefault;
 
         _agent.Added += (_, entry) => Post(() =>
@@ -207,6 +209,7 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
         // A file it wrote is a file the workspace pane is still showing the old
         // version of. The window joins the two; this only says when.
         _agent.Wrote += (_, change) => Post(() => Wrote?.Invoke(this, change));
+        _agent.WroteHere += (_, change) => Post(() => WroteHere?.Invoke(this, change));
         // A retry takes the last question back, and the rows it produced go
         // with it -- or the pane would show both attempts as though both had
         // been asked.
@@ -277,12 +280,29 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
     /// edit until a folder is open, and a toggle for nothing is a toggle that
     /// teaches people it does nothing.
     /// </summary>
-    public bool HasWorkspace => _workspace?.Invoke() is { Length: > 0 };
+    public bool HasWorkspace =>
+        _workspace?.Invoke() is { Length: > 0 } || _localWorkspace?.Invoke() is { Length: > 0 };
 
     private readonly Func<string?>? _workspace;
 
+    private readonly Func<string?>? _localWorkspace;
+
     /// <summary>The folder open on this host, for the header to name. Empty when there is none.</summary>
-    public string WorkspaceRoot => _workspace?.Invoke() ?? "";
+    public string WorkspaceRoot
+    {
+        get
+        {
+            var host = _workspace?.Invoke() ?? "";
+            var here = _localWorkspace?.Invoke() ?? "";
+            return (host.Length, here.Length) switch
+            {
+                (> 0, > 0) => $"{host} on this host, and {here} on this machine",
+                (> 0, _) => host,
+                (_, > 0) => $"{here} on this machine",
+                _ => "",
+            };
+        }
+    }
 
     /// <summary>Says the folder changed, so the header and the switch catch up.</summary>
     public void WorkspaceChanged()
@@ -293,6 +313,9 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
 
     /// <summary>A file in the open folder was written by the assistant.</summary>
     public event EventHandler<FileChange>? Wrote;
+
+    /// <inheritdoc cref="Wrote"/>
+    public event EventHandler<FileChange>? WroteHere;
 
     [ObservableProperty]
     public partial bool IsAsking { get; private set; }
