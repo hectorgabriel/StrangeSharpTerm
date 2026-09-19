@@ -111,6 +111,13 @@ findings somewhere that is not a chat window. So the fleet assistant is offered
 a call naming a host's file is turned down with somewhere to go rather than
 silently failing.
 
+Plan mode draws the same line. The planner reads this machine's folder before it
+writes the plan — a plan is usually written from a runbook, and the runbook is
+here — but it writes nothing, so it is offered only `list_local_files` and
+`read_local_file`. The workers that carry a plan out are not given the hosts'
+folders either: they are the fleet, and otherwise what a phase could read would
+depend on which hosts somebody happened to have a folder open on.
+
 The gate, the policy, the budget and the diff are the same code either way:
 `WorkspaceCalls` is one implementation both agents use, because the one thing
 that must not differ between "the assistant about this host" and "the assistant

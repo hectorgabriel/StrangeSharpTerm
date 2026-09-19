@@ -23,6 +23,62 @@ public class PlannerTests
     }
 
     /// <summary>
+    /// The reason for the folder: a plan written from the runbook the person
+    /// opened, rather than from what the model guesses a runbook says.
+    /// </summary>
+    [Fact]
+    public async Task ItReadsTheFolderOnThisMachineBeforeItPlans()
+    {
+        var here = new FakeWorkspace("/Users/you/runbooks").With("cluster.md", "Use containerd, not docker.");
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Calls(WorkspaceTools.ReadLocalFile, new { path = "cluster.md" }),
+            ScriptedBackend.Says(Answer));
+        var planner = new Planner(backend, here);
+        var looked = new List<string>();
+        planner.Looked += (_, step) => looked.Add(step.Command);
+
+        var reading = await planner.Draft("follow the runbook", ["web-01"], TestContext.Current.CancellationToken);
+
+        reading.ShouldBeOfType<PlanReading.Ok>();
+        backend.Requests[0].Tools.Select(tool => tool.Name)
+            .ShouldBe([WorkspaceTools.ListLocalFiles, WorkspaceTools.ReadLocalFile]);
+        backend.Requests[0].System.ShouldContain("~/srv/app");
+        backend.Requests[1].Messages.SelectMany(message => message.ToolResults).Single().Output
+            .ShouldContain("Use containerd, not docker.");
+        looked.ShouldContain("read cluster.md (this machine)");
+        // What the next turn remembers is the question and the plan, not the reads.
+        planner.Turns.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task ItCannotWriteThereWhateverItAsksFor()
+    {
+        var here = new FakeWorkspace("/Users/you/runbooks").With("cluster.md", "old");
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Calls(
+                WorkspaceTools.WriteLocalFile,
+                new { path = "cluster.md", content = "new", why = "tidy it" }),
+            ScriptedBackend.Says(Answer));
+
+        await new Planner(backend, here).Draft("plan it", ["web-01"], TestContext.Current.CancellationToken);
+
+        here.Written.ShouldBeEmpty();
+        backend.Requests[1].Messages.SelectMany(message => message.ToolResults).Single().Failed.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task WithNoFolderOpenItIsOfferedNothingAndToldNothing()
+    {
+        var backend = new ScriptedBackend(ScriptedBackend.Says(Answer));
+
+        await new Planner(backend, new FakeWorkspace("")).Draft(
+            "plan it", ["web-01"], TestContext.Current.CancellationToken);
+
+        backend.Requests.Single().Tools.ShouldBeEmpty();
+        backend.Requests.Single().System.ShouldNotContain("list_local_files");
+    }
+
+    /// <summary>
     /// The point of the change: a phase carries the commands themselves, so the
     /// plan a person reads is the thing that will run.
     /// </summary>

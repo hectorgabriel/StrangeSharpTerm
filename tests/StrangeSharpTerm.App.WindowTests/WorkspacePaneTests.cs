@@ -108,4 +108,71 @@ public class WorkspacePaneTests
                 .IsEffectivelyVisible.ShouldBeTrue();
         });
     }
+
+    /// <summary>
+    /// A host's folder is the pane's, not the fleet's -- in a plan as well as in
+    /// Ask mode.
+    ///
+    /// A plan's workers were built with the host's folder, so what a phase could
+    /// read depended on which hosts somebody happened to have a folder open on.
+    /// </summary>
+    [Fact]
+    public void APlansWorkersAreNotGivenTheHostsFolder()
+    {
+        Headless.Run(() =>
+        {
+            var host = new StrangeSharpTerm.Model.Connection { Name = "web-01", Hostname = "web-01.example.com" };
+            var backend = new Recording(
+                Canned.Says("""{"phases":[{"name":"Look","hosts":["web-01"],"commands":["uptime"]}]}"""),
+                Canned.Says("Done."));
+            var shell = new ShellViewModel(
+                new InventoryViewModel(null, new StrangeSharpTerm.Model.InventoryTree(connections: [host])),
+                new FakeSessions { OnFiles = _ => Project() },
+                (_, _) => new Border(),
+                backends: _ => backend,
+                orchestratorView: model => new Border { DataContext = model },
+                assistantView: model => new Border { DataContext = model },
+                workspaceView: model => new Border { DataContext = model });
+            shell.Inventory.Selection = host.Id;
+            Headless.Finish(shell.OpenWorkspaceCommand.ExecuteAsync(null));
+
+            shell.AskSeveralHostsCommand.Execute(null);
+            var model = (OrchestratorViewModel)shell.Dock!.DataContext!;
+            model.Targets.Single().IsChosen = true;
+            model.Mode = OrchestratorMode.Plan;
+            model.Instruction = "look at it";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Dispatcher.UIThread.RunJobs();
+            model.Phases.ShouldHaveSingleItem();
+
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Dispatcher.UIThread.RunJobs();
+
+            // The worker was asked, and offered nothing about the host's files.
+            backend.Requests.Count.ShouldBe(2);
+            var worker = backend.Requests[1];
+            worker.Tools.Select(tool => tool.Name).ShouldNotContain(StrangeSharpTerm.Assist.WorkspaceTools.ReadFile);
+            worker.Tools.Select(tool => tool.Name).ShouldNotContain(StrangeSharpTerm.Assist.WorkspaceTools.ListFiles);
+        });
+    }
+
+    private sealed class Recording(params IReadOnlyList<StrangeSharpTerm.Assist.AssistEvent>[] turns)
+        : StrangeSharpTerm.Assist.IAssistBackend
+    {
+        private readonly Canned _canned = new(turns);
+
+        internal List<StrangeSharpTerm.Assist.AssistRequest> Requests { get; } = [];
+
+        public string ProviderName => _canned.ProviderName;
+
+        public string Model => _canned.Model;
+
+        public IAsyncEnumerable<StrangeSharpTerm.Assist.AssistEvent> Stream(
+            StrangeSharpTerm.Assist.AssistRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return _canned.Stream(request, cancellationToken);
+        }
+    }
 }
