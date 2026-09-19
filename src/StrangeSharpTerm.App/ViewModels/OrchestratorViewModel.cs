@@ -1044,6 +1044,18 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             return held;
         if (_agentFor(alias) is not { } built)
             return null;
+
+        // Which host it has, while it has it -- the same path Ask mode takes
+        // through the fleet agent. Without this a plan ran its commands over
+        // the exec channel and every open pane for those hosts sat there
+        // looking idle, which is the one case where a pane is most worth
+        // saying something: the commands were written by a model and are
+        // running on eight machines at once.
+        //
+        // Subscribed here rather than where a phase starts, because the agent
+        // is built once and kept for the life of the pane: hooking it per
+        // phase would narrate phase three's commands three times over.
+        built.Working += (_, step) => Post(() => Driving?.Invoke(this, step));
         return _agents[alias] = built;
     }
 
