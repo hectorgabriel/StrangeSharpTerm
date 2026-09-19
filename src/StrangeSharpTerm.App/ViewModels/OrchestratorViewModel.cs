@@ -308,8 +308,18 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         _agentFor = agentFor;
         // One of each, for the life of the pane rather than the life of a run:
         // the conversation is the point of them.
-        _planner = new Planner(backend);
+        // The same folder as Ask mode, read-only: a plan is often written from a
+        // runbook, and the runbook is here.
+        _planner = new Planner(backend, localWorkspace);
         _planner.Thought += (_, thought) => Post(() => Thinking = thought);
+        // What it is reading, while it reads it. Draft replaces this with the
+        // plan's summary when the plan arrives.
+        _planner.Looked += (_, step) => Post(() => Progress = step.State switch
+        {
+            StepState.Refused => $"{step.Command} — refused: {step.Gate}",
+            StepState.Failed => $"{step.Command} — {step.Output}",
+            _ => step.Command,
+        });
         foreach (var target in targets)
         {
             // Everything that reads the ticks, not just the list of them.

@@ -1444,7 +1444,12 @@ public sealed partial class ShellViewModel : ObservableObject
                 // Asked for each time rather than captured: a folder is opened
                 // and closed while a conversation is going on, and the tools
                 // appear and go with it.
-                new RemoteWorkspaceAccess(() => _workspaces.GetValueOrDefault(connection.Id)?.Workspace),
+                //
+                // Not in a run. A plan's workers are the fleet, and a host's
+                // files stay a job for the pane about that host -- the same line
+                // Ask mode draws. Otherwise which hosts a phase could read depended
+                // on which of them somebody happened to have a folder open on.
+                inARun ? null : new RemoteWorkspaceAccess(() => _workspaces.GetValueOrDefault(connection.Id)?.Workspace),
                 // And this machine's folder, which belongs to no host and is the
                 // same one in every conversation.
                 new RemoteWorkspaceAccess(() => LocalFiles.Workspace));

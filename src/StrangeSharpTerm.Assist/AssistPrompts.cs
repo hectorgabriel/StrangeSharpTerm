@@ -236,4 +236,20 @@ public static class AssistPrompts
         "capture, because two hosts would produce two values and there would be no single one to carry.",
         "",
         $"At most {AssistLimits.MaxPhases} phases. Do not plan anything the hosts listed above cannot do.");
+
+    /// <summary>
+    /// What the planner is told about the folder on the user's own machine.
+    ///
+    /// Said, and not only offered, because the planner's first instinct is to
+    /// answer with JSON straight away -- and a runbook in that folder is worth
+    /// reading before the plan is written, not after.
+    /// </summary>
+    public static string PlannerWorkspace(string root) => string.Join("\n",
+        $"A folder on the user's own machine -- the computer running this app, not any of the hosts --",
+        $"is open: {root}. You can read it with list_local_files and read_local_file before you",
+        "answer. When the request mentions a runbook, notes, manifests or anything else that may be",
+        "written down, look there first and plan from what it says.",
+        "",
+        "You cannot write to it, and the hosts cannot see it: a phase that needs a file from it",
+        "must say so in why, because its commands run on the hosts.");
 }

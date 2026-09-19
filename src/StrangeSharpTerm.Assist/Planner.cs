@@ -12,7 +12,17 @@ namespace StrangeSharpTerm.Assist;
 /// carried from one machine to another. All three are things a person should
 /// read before a machine acts on them.
 /// </summary>
-public sealed class Planner(IAssistBackend backend)
+/// <param name="localWorkspace">
+/// The folder open on the machine this app is running on, or null -- read-only.
+///
+/// A plan is usually written from something: the runbook for the cluster, the
+/// notes from the last attempt, the manifests it is meant to apply. Those live
+/// in the folder the person opened, and a planner that cannot see them writes
+/// the plan a package's README would suggest rather than the one they asked for.
+/// Reading only: a plan writes nothing, and the run that follows it is where
+/// anything changes.
+/// </param>
+public sealed class Planner(IAssistBackend backend, IWorkspaceAccess? localWorkspace = null)
 {
     /// <summary>
     /// The model's reasoning, as it arrives, where the provider offers it.
@@ -79,34 +89,67 @@ public sealed class Planner(IAssistBackend backend)
                 ? goal
                 : $"What happened when the last plan ran:\n\n{_reported}\n\n{goal}",
         };
-        try
+
+        // This draft's reads, kept out of the conversation: what is remembered
+        // is what was asked and the plan that came back, and a later turn that
+        // needs a file again can read it again.
+        List<AssistMessage> working = [.. _conversation, asked];
+        var budget = new CommandBudget(AssistLimits.RunBudget);
+        for (var turn = 0; ; turn++)
         {
-            await foreach (var streamed in backend.Stream(
-                new AssistRequest
-                {
-                    // The hosts are named in the system prompt, which is written
-                    // fresh each time: what is ticked changes between turns, and
-                    // an earlier turn's list must not outlive it.
-                    System = AssistPrompts.Planner(hosts),
-                    Messages = [.. _conversation, asked],
-                },
-                cancellationToken))
+            said.Clear();
+            var calls = new List<AssistToolCall>();
+            try
             {
-                switch (streamed)
+                await foreach (var streamed in backend.Stream(
+                    new AssistRequest
+                    {
+                        // The hosts are named in the system prompt, which is written
+                        // fresh each time: what is ticked changes between turns, and
+                        // an earlier turn's list must not outlive it.
+                        System = Here is { } here
+                            ? string.Join("\n\n", AssistPrompts.Planner(hosts), AssistPrompts.PlannerWorkspace(here.RootLabel))
+                            : AssistPrompts.Planner(hosts),
+                        Messages = [.. working],
+                        // None on the last turn, so it has to answer with a plan.
+                        Tools = Here is not null && turn < AssistLimits.RunBudget ? WorkspaceTools.ReadingLocal : [],
+                    },
+                    cancellationToken))
                 {
-                    case AssistEvent.Say say:
-                        said.Append(say.Text);
-                        break;
-                    case AssistEvent.Reasoning reasoning:
-                        thought.Append(reasoning.Text);
-                        Thought?.Invoke(this, thought.ToString());
-                        break;
+                    switch (streamed)
+                    {
+                        case AssistEvent.Say say:
+                            said.Append(say.Text);
+                            break;
+                        case AssistEvent.Reasoning reasoning:
+                            thought.Append(reasoning.Text);
+                            Thought?.Invoke(this, thought.ToString());
+                            break;
+                        case AssistEvent.Call call:
+                            calls.Add(call.Tool);
+                            break;
+                    }
                 }
             }
-        }
-        catch (AssistException e)
-        {
-            return new PlanReading.Refused(e.Message);
+            catch (AssistException e)
+            {
+                return new PlanReading.Refused(e.Message);
+            }
+
+            if (calls.Count == 0 || turn >= AssistLimits.RunBudget)
+                break;
+
+            working.Add(new AssistMessage
+            {
+                Role = AssistRole.Assistant,
+                Text = said.Length == 0 ? null : said.ToString(),
+                ToolCalls = calls,
+            });
+
+            var results = new List<AssistToolResult>();
+            foreach (var call in calls)
+                results.Add(await Look(call, budget, cancellationToken));
+            working.Add(new AssistMessage { Role = AssistRole.User, ToolResults = results });
         }
 
         var answer = said.ToString();
@@ -120,6 +163,49 @@ public sealed class Planner(IAssistBackend backend)
         // Carried, so it is not carried twice. It is in the history now.
         _reported = "";
         return reading;
+    }
+
+    /// <inheritdoc cref="FleetAgent"/>
+    private IWorkspaceAccess? Here => localWorkspace is { Root.Length: > 0 } open ? open : null;
+
+    /// <summary>
+    /// A file read while drafting, on this machine, as the pane shows it.
+    ///
+    /// Raised so the pane can say what the planner is reading: a read nobody
+    /// sees is a plan whose sources nobody can check.
+    /// </summary>
+    public event EventHandler<TranscriptEntry.Step>? Looked;
+
+    /// <summary>
+    /// One read, through the same <see cref="WorkspaceCalls"/> every other
+    /// assistant uses -- the policy, the budget and the redaction are the same.
+    /// Anything but reading this machine's folder is turned down before it gets
+    /// there, since reading is all a planner was offered.
+    /// </summary>
+    private async Task<AssistToolResult> Look(
+        AssistToolCall call,
+        ICommandBudget budget,
+        CancellationToken cancellationToken)
+    {
+        if (call.Name is not (WorkspaceTools.ListLocalFiles or WorkspaceTools.ReadLocalFile)
+            || Here is not { } here)
+        {
+            return new AssistToolResult(
+                call.Id,
+                "While planning you can only read the folder on the user's own machine. Put anything "
+                    + "else in the plan as a command.",
+                Failed: true);
+        }
+
+        var calls = new WorkspaceCalls(
+            here,
+            // Never asked: reads do not stop at a gate, and nothing else gets here.
+            new StandingAnswer(false),
+            "this machine",
+            step => Looked?.Invoke(this, (TranscriptEntry.Step)step),
+            step => Looked?.Invoke(this, (TranscriptEntry.Step)step));
+
+        return (await calls.Carry(call, budget, cancellationToken)).Result;
     }
 }
 
