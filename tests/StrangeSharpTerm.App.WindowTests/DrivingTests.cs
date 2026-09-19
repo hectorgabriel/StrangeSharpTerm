@@ -92,6 +92,59 @@ public class DrivingTests
         });
     }
 
+    /// <summary>
+    /// A plan's commands are narrated to the panes too.
+    ///
+    /// They were not: Ask mode reaches its hosts through the fleet agent, whose
+    /// steps the pane was listening to, while a plan reaches each host through
+    /// an agent of its own that nobody was listening to at all. So the one run
+    /// most worth watching -- commands a model wrote, going out to several
+    /// machines in order -- was the one where every open pane sat looking idle.
+    /// </summary>
+    [Fact]
+    public void ThePaneSaysWhatAPlanIsRunningOnEachHost()
+    {
+        Headless.Run(() =>
+        {
+            const string plan = """
+            {"phases":[{"name":"Check the disk","hosts":["web-01"],"commands":["df -h /"]}]}
+            """;
+            var model = new OrchestratorViewModel(
+                new Canned(Canned.Says(plan)),
+                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+                alias => new HostAgent(
+                    new Canned(
+                        Canned.Runs("df -h /", "how full", "c1"),
+                        Canned.Says("98% full.")),
+                    new Answering(alias),
+                    new AssistSettings(),
+                    new StandingAnswer(true)));
+
+            var driving = new List<AssistStep>();
+            model.Driving += (_, step) => driving.Add(step);
+
+            model.Mode = OrchestratorMode.Plan;
+            model.MayRunCommands = true;
+            model.Instruction = "how full is the disk?";
+
+            // Writing the plan runs nothing, so nothing is narrated yet.
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            model.Phases.ShouldHaveSingleItem();
+            driving.ShouldBeEmpty();
+
+            // And running it narrates, in and out, exactly as Ask mode does.
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+
+            driving.Count.ShouldBe(2);
+            driving[0].ShouldSatisfyAllConditions(
+                () => driving[0].Host.ShouldBe("web-01"),
+                () => driving[0].Command.ShouldBe("df -h /"),
+                () => driving[0].Running.ShouldBeTrue());
+            driving[1].Running.ShouldBeFalse();
+            driving[1].ExitStatus.ShouldBe(0);
+        });
+    }
+
     /// <summary>The pane is its own gate, and cannot be built before the agent it holds.</summary>
     private sealed class Late(Func<ICommandGate> gate) : ICommandGate
     {
