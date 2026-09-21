@@ -98,6 +98,32 @@ public class RunPlanTests
         Refused("""{"phases":[{"name":"Empty","hosts":["web-01"],"commands":[]}]}""")
             .ShouldContain("names no commands");
 
+    /// <summary>
+    /// A phase runs its commands as they were approved, so a sudo that cannot be
+    /// given the password is refused when the plan is read -- not found out
+    /// when a host is halfway through it.
+    /// </summary>
+    [Theory]
+    [InlineData("sudo apt-get update && sudo apt-get install -y nginx")]
+    [InlineData("echo line | sudo tee /etc/motd")]
+    [InlineData("apt-get update; sudo reboot")]
+    [InlineData("sudo -n systemctl restart nginx")]
+    [InlineData("sudo $(cat /tmp/cmd)")]
+    public void ASudoThatCannotBeGivenThePasswordIsRefused(string command) =>
+        Refused(OnePhase("true", command)).ShouldSatisfyAllConditions(
+            reason => reason.ShouldContain("Phase 1, Install"),
+            reason => reason.ShouldContain($"\"{command}\""),
+            reason => reason.ShouldContain(Sudo.NotGiven));
+
+    [Theory]
+    [InlineData("sudo apt-get install -y nginx")]
+    [InlineData("sudo sh -c 'apt-get update && apt-get install -y nginx'")]
+    [InlineData("sudo sh -c 'printf \"%s\\n\" line > /etc/motd'")]
+    [InlineData("ps aux | grep nginx")]
+    [InlineData("echo sudo | wc -c")]
+    public void ASudoInTheShapeThatWorksIsNot(string command) =>
+        Ok(OnePhase(command)).Phases.Single().Commands.ShouldBe([command]);
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
@@ -133,6 +159,12 @@ public class RunPlanTests
     [Fact]
     public void AnUnfencedAnswerIsLeftAsItIs() =>
         RunPlan.Unfence("""{"phases":[]}""").ShouldBe("""{"phases":[]}""");
+
+    private static string OnePhase(params string[] commands) =>
+        System.Text.Json.JsonSerializer.Serialize(new
+        {
+            phases = new[] { new { name = "Install", hosts = new[] { "web-01" }, commands } },
+        });
 
     private static RunPlan Ok(string answer) =>
         RunPlan.Read(answer, Hosts).ShouldBeOfType<PlanReading.Ok>().Plan;

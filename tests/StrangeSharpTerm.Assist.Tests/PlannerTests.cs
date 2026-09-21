@@ -9,6 +9,9 @@ public class PlannerTests
       "commands":["apt-get install -y containerd"]}]}
     """;
 
+    /// <summary>A plan naming a host nobody selected, which is always refused.</summary>
+    private const string Stranger = """{"phases":[{"name":"Do it","hosts":["db-primary"],"commands":["true"]}]}""";
+
     [Fact]
     public async Task ItWritesAPlanAndRunsNoneOfIt()
     {
@@ -251,7 +254,8 @@ public class PlannerTests
     public async Task ARefusedPlanStaysInTheHistory()
     {
         var backend = new ScriptedBackend(
-            ScriptedBackend.Says("""{"phases":[{"name":"Do it","hosts":["db-primary"],"commands":["true"]}]}"""),
+            ScriptedBackend.Says(Stranger),
+            ScriptedBackend.Says(Stranger),
             ScriptedBackend.Says(Answer));
         var planner = new Planner(backend);
 
@@ -260,8 +264,64 @@ public class PlannerTests
 
         await planner.Draft("try again", ["web-01"], TestContext.Current.CancellationToken);
 
-        backend.Requests[1].Messages.Count.ShouldBe(3);
-        backend.Requests[1].Messages[1].Text.ShouldNotBeNull().ShouldContain("db-primary");
+        // The ask, the plan, the refusal sent back, the same plan again -- and then the new ask.
+        backend.Requests[2].Messages.Count.ShouldBe(5);
+        backend.Requests[2].Messages[1].Text.ShouldNotBeNull().ShouldContain("db-primary");
+    }
+
+    /// <summary>
+    /// Every refusal says what to change, so the model is given it before the
+    /// person is. A plan with a sudo chained after another is a rewrite, not a
+    /// question for anybody.
+    /// </summary>
+    [Fact]
+    public async Task ARefusedPlanIsSentBackToBeWrittenAgainOnce()
+    {
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Says("""
+            {"phases":[{"name":"Install","hosts":["web-01"],
+              "commands":["sudo apt-get update && sudo apt-get install -y nginx"]}]}
+            """),
+            ScriptedBackend.Says("""
+            {"phases":[{"name":"Install","hosts":["web-01"],
+              "commands":["sudo apt-get update","sudo apt-get install -y nginx"]}]}
+            """));
+        var planner = new Planner(backend);
+
+        var reading = await planner.Draft("install nginx", ["web-01"], TestContext.Current.CancellationToken);
+
+        reading.ShouldBeOfType<PlanReading.Ok>().Plan.Phases.Single().Commands.Count.ShouldBe(2);
+        backend.Requests.Count.ShouldBe(2);
+        var sentBack = backend.Requests[1].Messages[^1].Text.ShouldNotBeNull();
+        sentBack.ShouldContain("refused");
+        sentBack.ShouldContain(Sudo.NotGiven);
+    }
+
+    [Fact]
+    public async Task ASecondRefusalGoesToThePersonRatherThanRoundAgain()
+    {
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Says(Stranger),
+            ScriptedBackend.Says(Stranger),
+            ScriptedBackend.Says(Answer));
+
+        var reading = await new Planner(backend).Draft(
+            "build a cluster", ["web-01"], TestContext.Current.CancellationToken);
+
+        reading.ShouldBeOfType<PlanReading.Refused>().Reason.ShouldContain("db-primary");
+        backend.Requests.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task ThePlannerIsToldWhatShapeASudoMustTake()
+    {
+        var backend = new ScriptedBackend(ScriptedBackend.Says(Answer));
+
+        await new Planner(backend).Draft("install nginx", ["web-01"], TestContext.Current.CancellationToken);
+
+        var system = backend.Requests.Single().System;
+        system.ShouldContain("sudo cannot ask for a password");
+        system.ShouldContain("sudo sh -c");
     }
 
     [Fact]
@@ -281,8 +341,7 @@ public class PlannerTests
     [Fact]
     public async Task APlanNamingAHostNobodySelectedIsRefusedRatherThanShown()
     {
-        var backend = new ScriptedBackend(ScriptedBackend.Says(
-            """{"phases":[{"name":"Do it","hosts":["db-primary"],"commands":["true"]}]}"""));
+        var backend = new ScriptedBackend(ScriptedBackend.Says(Stranger), ScriptedBackend.Says(Stranger));
 
         var reading = await new Planner(backend).Draft(
             "build a cluster", ["web-01"], TestContext.Current.CancellationToken);

@@ -80,8 +80,6 @@ public sealed class Planner(IAssistBackend backend, IWorkspaceAccess? localWorks
         if (hosts.Count == 0)
             return new PlanReading.Refused("No hosts are selected.");
 
-        var said = new StringBuilder();
-        var thought = new StringBuilder();
         var asked = new AssistMessage
         {
             Role = AssistRole.User,
@@ -89,6 +87,59 @@ public sealed class Planner(IAssistBackend backend, IWorkspaceAccess? localWorks
                 ? goal
                 : $"What happened when the last plan ran:\n\n{_reported}\n\n{goal}",
         };
+
+        var thought = new StringBuilder();
+        for (var attempt = 0; ; attempt++)
+        {
+            string answer;
+            try
+            {
+                answer = await Answer(asked, hosts, thought, cancellationToken);
+            }
+            catch (AssistException e)
+            {
+                return new PlanReading.Refused(e.Message);
+            }
+
+            var reading = RunPlan.Read(answer, hosts);
+
+            // Kept whatever it says, refusals included. A plan refused for naming a
+            // host nobody selected is exactly the turn the next one needs to see, or
+            // it will write the same thing again.
+            _conversation.Add(asked);
+            _conversation.Add(new AssistMessage { Role = AssistRole.Assistant, Text = answer });
+            // Carried, so it is not carried twice. It is in the history now.
+            _reported = "";
+
+            // Every refusal names what to change, so the model is given it once
+            // before the person is: a plan with a sudo in the wrong shape is a
+            // rewrite, not a question anybody needs to be asked. Once, because a
+            // model that writes the same refusal twice will write it a third time.
+            if (reading is not PlanReading.Refused(var reason) || attempt >= RetriesOnRefusal)
+                return reading;
+
+            asked = new AssistMessage
+            {
+                Role = AssistRole.User,
+                Text = $"That plan was refused: {reason}\n\nWrite it again.",
+            };
+        }
+    }
+
+    /// <summary>How many times a refused plan is sent back to be written again before the pane is told.</summary>
+    private const int RetriesOnRefusal = 1;
+
+    /// <summary>
+    /// One answer to one message, reading this machine's folder on the way when
+    /// it asks to.
+    /// </summary>
+    private async Task<string> Answer(
+        AssistMessage asked,
+        IReadOnlyList<string> hosts,
+        StringBuilder thought,
+        CancellationToken cancellationToken)
+    {
+        var said = new StringBuilder();
 
         // This draft's reads, kept out of the conversation: what is remembered
         // is what was asked and the plan that came back, and a later turn that
@@ -99,45 +150,38 @@ public sealed class Planner(IAssistBackend backend, IWorkspaceAccess? localWorks
         {
             said.Clear();
             var calls = new List<AssistToolCall>();
-            try
-            {
-                await foreach (var streamed in backend.Stream(
-                    new AssistRequest
-                    {
-                        // The hosts are named in the system prompt, which is written
-                        // fresh each time: what is ticked changes between turns, and
-                        // an earlier turn's list must not outlive it.
-                        System = Here is { } here
-                            ? string.Join("\n\n", AssistPrompts.Planner(hosts), AssistPrompts.PlannerWorkspace(here.RootLabel))
-                            : AssistPrompts.Planner(hosts),
-                        Messages = [.. working],
-                        // None on the last turn, so it has to answer with a plan.
-                        Tools = Here is not null && turn < AssistLimits.RunBudget ? WorkspaceTools.ReadingLocal : [],
-                    },
-                    cancellationToken))
+            await foreach (var streamed in backend.Stream(
+                new AssistRequest
                 {
-                    switch (streamed)
-                    {
-                        case AssistEvent.Say say:
-                            said.Append(say.Text);
-                            break;
-                        case AssistEvent.Reasoning reasoning:
-                            thought.Append(reasoning.Text);
-                            Thought?.Invoke(this, thought.ToString());
-                            break;
-                        case AssistEvent.Call call:
-                            calls.Add(call.Tool);
-                            break;
-                    }
-                }
-            }
-            catch (AssistException e)
+                    // The hosts are named in the system prompt, which is written
+                    // fresh each time: what is ticked changes between turns, and
+                    // an earlier turn's list must not outlive it.
+                    System = Here is { } here
+                        ? string.Join("\n\n", AssistPrompts.Planner(hosts), AssistPrompts.PlannerWorkspace(here.RootLabel))
+                        : AssistPrompts.Planner(hosts),
+                    Messages = [.. working],
+                    // None on the last turn, so it has to answer with a plan.
+                    Tools = Here is not null && turn < AssistLimits.RunBudget ? WorkspaceTools.ReadingLocal : [],
+                },
+                cancellationToken))
             {
-                return new PlanReading.Refused(e.Message);
+                switch (streamed)
+                {
+                    case AssistEvent.Say say:
+                        said.Append(say.Text);
+                        break;
+                    case AssistEvent.Reasoning reasoning:
+                        thought.Append(reasoning.Text);
+                        Thought?.Invoke(this, thought.ToString());
+                        break;
+                    case AssistEvent.Call call:
+                        calls.Add(call.Tool);
+                        break;
+                }
             }
 
             if (calls.Count == 0 || turn >= AssistLimits.RunBudget)
-                break;
+                return said.ToString();
 
             working.Add(new AssistMessage
             {
@@ -151,18 +195,6 @@ public sealed class Planner(IAssistBackend backend, IWorkspaceAccess? localWorks
                 results.Add(await Look(call, budget, cancellationToken));
             working.Add(new AssistMessage { Role = AssistRole.User, ToolResults = results });
         }
-
-        var answer = said.ToString();
-        var reading = RunPlan.Read(answer, hosts);
-
-        // Kept whatever it says, refusals included. A plan refused for naming a
-        // host nobody selected is exactly the turn the next one needs to see, or
-        // it will write the same thing again.
-        _conversation.Add(asked);
-        _conversation.Add(new AssistMessage { Role = AssistRole.Assistant, Text = answer });
-        // Carried, so it is not carried twice. It is in the history now.
-        _reported = "";
-        return reading;
     }
 
     /// <inheritdoc cref="FleetAgent"/>

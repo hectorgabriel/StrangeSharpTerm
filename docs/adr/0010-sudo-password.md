@@ -73,8 +73,22 @@ succeeds no password is sent.
 
 **A command that needs root twice has to be two commands.** That is the
 single-`sudo` rule, and it is the price of never leaving a spare copy of a
-password on somebody's input. Plans are one command per line already; the
-model is told when a command did not get the password and why.
+password on somebody's input. In a conversation the model is told when a
+command did not get the password and why, and splits it.
+
+**A plan is held to the rule when it is written, not when it runs.** A plan
+is one command per line, but nothing stopped a line being
+`sudo apt-get update && sudo apt-get install -y nginx`. It was approved,
+and at run time the host's assistant got the "split it" sentence while also
+being told to run the commands as written and not improvise. It stopped, and
+the phase failed. Letting it split the command would mean running something
+nobody approved, so the planner is told the rule instead (with
+`sudo sh -c '…'` as the way to get a pipe or a redirection as root), and
+`RunPlan.Check` refuses a plan that breaks it, through `Sudo.Prepared`. It
+refuses the same way on every host, switch on or off: the split form works
+everywhere, and without a password `sudo` could not prompt anyway. A refused
+plan goes back to the planner once, with the reason, before the person sees
+it.
 
 **One extra round trip** before each eligible `sudo` command, for the probe.
 
