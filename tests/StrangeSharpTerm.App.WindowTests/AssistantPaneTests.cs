@@ -334,7 +334,11 @@ public class AssistantPaneTests
         Headless.Run(() =>
         {
             var model = new OrchestratorViewModel(
-                new Canned(Canned.Says("""{"phases":[{"name":"Do it","hosts":["db-primary"],"commands":["true"]}]}""")),
+                // Twice: a refused plan is sent back once to be written again,
+                // and only the second refusal reaches the pane.
+                new Canned(
+                    Canned.Says("""{"phases":[{"name":"Do it","hosts":["db-primary"],"commands":["true"]}]}"""),
+                    Canned.Says("""{"phases":[{"name":"Do it","hosts":["db-primary"],"commands":["true"]}]}""")),
                 [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
                 _ => null);
             var window = Show(new OrchestratorView(model));

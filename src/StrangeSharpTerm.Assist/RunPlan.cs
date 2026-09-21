@@ -137,6 +137,12 @@ public sealed partial record RunPlan(IReadOnlyList<PlanPhase> Phases)
             if (phase.Commands.Count == 0)
                 return $"Phase {number}, {phase.Name}, names no commands for its hosts to run.";
 
+            // Refused here rather than when it runs: a phase runs its commands
+            // as they were approved, so a sudo in a shape that cannot be given
+            // the password is a command that was never going to work.
+            if (phase.Commands.FirstOrDefault(command => Sudo.Mentions(command) && Sudo.Prepared(command) is null) is { } sudo)
+                return $"Phase {number}, {phase.Name}, runs \"{sudo}\". {Sudo.NotGiven}";
+
             if (phase.Hosts.FirstOrDefault(host => !selected.Contains(host)) is { } stranger)
                 return $"Phase {number}, {phase.Name}, names {stranger}, which nobody selected.";
 
