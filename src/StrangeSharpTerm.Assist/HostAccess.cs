@@ -95,9 +95,6 @@ public interface ICommandBudget
 
     /// <summary>Takes one if there is one. False means the budget is spent.</summary>
     bool Take();
-
-    /// <summary>Puts one back. Only <see cref="SharedBudget"/> needs this, and see there for why.</summary>
-    void Give();
 }
 
 /// <summary>
@@ -124,37 +121,5 @@ public sealed class CommandBudget(int total) : ICommandBudget
             if (Interlocked.CompareExchange(ref _spent, spent + 1, spent) == spent)
                 return true;
         }
-    }
-
-    public void Give() => Interlocked.Decrement(ref _spent);
-}
-
-/// <summary>
-/// Two budgets at once: a host's twelve and the run's sixty.
-///
-/// The host's is taken first, because it is uncontended -- one agent asks for
-/// one command at a time -- and the run's is the one several hosts are competing
-/// for. If the run's is spent, the host's is given back: a budget consumed by a
-/// command that never ran would quietly shorten the investigation.
-/// </summary>
-public sealed class SharedBudget(ICommandBudget outer, ICommandBudget inner) : ICommandBudget
-{
-    public int Remaining => Math.Min(outer.Remaining, inner.Remaining);
-
-    public bool Take()
-    {
-        if (!inner.Take())
-            return false;
-        if (outer.Take())
-            return true;
-
-        inner.Give();
-        return false;
-    }
-
-    public void Give()
-    {
-        inner.Give();
-        outer.Give();
     }
 }

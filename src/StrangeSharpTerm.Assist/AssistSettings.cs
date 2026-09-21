@@ -85,10 +85,23 @@ public static class AssistLimits
     public const int CommandBudget = 12;
 
     /// <summary>
-    /// Commands for a whole orchestrated run, on top of each host's own budget.
-    /// A fan-out multiplies everything, this included.
+    /// Commands for a whole fan-out, which chooses its own. A fan-out multiplies
+    /// everything, this included. A planned run is not held to it: see
+    /// <see cref="PlanAllowance"/>.
     /// </summary>
     public const int RunBudget = 60;
+
+    /// <summary>
+    /// Commands a host may run in a phase beyond the ones the phase lists: to
+    /// look at what a command did, or to find the value the phase captures.
+    ///
+    /// A planned run is bounded by the plan rather than by a number, because a
+    /// person read every command in it before pressing Run. A fixed budget was
+    /// the wrong promise there: a cluster's worth of phases ran it out before
+    /// kubeadm init had reported, and the run stopped halfway through work that
+    /// had been approved in full.
+    /// </summary>
+    public const int PlanAllowance = 4;
 
     /// <summary>
     /// Hosts asked at once. Not one, or a run over a rack takes as long as the

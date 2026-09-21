@@ -292,10 +292,12 @@ public sealed class HostAgent(
                 .Where(part => !string.IsNullOrWhiteSpace(part))),
         });
 
-        // One turn per round trip, and a ceiling well above the command budget:
-        // each command is a turn, and the model gets a few more to read the last
-        // result and say what it found.
-        var ceiling = AssistLimits.CommandBudget + 4;
+        // One turn per round trip, and a ceiling above whatever this question's
+        // budget is: each command is a turn, and the model gets a few more to
+        // read the last result and say what it found. From the budget rather
+        // than the default, or a phase of twenty approved commands would stop
+        // at sixteen turns with its budget unspent.
+        var ceiling = budget.Remaining + 4;
 
         // Said once per question, not once per turn: a long conversation
         // compacts on every request, and the note is about the conversation
