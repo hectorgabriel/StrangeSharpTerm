@@ -351,7 +351,10 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// <summary>What each mode does, said where the choice is made.</summary>
     public string ModeNote => IsAsking
         ? "one question, every selected host at once"
-        : "commands in phases, in order — read before any of them run";
+        // Said here because the Run commands switch is not: a plan runs its
+        // commands when you run it, and what still stops is each one that
+        // writes.
+        : "commands in phases, in order — anything that writes still asks you";
 
     [ObservableProperty]
     public partial string Instruction { get; set; } = "";
@@ -827,7 +830,9 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         await Working(async token =>
         {
             var plan = new RunPlan([.. Phases.Select(row => row.Phase)]);
-            var result = await runner.Run(plan, MayRunCommands, token);
+            // No switch passed: running the plan is running its commands, and
+            // each one still stops at the gate unless it only reads.
+            var result = await runner.Run(plan, token);
             Post(() =>
             {
                 Progress = result.Stopped ? result.StoppedBecause ?? "The run stopped." : "Finished.";

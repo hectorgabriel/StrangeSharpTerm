@@ -313,6 +313,7 @@ public sealed class HostAgent(
             var answer = new TranscriptEntry.Answer();
             var calls = new List<AssistToolCall>();
             var stop = AssistStop.EndTurn;
+            IReadOnlyList<AssistTool> offered = [];
             var said = new StringBuilder();
             var thought = new StringBuilder();
             var shown = false;
@@ -331,7 +332,7 @@ public sealed class HostAgent(
                         : $"This conversation is long enough that its earliest {dropped} questions were left out of what was sent."));
                 }
 
-                var offered = Offered(how);
+                offered = Offered(how);
                 var request = new AssistRequest
                 {
                     System = System(how, offered),
@@ -402,6 +403,17 @@ public sealed class HostAgent(
             var results = new List<AssistToolResult>();
             foreach (var call in calls)
             {
+                // Only what was offered this turn. Deciding what to offer was
+                // the whole of "Run commands" and "Edit files", and a model can
+                // produce a call for a tool it was never given -- they do. If
+                // that call were carried, the switch would decide what the
+                // model is told and nothing about what happens.
+                if (!offered.Any(tool => tool.Name == call.Name))
+                {
+                    results.Add(Unoffered(call));
+                    continue;
+                }
+
                 var (outcome, result) = await Carry(call, budget, timeout, cancellationToken);
                 if (outcome)
                     ran++;
@@ -459,6 +471,27 @@ public sealed class HostAgent(
     /// One tool call: judged, maybe asked about, maybe run.
     /// </summary>
     /// <returns>Whether a command actually ran, and what goes back to the model.</returns>
+    /// <summary>
+    /// What a model is told when it calls a tool it was not given.
+    ///
+    /// The truth, and specifically: "there is no such tool" would be a lie for
+    /// run_command, and a model told only that tends to try again. Told that
+    /// the person turned it off, it says what it would have run instead.
+    /// </summary>
+    internal static AssistToolResult Unoffered(AssistToolCall call) => new(
+        call.Id,
+        call.Name switch
+        {
+            AssistTools.RunCommand =>
+                "Running commands is turned off for this conversation, so nothing was run. "
+                    + "Say which command you would run and why, and the user can run it or turn it on.",
+            WorkspaceTools.WriteFile or WorkspaceTools.WriteLocalFile =>
+                "Editing files is turned off for this conversation, so nothing was written. "
+                    + "Show the change and say which file it goes in.",
+            _ => $"There is no tool called {call.Name} in this conversation.",
+        },
+        Failed: true);
+
     private async Task<(bool Ran, AssistToolResult Result)> Carry(
         AssistToolCall call,
         ICommandBudget budget,

@@ -191,7 +191,7 @@ public class ApprovalQueueTests
             ]);
 
             var run = new PlanRunner(alias => agents.GetValueOrDefault(alias))
-                .Run(plan, mayRunCommands: true, CancellationToken.None);
+                .Run(plan, CancellationToken.None);
 
             // Both hosts reach the gate; they are answered one at a time.
             for (var answered = 0; answered < agents.Count; answered++)

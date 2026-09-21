@@ -368,3 +368,61 @@ public class HostAgentTests
     private static HostAgent Agent(FakeHost host, ICommandGate gate, params IReadOnlyList<AssistEvent>[] turns) =>
         new(new ScriptedBackend(turns), host, Fixtures.Settings, gate);
 }
+
+/// <summary>
+/// A tool the model was not offered is not a tool it may use.
+///
+/// Found while reproducing the plan bug: "Run commands" decided what the model
+/// was *offered* and nothing about what was *carried*. A provider that emitted
+/// a run_command call it had not been given -- models do produce calls for
+/// tools that are not there -- had it run anyway, and a read-only one ran
+/// without anybody being asked. The switch was a suggestion.
+/// </summary>
+public class UnofferedToolTests
+{
+    [Fact]
+    public async Task ACommandIsNotRunWhenRunningCommandsIsOff()
+    {
+        var host = new FakeHost("web-01");
+        var agent = new HostAgent(
+            new ScriptedBackend(ScriptedBackend.Runs("uptime"), ScriptedBackend.Says("I could not.")),
+            host,
+            Fixtures.Settings,
+            new StandingAnswer(true));
+
+        await agent.Ask(
+            "how long up?",
+            new AskOptions { MayRunCommands = false },
+            TestContext.Current.CancellationToken);
+
+        host.Ran.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AWriteIsNotCarriedWhenEditingIsOff()
+    {
+        // The same hole in the file tools: write_file is offered only with
+        // editing on, and was carried regardless.
+        var workspace = new FakeWorkspace().With("app.py", "print()");
+        var gate = new RecordingGate(answer: true);
+        var agent = new HostAgent(
+            new ScriptedBackend(
+                ScriptedBackend.Calls(
+                    WorkspaceTools.WriteFile,
+                    new { path = "app.py", content = "print('x')", why = "change it" }),
+                ScriptedBackend.Says("I could not.")),
+            new FakeHost("web-01"),
+            Fixtures.Settings,
+            gate,
+            null,
+            workspace);
+
+        await agent.Ask(
+            "change it",
+            new AskOptions { MayEditFiles = false },
+            TestContext.Current.CancellationToken);
+
+        gate.Asked.ShouldBeEmpty();
+        workspace.Written.ShouldBeEmpty();
+    }
+}
