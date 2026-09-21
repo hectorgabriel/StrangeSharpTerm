@@ -328,6 +328,59 @@ public class PlanRunsItsCommandsTests
         host.Ran.ShouldBeEmpty();
     }
 
+    /// <summary>
+    /// The report: building a cluster stopped with "the budget ran out before I
+    /// could see the result of kubeadm init". A host had twelve commands a phase
+    /// and the run sixty, whatever the plan said -- so a plan somebody had read
+    /// in full ran out halfway through. Here there are more commands in one
+    /// phase than twelve, and more across the plan than sixty.
+    /// </summary>
+    [Fact]
+    public async Task EveryCommandAPlanListsGetsToRunHoweverManyThereAre()
+    {
+        const int phases = 5, perPhase = AssistLimits.CommandBudget + 3;
+        (phases * perPhase).ShouldBeGreaterThan(AssistLimits.RunBudget);
+
+        var host = new FakeHost("web-01");
+        var turns = Enumerable.Range(0, phases).SelectMany(phase =>
+            Enumerable.Range(0, perPhase)
+                .Select(index => ScriptedBackend.Runs($"sudo apt-get install -y package-{phase}-{index}"))
+                .Append(ScriptedBackend.Says("Done.")));
+        var runner = new PlanRunner(_ => new HostAgent(
+            new ScriptedBackend([.. turns]), host, Fixtures.Settings, new StandingAnswer(true)));
+
+        var result = await runner.Run(
+            new RunPlan([.. Enumerable.Range(0, phases).Select(phase => new PlanPhase
+            {
+                Name = $"Phase {phase}",
+                Hosts = ["web-01"],
+                Commands = [.. Enumerable.Range(0, perPhase).Select(index => $"sudo apt-get install -y package-{phase}-{index}")],
+            })]),
+            TestContext.Current.CancellationToken);
+
+        host.Ran.Count.ShouldBe(phases * perPhase);
+        result.Phases.ShouldAllBe(phase => phase.Outcome == PhaseOutcome.Completed);
+    }
+
+    /// <summary>
+    /// The plan is the bound now, so it has to be one: what a phase lists and a
+    /// few more to check the result, and not a command past that.
+    /// </summary>
+    [Fact]
+    public async Task AHostThatKeepsGoingPastThePhaseIsStoppedAFewCommandsLater()
+    {
+        var host = new FakeHost("web-01");
+        var turns = Enumerable.Range(0, 20).Select(index => ScriptedBackend.Runs($"uptime -{index}"));
+        var runner = new PlanRunner(_ => new HostAgent(
+            new ScriptedBackend([.. turns]), host, Fixtures.Settings, new StandingAnswer(true)));
+
+        await runner.Run(
+            new RunPlan([new PlanPhase { Name = "Check", Hosts = ["web-01"], Commands = ["uptime", "df -h"] }]),
+            TestContext.Current.CancellationToken);
+
+        host.Ran.Count.ShouldBe(2 + AssistLimits.PlanAllowance);
+    }
+
     [Fact]
     public async Task APhaseWhoseHostRanNothingIsNotCalledDone()
     {

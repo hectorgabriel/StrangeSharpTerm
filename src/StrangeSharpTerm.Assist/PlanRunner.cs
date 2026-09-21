@@ -93,7 +93,6 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
         CancellationToken cancellationToken = default)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
-        var runBudget = new CommandBudget(AssistLimits.RunBudget);
         List<PhaseResult> results = [];
         string? stopped = null;
 
@@ -140,7 +139,7 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
                 : task;
 
             Starting?.Invoke(this, phase);
-            var findings = await Carry(phase, instruction, runBudget, cancellationToken);
+            var findings = await Carry(phase, instruction, cancellationToken);
             var completed = findings.Where(finding => finding.Outcome == HostOutcome.Reported).ToArray();
 
             if (completed.Length == 0)
@@ -178,7 +177,6 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
     private async Task<IReadOnlyList<HostFinding>> Carry(
         PlanPhase phase,
         string instruction,
-        ICommandBudget runBudget,
         CancellationToken cancellationToken)
     {
         var findings = new HostFinding?[phase.Hosts.Count];
@@ -208,7 +206,10 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
                         // Always: running the phase is running its commands.
                         // See Run for why this is not the pane's switch.
                         MayRunCommands = true,
-                        Budget = new SharedBudget(runBudget, new CommandBudget(AssistLimits.CommandBudget)),
+                        // What the phase lists and a little over, per host, and
+                        // nothing run-wide: the plan was read before it ran, so
+                        // the plan is the bound. See PlanAllowance.
+                        Budget = new CommandBudget(phase.Commands.Count + AssistLimits.PlanAllowance),
                         // Ten minutes rather than one: apt install and kubeadm
                         // init legitimately take that long, and a loop that gave
                         // up after a minute would carry on reading the output of
