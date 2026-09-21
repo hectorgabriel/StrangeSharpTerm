@@ -123,6 +123,19 @@ says. Three things it took to get right:
   `ssh-keygen` given a mangled empty passphrase by PowerShell quoting, a
   `window-change` sent before the server had a pty, and a credential service
   name that must be a URI there and a plain string on macOS.
+- **A switch that decides what is offered does not decide what is carried.**
+  *Run commands* only chose whether the model was given `run_command`; a call
+  it had not been given ran anyway. Both agents now refuse any call not offered
+  that turn. It hid a second bug for as long as it existed: every plan test
+  drove a scripted model that calls `run_command` whether offered it or not, so
+  none of them could see that a plan run with the switch off offered its hosts
+  nothing -- and Plan mode sent no command to any server. Assert on what a model
+  is *offered*, because a real provider will not call what it was not given.
+- **The assistant's commands are not in the terminal.** They go over exec: no
+  tty, running as the login user. `sudo` there cannot prompt, and `sudo su` in
+  the terminal pane changes nothing for them. `docs/adr/0010` is the answer
+  that was chosen, and why every limit in it is a leak rather than a
+  limitation.
 - **A disabled button makes a command look broken.** The orchestrator's Run is
   greyed until hosts are ticked, so typing `/help` with nothing selected did
   nothing at all -- and `/help` is exactly what you type *before* you know what

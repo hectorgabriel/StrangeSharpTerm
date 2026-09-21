@@ -74,6 +74,12 @@ BEFORE="$(auths)"
 run exec --repeat 3 "$TARGET" true >/dev/null
 check "three execs on one connection cost one authentication" "$(( $(auths) - BEFORE ))" "1"
 
+# The path a host's password takes to sudo. cat reads its input to the end, so
+# it only comes back if the input really was closed after the write: left open,
+# it would wait for more until the timeout, and so would sudo's command.
+check "input reaches the command, and is closed after it" \
+    "$(run exec --input 'fed-through-stdin' "$TARGET" -- cat)" "fed-through-stdin"
+
 echo
 echo "tunnels:"
 FORWARD_OUT="$(run forward --check "$TARGET" -L "$FORWARD_PORT:127.0.0.1:$PORT" || true)"

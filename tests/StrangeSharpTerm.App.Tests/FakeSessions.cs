@@ -104,5 +104,8 @@ public sealed class FakeSessions : IHostSessions
     {
         public CommandResult Run(string command, TimeSpan timeout) =>
             throw new NotSupportedException("this test has no server to run on");
+
+        public CommandResult RunFeeding(string command, TimeSpan timeout, string input) =>
+            throw new NotSupportedException("this test has no server to run on");
     }
 }

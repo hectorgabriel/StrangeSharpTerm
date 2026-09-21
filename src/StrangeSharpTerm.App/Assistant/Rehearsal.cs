@@ -325,6 +325,9 @@ internal static class Rehearsal
 
             private const string Df =
                 "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        49G   46G  1.2G  98% /";
+
+            /// <summary>The same invented answer: nothing here reads what it is given.</summary>
+            public CommandResult RunFeeding(string command, TimeSpan timeout, string input) => Run(command, timeout);
         }
 
         /// <summary>

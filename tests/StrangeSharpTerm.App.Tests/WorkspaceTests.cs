@@ -307,6 +307,8 @@ public class WorkspacePaneTests
     private sealed class Answering : IRemoteCommands
     {
         public CommandResult Run(string command, TimeSpan timeout) => new(0, "Linux 6.1.0 x86_64", "");
+
+        public CommandResult RunFeeding(string command, TimeSpan timeout, string input) => Run(command, timeout);
     }
 
     private sealed class Quiet : IServerHealth

@@ -86,14 +86,23 @@ int WithSession(ParseResult parsed, Func<SshNetSession, int> action)
 var repeatOption = new Option<int>("--repeat") { Description = "Run the command this many times on one connection.", DefaultValueFactory = _ => 1 };
 var commandArgument = new Argument<string[]>("command") { Description = "Command and arguments, after --.", Arity = ArgumentArity.OneOrMore };
 
-var exec = new Command("exec", "Run a command on the host.") { target, repeatOption, commandArgument };
+// Written to the command's standard input, which is then closed: the path a
+// host's password takes to sudo. Here so the integration gate can prove against
+// a real server that the input arrives and that the channel's input really is
+// closed after it -- if it were not, the command would wait forever for more.
+var inputOption = new Option<string?>("--input") { Description = "Write this to the command's standard input, then close it." };
+
+var exec = new Command("exec", "Run a command on the host.") { target, repeatOption, inputOption, commandArgument };
 exec.SetAction(parsed => WithSession(parsed, session =>
 {
     var text = string.Join(' ', parsed.GetValue(commandArgument)!);
+    var input = parsed.GetValue(inputOption);
     var status = 0;
     for (var i = 0; i < parsed.GetValue(repeatOption); i++)
     {
-        var result = session.Run(text);
+        var result = input is null
+            ? session.Run(text)
+            : session.RunFeeding(text, TimeSpan.FromSeconds(parsed.GetValue(timeoutOption)), input);
         Console.Write(result.StandardOutput);
         Console.Error.Write(result.StandardError);
         status = result.ExitStatus;

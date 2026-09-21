@@ -41,6 +41,23 @@
                 <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap" Text="{Binding InheritanceNote}" />
 
                 <views:SettingsEditor DataContext="{Binding Settings}" />
+
+                <!-- The assistant's commands run on a channel with no terminal,
+                     as the account the host is logged into, so sudo there can
+                     neither prompt nor use a root shell opened in the terminal
+                     pane. This is the one way it gets root, and it is off until
+                     somebody turns it on for this host. -->
+                <TextBlock Classes="section" Text="ASSISTANT" Margin="0,6,0,0" />
+                <CheckBox IsChecked="{Binding GivesSudoThePassword, Mode=TwoWay}"
+                          IsEnabled="{Binding SignsInWithAPassword}">
+                    <TextBlock Text="Give sudo this host's password" />
+                </CheckBox>
+                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                           IsVisible="{Binding SignsInWithAPassword}"
+                           Text="When the assistant runs a command that starts with sudo here, the password is handed to sudo on its input. It is never sent to the model, shown in the conversation, or put on the command line — and only a single sudo command gets it, never a pipeline or a chain." />
+                <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                           IsVisible="{Binding !SignsInWithAPassword}"
+                           Text="Only a host that signs in with a password has one to give sudo. Choose a password credential above, or allow sudo without a password on the host." />
             </StackPanel>
         </ScrollViewer>
 

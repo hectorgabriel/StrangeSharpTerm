@@ -127,5 +127,8 @@ public sealed class HostSessions : IHostSessions, IDisposable
         private IRemoteCommands? _opened;
 
         public CommandResult Run(string command, TimeSpan timeout) => (_opened ??= open()).Run(command, timeout);
+
+        public CommandResult RunFeeding(string command, TimeSpan timeout, string input) =>
+            (_opened ??= open()).RunFeeding(command, timeout, input);
     }
 }

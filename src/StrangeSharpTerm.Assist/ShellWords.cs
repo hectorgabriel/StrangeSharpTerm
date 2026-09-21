@@ -68,6 +68,18 @@ internal static class ShellWords
         return stages;
     }
 
+    /// <summary>
+    /// Whether the line is more than one command: any <c>;</c>, <c>&amp;&amp;</c>,
+    /// <c>||</c>, <c>|</c>, <c>&amp;</c> or newline, trailing ones included.
+    ///
+    /// Its own question because <see cref="Stages"/> drops a separator with
+    /// nothing after it, which is right for judging what a line runs and wrong
+    /// for asking whether it is one command: <c>sudo whoami &amp;</c> is one
+    /// stage and a background job.
+    /// </summary>
+    internal static bool Separated(string command) =>
+        Scan(command).Any(token => token.Kind == ShellTokenKind.Separator);
+
     private static IEnumerable<ShellToken> Scan(string command)
     {
         var word = new StringBuilder();

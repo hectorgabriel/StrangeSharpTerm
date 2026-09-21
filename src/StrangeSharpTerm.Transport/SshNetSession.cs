@@ -40,6 +40,54 @@ public sealed class SshNetSession(SshClient client, ConnectionInfo connectionInf
     }
 
     /// <summary>
+    /// Runs a command with something written to its standard input, which is
+    /// then closed.
+    ///
+    /// For one thing only so far: a host's password, handed to <c>sudo -S</c>.
+    /// On the input rather than in the command because the command line is
+    /// public -- anybody on the server running <c>ps</c> reads it -- and the
+    /// input is not. Closed straight after, so that once <c>sudo</c> has read
+    /// its line the command that follows reads the end of its input and not a
+    /// second copy.
+    /// </summary>
+    /// <remarks>
+    /// The bytes are cleared as soon as they are written. The string they came
+    /// from is not this method's to clear, and SSH.NET holds the same password
+    /// as a string to authenticate with; this is the one copy that is only here.
+    /// Nothing in this method logs <paramref name="input"/>, and nothing may.
+    /// </remarks>
+    public CommandResult RunFeeding(string commandText, TimeSpan? timeout, string input)
+    {
+        using var command = Client.CreateCommand(commandText);
+        using var waiting = timeout is { } limit ? new CancellationTokenSource(limit) : new CancellationTokenSource();
+
+        var running = command.ExecuteAsync(waiting.Token);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(input);
+        try
+        {
+            using var stdin = command.CreateInputStream();
+            stdin.Write(bytes, 0, bytes.Length);
+        }
+        finally
+        {
+            Array.Clear(bytes);
+        }
+
+        try
+        {
+            running.GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException) when (waiting.IsCancellationRequested)
+        {
+            // The same shape a timed-out Run takes, so the caller has one
+            // thing to catch: the wait ended, not the command.
+            throw new TimeoutException($"The command did not finish within {timeout}.");
+        }
+
+        return new CommandResult(command.ExitStatus ?? -1, command.Result, command.Error);
+    }
+
+    /// <summary>
     /// A pty-backed shell channel: the terminal pane's byte source. The server
     /// allocates the pty, so there is no local one to manage on either platform.
     /// </summary>

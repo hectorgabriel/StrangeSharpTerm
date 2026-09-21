@@ -50,6 +50,15 @@ here and write down what it found across eight servers; it deliberately gets no
 access to the hosts' files, because one approval that rewrites a file on eight
 machines is not a thing worth making easy.
 
+**Root, without a terminal.** The assistant's commands run on an exec channel —
+no terminal, as the account the host was logged into — so `sudo` cannot prompt
+there, and a `sudo su` in the terminal pane is a different channel. For a host
+that signs in with a password, the host editor offers *Give sudo this host's
+password*: the password then goes to `sudo -S` on the channel's input, never on
+a command line where `ps` on the server could show it, and never to the model or
+the transcript. Only a single command starting with `sudo` gets it, and not at
+all where the host needs no password. See `docs/adr/0010`.
+
 **M8 — packaging.** `build/package.sh` builds `StrangeSharpTerm.app` and a disk
 image around it; `build/install.sh` puts it in `/Applications` for your own Mac
 and needs no certificate at all. `build/package.ps1` does the Windows side.

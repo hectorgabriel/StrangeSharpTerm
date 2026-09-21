@@ -60,9 +60,38 @@ public sealed partial class HostDraft : ObservableObject
         Settings = new SettingsDraft(original.Settings, [.. tree.Credentials.Values]);
         Folders = FolderChoice.Of(tree);
         Parent = Folders.FirstOrDefault(choice => choice.Id == original.ParentId) ?? FolderChoice.Root;
-        Settings.PropertyChanged += (_, _) => Revalidate();
+        Settings.PropertyChanged += (_, _) =>
+        {
+            Revalidate();
+            // Choosing another credential can take away the password there
+            // was to give, or bring one.
+            OnPropertyChanged(nameof(SignsInWithAPassword));
+        };
         ShowInheritance();
     }
+
+    /// <summary>
+    /// Whether the assistant may give <c>sudo</c> this host's password.
+    ///
+    /// Not part of what <see cref="Applied"/> writes: the inventory stays
+    /// byte-identical to the Swift app's, so the window keeps this beside it in
+    /// preferences. See SudoPreferences.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool GivesSudoThePassword { get; set; }
+
+    /// <summary>
+    /// Whether this host has a password to give at all: it signs in with a
+    /// password credential, its own or inherited. A key has nothing sudo can
+    /// use.
+    ///
+    /// Only what the switch draws. What decides at run time is the credential
+    /// the host actually resolves to then, so a switch left on for a host that
+    /// has since moved to a key gives sudo nothing.
+    /// </summary>
+    public bool SignsInWithAPassword =>
+        (Settings.CredentialId ?? Inheritance.Credential(_tree, Parent.Id)) is { } id
+        && _tree.Credentials.GetValueOrDefault(id) is { Method: CredentialMethod.Password };
 
     /// <summary>A host that does not exist yet, in the folder the user was looking at.</summary>
     public static HostDraft New(InventoryTree tree, NodeId? parent, int sortIndex) =>
@@ -134,6 +163,7 @@ public sealed partial class HostDraft : ObservableObject
     partial void OnParentChanged(FolderChoice value)
     {
         // Moving a host to another folder changes what its blank fields mean.
+        OnPropertyChanged(nameof(SignsInWithAPassword));
         OnPropertyChanged(nameof(UsernameHint));
         OnPropertyChanged(nameof(PortHint));
         OnPropertyChanged(nameof(InheritanceNote));
@@ -268,6 +298,10 @@ public static class Inheritance
                 return $"{value} — from {folder.Name}";
         return null;
     }
+
+    /// <summary>The shared credential the nearest ancestor sets, or null when none does.</summary>
+    public static NodeId? Credential(InventoryTree tree, NodeId? parent) =>
+        Ancestors(tree, parent).Select(folder => folder.Settings.CredentialId).FirstOrDefault(id => id is not null);
 
     /// <summary>A line for the form: what blank means, given where this node sits.</summary>
     public static string Note(InventoryTree tree, NodeId? parent) =>
