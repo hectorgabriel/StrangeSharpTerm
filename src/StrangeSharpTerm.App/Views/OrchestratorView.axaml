@@ -435,7 +435,12 @@
                 <TextBlock Text="Plan" FontSize="12" />
             </Button>
             <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" Text="{Binding ModeNote}" />
-            <CheckBox VerticalAlignment="Center" IsChecked="{Binding MayRunCommands}">
+            <!-- Asking only. A plan is a list of commands somebody read and then
+                 pressed Run on, and that press is the consent: showing this
+                 switch beside it would suggest it could stop a plan, and it
+                 used to, by quietly running nothing. -->
+            <CheckBox VerticalAlignment="Center" IsChecked="{Binding MayRunCommands}"
+                      IsVisible="{Binding IsAsking}">
                 <TextBlock Text="Run commands" FontSize="12" />
             </CheckBox>
             <!-- This machine's folder, and only where one is open. A run reads

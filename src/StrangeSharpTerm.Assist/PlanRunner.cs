@@ -74,9 +74,22 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
     /// </summary>
     public event EventHandler<PlanPhase>? Starting;
 
+    /// <summary>
+    /// Runs a plan, phase by phase.
+    /// </summary>
+    /// <remarks>
+    /// There is no "may run commands" here, and there used to be. It was the
+    /// pane's Run commands switch passed straight through, and with it off each
+    /// host was told "run these commands, in order" and offered nothing to run
+    /// them with -- so a real model answered in prose, no command reached any
+    /// server, and the phase was recorded as done. A plan is a list of commands
+    /// somebody read and then pressed Run on; that press is the consent. What
+    /// it is not is a standing pass: every command still meets
+    /// <see cref="CommandPolicy"/> and stops at the gate unless it only reads,
+    /// exactly as it would in the pane about one host.
+    /// </remarks>
     public async Task<PlanRunResult> Run(
         RunPlan plan,
-        bool mayRunCommands,
         CancellationToken cancellationToken = default)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -127,13 +140,15 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
                 : task;
 
             Starting?.Invoke(this, phase);
-            var findings = await Carry(phase, instruction, mayRunCommands, runBudget, cancellationToken);
+            var findings = await Carry(phase, instruction, runBudget, cancellationToken);
             var completed = findings.Where(finding => finding.Outcome == HostOutcome.Reported).ToArray();
 
             if (completed.Length == 0)
             {
                 results.Add(Record(new PhaseResult(phase, PhaseOutcome.Stalled, findings)));
-                stopped = $"No host completed {phase.Name}.";
+                stopped = findings.Any(finding => finding.RanNothing)
+                    ? $"No host ran the commands in {phase.Name}."
+                    : $"No host completed {phase.Name}.";
                 continue;
             }
 
@@ -163,7 +178,6 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
     private async Task<IReadOnlyList<HostFinding>> Carry(
         PlanPhase phase,
         string instruction,
-        bool mayRunCommands,
         ICommandBudget runBudget,
         CancellationToken cancellationToken)
     {
@@ -191,7 +205,9 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
                     instruction,
                     new AskOptions
                     {
-                        MayRunCommands = mayRunCommands,
+                        // Always: running the phase is running its commands.
+                        // See Run for why this is not the pane's switch.
+                        MayRunCommands = true,
                         Budget = new SharedBudget(runBudget, new CommandBudget(AssistLimits.CommandBudget)),
                         // Ten minutes rather than one: apt install and kubeadm
                         // init legitimately take that long, and a loop that gave
@@ -206,7 +222,14 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
                     },
                     cancellationToken);
 
-                findings[index] = Say(HostFinding.From(alias, answer));
+                // A host that answered without running a single command has
+                // not done the phase, however confidently it says it has. It
+                // reads as success on screen, which is the worst way for this
+                // to fail -- so it is a failure, with its words kept.
+                findings[index] = Say(
+                    answer is { CommandsRun: 0, Failed: false, Stopped: false } && phase.Commands.Count > 0
+                        ? HostFinding.RanNone(alias, answer)
+                        : HostFinding.From(alias, answer));
             }
             catch (OperationCanceledException)
             {

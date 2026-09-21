@@ -42,6 +42,28 @@ public sealed record HostFinding(string Alias, HostOutcome Outcome, string Text,
     /// is not an answer to the question, and putting it in the row would read
     /// like one.
     /// </summary>
+    /// <summary>
+    /// A host that answered and ran none of what it was given to run.
+    ///
+    /// Its own case because it is the one that looks like success: a
+    /// confident "I have installed nginx" with nothing having reached the
+    /// server. Recorded as a failure, with what it said kept so a person can see
+    /// why.
+    /// </summary>
+    public static HostFinding RanNone(string alias, AgentAnswer answer) => new(
+        alias,
+        HostOutcome.Failed,
+        answer.Text.Length > 0
+            ? $"It ran none of the commands. It said: {answer.Text}"
+            : "It ran none of the commands.",
+        0)
+    {
+        RanNothing = true,
+    };
+
+    /// <summary>Whether this host was given commands and ran none of them.</summary>
+    public bool RanNothing { get; init; }
+
     public static HostFinding From(string alias, AgentAnswer answer) => answer switch
     {
         { Stopped: true } => new HostFinding(alias, HostOutcome.Stopped, "Stopped.", answer.CommandsRun),

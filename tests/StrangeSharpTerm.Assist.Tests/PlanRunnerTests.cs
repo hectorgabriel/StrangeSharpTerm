@@ -14,7 +14,6 @@ public class PlanRunnerTests
             Plan(
                 Phase("Initialise", ["web-01"], "kubeadm init", capture: "join_command"),
                 Phase("Join", ["web-02"], "{{join_command}}")),
-            mayRunCommands: false,
             TestContext.Current.CancellationToken);
 
         result.Stopped.ShouldBeFalse();
@@ -47,7 +46,7 @@ public class PlanRunnerTests
         };
 
         await Runner(asked, "Done.").Run(
-            Plan(phase), mayRunCommands: true, TestContext.Current.CancellationToken);
+            Plan(phase), TestContext.Current.CancellationToken);
 
         var instruction = asked.ShouldHaveSingleItem();
         instruction.ShouldContain("apt-get update");
@@ -68,7 +67,7 @@ public class PlanRunnerTests
         plan.Phases[0].IsEnabled = false;
 
         var result = await Runner(asked, "Done.", "Done.")
-            .Run(plan, mayRunCommands: false, TestContext.Current.CancellationToken);
+            .Run(plan, TestContext.Current.CancellationToken);
 
         result.Phases[0].Outcome.ShouldBe(PhaseOutcome.Disabled);
         // One host asked, once, and about the phase that was left on.
@@ -86,7 +85,6 @@ public class PlanRunnerTests
             Plan(
                 Phase("Initialise", ["web-01"], "kubeadm init"),
                 Phase("Join", ["web-02"], "kubeadm join 10.0.0.1")),
-            mayRunCommands: false,
             TestContext.Current.CancellationToken);
 
         result.Stopped.ShouldBeTrue();
@@ -105,7 +103,6 @@ public class PlanRunnerTests
                 Plan(
                     Phase("Initialise", ["web-01"], "kubeadm init", capture: "join_command"),
                     Phase("Join", ["web-02"], "Join with {{join_command}}")),
-                mayRunCommands: false,
                 TestContext.Current.CancellationToken);
 
         result.Stopped.ShouldBeTrue();
@@ -126,7 +123,7 @@ public class PlanRunnerTests
         plan.Phases[0].IsEnabled = false;
 
         var result = await Runner(asked, "Joined.")
-            .Run(plan, mayRunCommands: false, TestContext.Current.CancellationToken);
+            .Run(plan, TestContext.Current.CancellationToken);
 
         result.Phases[1].Outcome.ShouldBe(PhaseOutcome.Unfilled);
         result.Phases[1].Note.ShouldNotBeNull().ShouldContain("join_command");
@@ -141,7 +138,6 @@ public class PlanRunnerTests
         await Runner(asked, "Done.\nCAPTURED: value")
             .Run(
                 Plan(Phase("Initialise", ["web-01"], "kubeadm init", capture: "join_command")),
-                mayRunCommands: false,
                 TestContext.Current.CancellationToken);
 
         asked.Single().ShouldContain("CAPTURED:");
@@ -160,7 +156,6 @@ public class PlanRunnerTests
 
         await runner.Run(
             Plan(Phase("Check", ["web-01"], "uptime")),
-            mayRunCommands: true,
             TestContext.Current.CancellationToken);
 
         // apt install and kubeadm init legitimately take that long.
@@ -179,7 +174,6 @@ public class PlanRunnerTests
 
         await runner.Run(
             Plan(Phase("Restart", ["web-02"], "systemctl restart kubelet")),
-            mayRunCommands: true,
             TestContext.Current.CancellationToken);
 
         gate.Asked.Single().Host.ShouldBe("web-02");
@@ -194,7 +188,6 @@ public class PlanRunnerTests
 
         await runner.Run(
             Plan(Phase("One", ["web-01"], "echo one"), Phase("Two", ["web-01"], "echo two")),
-            mayRunCommands: false,
             TestContext.Current.CancellationToken);
 
         seen.ShouldBe(["One", "Two"]);
@@ -223,7 +216,136 @@ public class PlanRunnerTests
 
     private static HostAgent Agent(List<string> asked, string answer)
     {
-        var backend = new RecordingBackend(asked, answer);
+        var backend = new Working(asked, answer);
         return new HostAgent(backend, new FakeHost("host"), Fixtures.Settings, new StandingAnswer(true));
+    }
+
+    /// <summary>
+    /// A worker that does what a real one does: runs something, then reports.
+    ///
+    /// These tests are about order and carrying a value, and used to drive the
+    /// workers with a backend that only ever answered in prose. That stopped
+    /// being a phase once a host that ran nothing stopped counting as having
+    /// done it -- which is the rule that catches a plan sending nothing to its
+    /// hosts. So the worker here runs one harmless command before it answers.
+    /// </summary>
+    private sealed class Working(List<string> asked, string answer) : IAssistBackend
+    {
+        private readonly RecordingBackend _recording = new(asked, answer);
+        private int _turn;
+
+        public string ProviderName => "Working";
+
+        public string Model => "working-1";
+
+        public async IAsyncEnumerable<AssistEvent> Stream(
+            AssistRequest request,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            if (_turn++ > 0)
+            {
+                // The report, once the command has come back. Not through the
+                // recording backend: that would record a second "instruction"
+                // for the same phase, which is the tool result and not one.
+                await Task.Yield();
+                yield return new AssistEvent.Say(answer);
+                yield return new AssistEvent.Finished(AssistStop.EndTurn);
+                yield break;
+            }
+
+            // The instruction is recorded on the way in, as it always was, so
+            // what each host was told is still what these tests check.
+            await foreach (var _ in _recording.Stream(request, cancellationToken))
+            {
+            }
+            yield return new AssistEvent.Call(new AssistToolCall(
+                "run",
+                AssistTools.RunCommand,
+                System.Text.Json.JsonSerializer.Serialize(new { command = "uptime", why = "the phase" })));
+            yield return new AssistEvent.Finished(AssistStop.ToolUse);
+        }
+    }
+}
+
+/// <summary>
+/// Whether running a plan actually runs its commands.
+///
+/// The tests above are about order and carrying a value between phases, and
+/// they drive the workers with a backend that only ever answers in prose -- so
+/// none of them could notice a plan that ran nothing. This one drives a real
+/// worker with a model that asks to run the command, against a host that
+/// records what reached it.
+/// </summary>
+public class PlanRunsItsCommandsTests
+{
+    private static PlanPhase Phase(string command) =>
+        new() { Name = "Install", Hosts = ["web-01"], Commands = [command] };
+
+    [Fact]
+    public async Task APlanWithRunCommandsOffStillOffersTheHostSomethingToRunThemWith()
+    {
+        // The report: Plan mode sent nothing to the hosts. Each worker was told
+        // "run these commands, in order" and -- with the switch off -- offered
+        // no tool to run them with, so a real model could only answer in prose.
+        //
+        // Asserted on what is offered rather than on what ran, because the
+        // scripted backend here would call run_command whether offered it or
+        // not, and a real provider will not. That difference is how this bug
+        // passed every test the plan runner had.
+        //
+        // Pressing "Run the plan" after reading every command in it is the
+        // consent; a switch left off must not quietly empty it.
+        var backend = new ScriptedBackend(ScriptedBackend.Says("Done."));
+        var runner = new PlanRunner(_ => new HostAgent(
+            backend, new FakeHost("web-01"), Fixtures.Settings, new StandingAnswer(true)));
+
+        await runner.Run(
+            new RunPlan([Phase("uptime")]),
+            TestContext.Current.CancellationToken);
+
+        backend.Requests[0].Tools.Select(tool => tool.Name).ShouldContain(AssistTools.RunCommand);
+    }
+
+    [Fact]
+    public async Task EveryCommandInAPlanStillMeetsTheGate()
+    {
+        // Running the plan is consent to *the plan*, not a standing pass: a
+        // command that writes still stops for a person, exactly as it would in
+        // the pane about one host.
+        var gate = new RecordingGate(answer: false);
+        var host = new FakeHost("web-01");
+        var runner = new PlanRunner(_ => new HostAgent(
+            new ScriptedBackend(ScriptedBackend.Runs("apt-get install -y nginx"), ScriptedBackend.Says("Refused.")),
+            host,
+            Fixtures.Settings,
+            gate));
+
+        await runner.Run(
+            new RunPlan([Phase("apt-get install -y nginx")]),
+            TestContext.Current.CancellationToken);
+
+        gate.Asked.ShouldHaveSingleItem().Command.ShouldBe("apt-get install -y nginx");
+        host.Ran.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task APhaseWhoseHostRanNothingIsNotCalledDone()
+    {
+        // The other half of the report: the plan looked like it had worked.
+        // A host that answered in prose and ran none of its phase's commands
+        // has not completed the phase, however confidently it says so.
+        var host = new FakeHost("web-01");
+        var runner = new PlanRunner(_ => new HostAgent(
+            new ScriptedBackend(ScriptedBackend.Says("I have installed nginx.")),
+            host,
+            Fixtures.Settings,
+            new StandingAnswer(true)));
+
+        var result = await runner.Run(
+            new RunPlan([Phase("apt-get install -y nginx")]),
+            TestContext.Current.CancellationToken);
+
+        host.Ran.ShouldBeEmpty();
+        result.Phases.Single().Outcome.ShouldNotBe(PhaseOutcome.Completed);
     }
 }

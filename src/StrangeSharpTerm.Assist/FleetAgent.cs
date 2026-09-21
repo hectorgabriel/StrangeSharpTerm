@@ -133,12 +133,13 @@ public sealed class FleetAgent(
             var answer = new TranscriptEntry.Answer();
             var calls = new List<AssistToolCall>();
             var said = new StringBuilder();
+            IReadOnlyList<AssistTool> offered = [];
             var thought = new StringBuilder();
             var shown = false;
 
             try
             {
-                var offered = Offered(mayRunCommands, mayEditFiles);
+                offered = Offered(mayRunCommands, mayEditFiles);
                 await foreach (var streamed in backend.Stream(
                     new AssistRequest
                     {
@@ -193,6 +194,16 @@ public sealed class FleetAgent(
             var results = new List<AssistToolResult>();
             foreach (var call in calls)
             {
+                // Only what was offered this turn -- see HostAgent.Unoffered.
+                // With eight hosts in reach this matters more, not less: an
+                // uninvited run_command here lands on whichever host the model
+                // names.
+                if (!offered.Any(tool => tool.Name == call.Name))
+                {
+                    results.Add(Unoffered(call));
+                    continue;
+                }
+
                 var (carried, result) = await Carry(call, budget, cancellationToken);
                 if (carried)
                     ran++;
@@ -262,6 +273,23 @@ public sealed class FleetAgent(
     public event EventHandler<FileChange>? WroteHere;
 
     /// <summary>
+    /// What the fan-out is told when it calls a tool it was not given.
+    ///
+    /// A host's own files get a sentence of their own, with somewhere to go:
+    /// they are never offered here, by design, and a model that asks for one is
+    /// usually trying to do something the pane about that host does properly.
+    /// Everything else is told what the pane about one host would say.
+    /// </summary>
+    private static AssistToolResult Unoffered(AssistToolCall call) =>
+        WorkspaceTools.Owns(call.Name) && !WorkspaceTools.IsLocal(call.Name)
+            ? new AssistToolResult(
+                call.Id,
+                "Files on the hosts are not available in a fleet run. Ask about one host on its own to "
+                    + "read or change a file there.",
+                Failed: true)
+            : HostAgent.Unoffered(call);
+
+    /// <summary>
     /// One call to the folder on this machine.
     ///
     /// The same <see cref="WorkspaceCalls"/> the per-host conversation uses:
@@ -273,17 +301,6 @@ public sealed class FleetAgent(
         ICommandBudget budget,
         CancellationToken cancellationToken)
     {
-        // Only this machine's tools are ever offered here, so a call naming a
-        // host's is a model asking for something it was not given.
-        if (!WorkspaceTools.IsLocal(call.Name))
-        {
-            return (false, new AssistToolResult(
-                call.Id,
-                "Files on the hosts are not available in a fleet run. Ask about one host on its own to "
-                    + "read or change a file there.",
-                Failed: true));
-        }
-
         if (Here is not { } here)
         {
             return (false, new AssistToolResult(
