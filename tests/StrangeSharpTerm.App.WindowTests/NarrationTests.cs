@@ -209,6 +209,8 @@ public class NarrationTests
     {
         public CommandResult Run(string command, TimeSpan timeout) =>
             new(0, "/dev/sda1        49G   46G  1.2G  98% /", "");
+
+        public CommandResult RunFeeding(string command, TimeSpan timeout, string input) => Run(command, timeout);
     }
 
     private sealed class Canned(params IReadOnlyList<AssistEvent>[] turns) : IAssistBackend

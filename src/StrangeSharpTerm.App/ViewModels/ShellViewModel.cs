@@ -153,6 +153,9 @@ public sealed partial class ShellViewModel : ObservableObject
         // Which folder each host was last opened at. Read once, here, because
         // opening a pane should not be a file read.
         _roots = new Dictionary<NodeId, string>(WorkspacePreferences.Load(preferencesPath));
+        // Which hosts may give sudo their password. Read once; the editor is
+        // the only thing that changes it, and it writes back through Edit.
+        _sudoHosts = SudoPreferences.Load(preferencesPath).ToHashSet();
 
         // This machine's own files. Built here and not read from until somebody
         // opens the Files side of the sidebar: constructing it costs nothing,
@@ -524,7 +527,11 @@ public sealed partial class ShellViewModel : ObservableObject
         var parent = FolderInFocus();
         var draft = HostDraft.New(Inventory.Tree, parent, Inventory.NextSortIndex(parent));
         if (await _dialogs.Edit(draft))
-            Inventory.Upsert(draft.Applied());
+        {
+            var created = draft.Applied();
+            Inventory.Upsert(created);
+            RememberSudo(created.Id, draft.GivesSudoThePassword);
+        }
     }
 
     /// <inheritdoc cref="NewHost"/>
@@ -708,8 +715,12 @@ public sealed partial class ShellViewModel : ObservableObject
         if (Inventory.Tree.Connections.GetValueOrDefault(id) is { } connection)
         {
             var draft = HostDraft.For(Inventory.Tree, connection);
+            draft.GivesSudoThePassword = _sudoHosts.Contains(connection.Id);
             if (await _dialogs.Edit(draft))
+            {
                 Inventory.Upsert(draft.Applied());
+                RememberSudo(connection.Id, draft.GivesSudoThePassword);
+            }
             return;
         }
 
@@ -719,6 +730,18 @@ public sealed partial class ShellViewModel : ObservableObject
             if (await _dialogs.Edit(draft))
                 Inventory.Upsert(draft.Applied());
         }
+    }
+
+    /// <summary>
+    /// Keeps a host's answer about sudo, here and in <c>preferences.json</c>.
+    /// </summary>
+    private void RememberSudo(NodeId host, bool allowed)
+    {
+        if (allowed)
+            _sudoHosts.Add(host);
+        else
+            _sudoHosts.Remove(host);
+        SudoPreferences.Save(_preferencesPath, host, allowed);
     }
 
     /// <summary>
@@ -1118,6 +1141,34 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>Which folder each host was last opened at, remembered between runs.</summary>
     private readonly Dictionary<NodeId, string> _roots;
 
+    /// <summary>The hosts a person has said may give sudo their password.</summary>
+    private readonly HashSet<NodeId> _sudoHosts;
+
+    /// <summary>
+    /// The password to give sudo on this host, or null.
+    ///
+    /// Asked for at the moment a command runs, never held: turning the switch
+    /// off, or moving the host to a key, takes effect on the next command. Null
+    /// unless a person turned the switch on for this host and the credential it
+    /// resolves to now is a password -- the switch is the permission and the
+    /// credential is the password, and both have to be there.
+    /// </summary>
+    private string? SudoPassword(Connection connection)
+    {
+        try
+        {
+            return new SudoPasswords(() => Inventory.Tree, () => _secrets.Value, _sudoHosts).For(connection.Id);
+        }
+        catch (Exception e)
+        {
+            // Nothing to give is the safe failure: sudo then fails as it always
+            // did, and says so. The trace names the host and the kind of
+            // failure, never the secret.
+            System.Diagnostics.Trace.WriteLine($"no sudo password for {connection.Name}: {e.GetType().Name}");
+            return null;
+        }
+    }
+
     /// <summary>
     /// The workspace of whichever pane has the keyboard, for ⌘S.
     ///
@@ -1352,7 +1403,8 @@ public sealed partial class ShellViewModel : ObservableObject
                     target.Name,
                     _sessions.Commands(target),
                     _sessions.Health(target),
-                    () => null)
+                    () => null,
+                    () => SudoPassword(target))
                 : null,
             // This machine's folder, and not the hosts'. A run is where one
             // instruction becomes an action on eight servers; reading a runbook
@@ -1432,7 +1484,8 @@ public sealed partial class ShellViewModel : ObservableObject
                 connection.Name,
                 _sessions.Commands(connection),
                 _sessions.Health(connection),
-                TerminalTail.Of(_terminals, terminal, AssistantSettings.TerminalTailLines));
+                TerminalTail.Of(_terminals, terminal, AssistantSettings.TerminalTailLines),
+                () => SudoPassword(connection));
 
             return new HostAgent(
                 _backends(AssistantSettings)
