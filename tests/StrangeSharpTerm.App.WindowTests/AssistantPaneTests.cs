@@ -220,6 +220,68 @@ public class AssistantPaneTests
     }
 
     /// <summary>
+    /// A think arrives in frames rather than a token at a time.
+    ///
+    /// Every delta used to be a property change of its own, and each of those
+    /// re-wraps the whole paragraph that has arrived so far -- so the work per
+    /// token grows with the text behind it, and a reasoning model streaming for
+    /// half a minute spends a core drawing prose that is replaced a millisecond
+    /// later. DeepSeek is where it showed, because it streams raw thinking
+    /// rather than a summary that arrives in paragraphs.
+    ///
+    /// Both halves are the point: far fewer updates than deltas, and every word
+    /// still on screen at the end. A pane that dropped the tail to save the
+    /// layout would have traded one bug for a worse one.
+    /// </summary>
+    [Fact]
+    public void AThinkReachesTheScreenInFramesRatherThanPerToken()
+    {
+        Headless.Run(() =>
+        {
+            const string plan = """
+            {"phases":[{"name":"Install OpenClaw","hosts":["web-01"],
+              "commands":["apt-get install -y openclaw"]}]}
+            """;
+            // As a reasoning model sends it: one short piece at a time, each
+            // carrying everything so far by the time the planner has appended it.
+            const int tokens = 600;
+            var streamed = new List<AssistEvent>();
+            for (var token = 0; token < tokens; token++)
+                streamed.Add(new AssistEvent.Reasoning("word "));
+            streamed.Add(new AssistEvent.Say(plan));
+            streamed.Add(new AssistEvent.Finished(AssistStop.EndTurn));
+
+            var model = new OrchestratorViewModel(
+                new Canned(streamed),
+                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+                _ => null);
+            var window = Show(new OrchestratorView(model));
+
+            var drawn = 0;
+            model.PropertyChanged += (_, changed) =>
+            {
+                if (changed.PropertyName == nameof(OrchestratorViewModel.Thinking))
+                    drawn++;
+            };
+
+            model.Mode = OrchestratorMode.Plan;
+            model.Instruction = "where should OpenClaw go?";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+
+            // All of it, to the last token: the frames coalesce the drawing, not
+            // the text.
+            model.Thinking.ShouldBe(string.Concat(Enumerable.Repeat("word ", tokens)));
+
+            // And a small fraction of the deltas that produced it. The exact
+            // number depends on how long the stream took, which is why this is a
+            // ceiling rather than an equality -- what it rules out is the one
+            // draw per token this pane used to do.
+            drawn.ShouldBeLessThan(tokens / 4);
+        });
+    }
+
+    /// <summary>
     /// The plan ran, every host reported, and the results stopped at the screen:
     /// the next question was answered by the one participant that never found out
     /// whether any of it worked.

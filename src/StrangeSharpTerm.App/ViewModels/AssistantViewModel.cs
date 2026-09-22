@@ -191,14 +191,18 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
         _connectedTools = connectedTools;
         MayRunCommands = settings.AllowCommandsByDefault;
 
-        _agent.Added += (_, entry) => Post(() =>
+        _agent.Added += (_, entry) => _screen.Now(() =>
         {
             var row = new AssistRow { Entry = entry };
             _rows[entry] = row;
             Rows.Add(row);
             OnPropertyChanged(nameof(IsEmpty));
         });
-        _agent.Updated += (_, entry) => Post(() =>
+        // Spaced rather than drawn as it arrives, and keyed on the entry so what
+        // is waiting is the newest state of it. A refresh redraws the whole
+        // answer -- markdown re-parsed, thinking re-wrapped -- and a reasoning
+        // model sends a token at a time. See <see cref="Streamed"/>.
+        _agent.Updated += (_, entry) => _screen.Soon(entry, () =>
         {
             if (_rows.TryGetValue(entry, out var row))
                 row.Refresh();
@@ -208,22 +212,22 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
         // so for as long as the command is running, exactly as it does for an
         // orchestrated run -- the window cannot tell the two apart and should
         // not have to.
-        _agent.Working += (_, step) => Post(() => Driving?.Invoke(this, step));
+        _agent.Working += (_, step) => _screen.Now(() => Driving?.Invoke(this, step));
         // A file it wrote is a file the workspace pane is still showing the old
         // version of. The window joins the two; this only says when.
-        _agent.Wrote += (_, change) => Post(() => Wrote?.Invoke(this, change));
-        _agent.WroteHere += (_, change) => Post(() => WroteHere?.Invoke(this, change));
+        _agent.Wrote += (_, change) => _screen.Now(() => Wrote?.Invoke(this, change));
+        _agent.WroteHere += (_, change) => _screen.Now(() => WroteHere?.Invoke(this, change));
         // A retry takes the last question back, and the rows it produced go
         // with it -- or the pane would show both attempts as though both had
         // been asked.
-        _agent.Removed += (_, entry) => Post(() =>
+        _agent.Removed += (_, entry) => _screen.Now(() =>
         {
             if (!_rows.Remove(entry, out var row))
                 return;
             Rows.Remove(row);
             OnPropertyChanged(nameof(IsEmpty));
         });
-        _agent.Cleared += (_, _) => Post(() =>
+        _agent.Cleared += (_, _) => _screen.Now(() =>
         {
             _rows.Clear();
             Rows.Clear();
@@ -611,7 +615,7 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
     public Task<bool> Allow(PendingCommand command, CancellationToken cancellationToken = default)
     {
         _answering = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        Post(() => OnPropertyChanged(nameof(Waiting)));
+        _screen.Now(() => OnPropertyChanged(nameof(Waiting)));
         cancellationToken.Register(() => _answering?.TrySetResult(false));
         return _answering.Task;
     }
@@ -621,13 +625,13 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
     {
         var answering = new TaskCompletionSource<ToolApproval>(TaskCreationOptions.RunContinuationsAsynchronously);
         _answeringTool = answering;
-        Post(() => WaitingTool = call);
+        _screen.Now(() => WaitingTool = call);
         cancellationToken.Register(() => answering.TrySetResult(ToolApproval.No));
 
         return answering.Task.ContinueWith(
             answered =>
             {
-                Post(() => WaitingTool = null);
+                _screen.Now(() => WaitingTool = null);
                 return answered.Result;
             },
             TaskScheduler.Default);
@@ -643,13 +647,8 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
 
     /// <summary>
     /// The agent runs off the UI thread and raises its events there. Everything
-    /// that touches a bound collection comes back first.
+    /// that touches a bound collection comes back first, and what streams comes
+    /// back spaced -- see <see cref="Streamed"/>.
     /// </summary>
-    private static void Post(Action work)
-    {
-        if (Dispatcher.UIThread.CheckAccess())
-            work();
-        else
-            Dispatcher.UIThread.Post(work);
-    }
+    private readonly Streamed _screen = new();
 }
