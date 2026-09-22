@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <AvaloniaResource Include="Illustrations/*.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../StrangeSharpTerm.Assist/StrangeSharpTerm.Assist.csproj" />
     <ProjectReference Include="../StrangeSharpTerm.Mcp/StrangeSharpTerm.Mcp.csproj" />
     <ProjectReference Include="../StrangeSharpTerm.Model/StrangeSharpTerm.Model.csproj" />

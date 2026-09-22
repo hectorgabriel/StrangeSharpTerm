@@ -16,6 +16,7 @@
     -->
     <UserControl.Resources>
         <views:IconConverter x:Key="Icon" />
+        <views:IllustrationConverter x:Key="Illustration" />
     </UserControl.Resources>
 
     <Grid RowDefinitions="Auto,*,Auto,Auto,Auto" Background="{DynamicResource BackgroundBrush}">
@@ -53,9 +54,11 @@
         <ScrollViewer Grid.Row="1" views:Follows.TheEnd="True">
             <StackPanel Margin="12,0,12,8" Spacing="10">
 
-                <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding IsEmpty}"
-                           Margin="0,8"
-                           Text="Ask about this host. The question carries its name, what uname reported, the metrics a probe collects now, and the tail of the terminal beside this pane — secrets removed. Nothing is run unless you turn on Run commands, and even then anything that writes stops to ask you." />
+                <StackPanel Margin="0,8" Spacing="10" IsVisible="{Binding IsEmpty}">
+                    <Image Width="64" Height="64" Source="{Binding Source=chat-bubble, Converter={StaticResource Illustration}}" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="Ask about this host. The question carries its name, what uname reported, the metrics a probe collects now, and the tail of the terminal beside this pane — secrets removed. Nothing is run unless you turn on Run commands, and even then anything that writes stops to ask you." />
+                </StackPanel>
 
                 <ItemsControl ItemsSource="{Binding Rows}">
                     <ItemsControl.ItemTemplate>
