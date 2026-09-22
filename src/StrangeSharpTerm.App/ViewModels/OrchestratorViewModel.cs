@@ -102,6 +102,7 @@ public sealed partial class FindingRow : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _screen.Flush();
         if (_watched is null)
             return;
         _watched.Added -= OnAdded;
@@ -111,6 +112,9 @@ public sealed partial class FindingRow : ObservableObject, IDisposable
 
     partial void OnFindingChanged(HostFinding? value)
     {
+        // This host is done, so whatever the last few tokens left waiting for a
+        // frame that is no longer coming goes on screen now.
+        _screen.Flush();
         OnPropertyChanged(nameof(Text));
         OnPropertyChanged(nameof(Label));
         OnPropertyChanged(nameof(Reported));
@@ -121,25 +125,29 @@ public sealed partial class FindingRow : ObservableObject, IDisposable
 
     partial void OnIsExchangeOpenChanged(bool value) => OnPropertyChanged(nameof(ExchangeToggle));
 
-    private void OnAdded(object? sender, TranscriptEntry entry) => Post(() =>
+    /// <summary>
+    /// This row's updates, spaced. One per row rather than one shared: hosts run
+    /// several at a time and each streams its own answer, so a frame held for
+    /// one of them should not hold the rest.
+    /// </summary>
+    private readonly Streamed _screen = new();
+
+    private void OnAdded(object? sender, TranscriptEntry entry) => _screen.Now(() =>
     {
         Exchange.Add(new AssistRow { Entry = entry });
         OnPropertyChanged(nameof(HasExchange));
     });
 
-    private void OnUpdated(object? sender, TranscriptEntry entry) => Post(() =>
+    /// <summary>
+    /// An entry growing as it streams, keyed on the entry so what is waiting is
+    /// the newest state of it rather than every state it passed through. Each
+    /// refresh redraws the whole answer, and a token is not worth one.
+    /// </summary>
+    private void OnUpdated(object? sender, TranscriptEntry entry) => _screen.Soon(entry, () =>
     {
         if (Exchange.FirstOrDefault(row => row.Entry == entry) is { } row)
             row.Refresh();
     });
-
-    private static void Post(Action work)
-    {
-        if (Dispatcher.UIThread.CheckAccess())
-            work();
-        else
-            Dispatcher.UIThread.Post(work);
-    }
 }
 
 /// <summary>A phase of a plan, as the pane draws it and lets it be switched off.</summary>
@@ -311,10 +319,14 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         // The same folder as Ask mode, read-only: a plan is often written from a
         // runbook, and the runbook is here.
         _planner = new Planner(backend, localWorkspace);
-        _planner.Thought += (_, thought) => Post(() => Thinking = thought);
+        // Spaced rather than shown as it arrives: this is a token at a time, and
+        // each one carries the whole think so far, so drawing every one of them
+        // re-wraps a paragraph that only grows. The newest is the only one worth
+        // having, which is what keying them all together says.
+        _planner.Thought += (_, thought) => _screen.Soon(nameof(Thinking), () => Thinking = thought);
         // What it is reading, while it reads it. Draft replaces this with the
         // plan's summary when the plan arrives.
-        _planner.Looked += (_, step) => Post(() => Progress = step.State switch
+        _planner.Looked += (_, step) => _screen.Now(() => Progress = step.State switch
         {
             StepState.Refused => $"{step.Command} — refused: {step.Gate}",
             StepState.Failed => $"{step.Command} — {step.Output}",
@@ -619,7 +631,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         await Working(async token =>
         {
             var answer = await fleet.Ask(instruction, hosts, MayRunCommands, MayEditFiles, token);
-            Post(() =>
+            _screen.Now(() =>
             {
                 Progress = $"{Chosen.Count} hosts · {answer.CommandsRun} commands";
                 IsThinkingOpen = false;
@@ -659,9 +671,9 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     {
         var fleet = new FleetAgent(_backend, this, null, _localWorkspace);
 
-        fleet.WroteHere += (_, change) => Post(() => WroteHere?.Invoke(this, change));
+        fleet.WroteHere += (_, change) => _screen.Now(() => WroteHere?.Invoke(this, change));
 
-        fleet.Cleared += (_, _) => Post(() =>
+        fleet.Cleared += (_, _) => _screen.Now(() =>
         {
             _rows.Clear();
             Rows.Clear();
@@ -670,14 +682,17 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             Progress = "";
         });
 
-        fleet.Added += (_, entry) => Post(() =>
+        fleet.Added += (_, entry) => _screen.Now(() =>
         {
             _rows[entry] = new AssistRow { Entry = entry };
             Rows.Add(_rows[entry]);
             if (entry is TranscriptEntry.Answer answer)
                 Thinking = answer.Reasoning;
         });
-        fleet.Updated += (_, entry) => Post(() =>
+        // Spaced, and keyed on the entry: an answer streams in a token at a time
+        // and every update redraws all of it, thinking included. See
+        // <see cref="Streamed"/>.
+        fleet.Updated += (_, entry) => _screen.Soon(entry, () =>
         {
             if (_rows.TryGetValue(entry, out var row))
                 row.Refresh();
@@ -687,7 +702,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 
         // Which host it has, while it has it. A pane showing that host says so
         // for as long as the command is running.
-        fleet.Working += (_, step) => Post(() => Driving?.Invoke(this, step));
+        fleet.Working += (_, step) => _screen.Now(() => Driving?.Invoke(this, step));
         return fleet;
     }
 
@@ -741,7 +756,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         await Working(async token =>
         {
             var reading = await _planner.Draft(goal, Chosen, token);
-            Post(() =>
+            _screen.Now(() =>
             {
                 switch (reading)
                 {
@@ -783,7 +798,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         // A row per host the moment the phase is sent, each following its agent
         // from now on -- the agent's transcript spans the whole plan, and this
         // row is about this phase.
-        runner.Starting += (_, phase) => Post(() =>
+        runner.Starting += (_, phase) => _screen.Now(() =>
         {
             if (Phases.FirstOrDefault(row => row.Phase == phase) is not { } row)
                 return;
@@ -797,7 +812,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             }
         });
 
-        runner.Reported += (_, finding) => Post(() =>
+        runner.Reported += (_, finding) => _screen.Now(() =>
         {
             if (Phases.SelectMany(phase => phase.Findings)
                     .LastOrDefault(row => row.Alias == finding.Alias && row.Finding is null) is { } waiting)
@@ -806,7 +821,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             }
         });
 
-        runner.Finished += (_, result) => Post(() =>
+        runner.Finished += (_, result) => _screen.Now(() =>
         {
             if (Phases.FirstOrDefault(row => row.Phase == result.Phase) is not { } row)
                 return;
@@ -833,7 +848,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             // No switch passed: running the plan is running its commands, and
             // each one still stops at the gate unless it only reads.
             var result = await runner.Run(plan, token);
-            Post(() =>
+            _screen.Now(() =>
             {
                 Progress = result.Stopped ? result.StoppedBecause ?? "The run stopped." : "Finished.";
                 OnPropertyChanged(nameof(Continuing));
@@ -964,7 +979,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         // it there to remove rather than leaving it behind for ever.
         asking.Cancelling = cancellationToken.Register(() => Settle(asking, ToolApproval.No));
 
-        Post(Show);
+        _screen.Now(Show);
         return asking;
     }
 
@@ -1006,7 +1021,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 
         asking.Cancelling.Dispose();
         asking.Answered.TrySetResult(approval);
-        Post(Show);
+        _screen.Now(Show);
     }
 
     /// <summary>Puts the head of the queue in the banners, and nothing if it is empty.</summary>
@@ -1060,7 +1075,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         // Subscribed here rather than where a phase starts, because the agent
         // is built once and kept for the life of the pane: hooking it per
         // phase would narrate phase three's commands three times over.
-        built.Working += (_, step) => Post(() => Driving?.Invoke(this, step));
+        built.Working += (_, step) => _screen.Now(() => Driving?.Invoke(this, step));
         return _agents[alias] = built;
     }
 
@@ -1074,12 +1089,12 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         }
         catch (OperationCanceledException)
         {
-            Post(() => Progress = "Stopped.");
+            _screen.Now(() => Progress = "Stopped.");
         }
         catch (Exception e)
         {
             System.Diagnostics.Trace.WriteLine($"orchestrated run failed: {e}");
-            Post(() => Refusal = e.Message);
+            _screen.Now(() => Refusal = e.Message);
         }
         finally
         {
@@ -1089,11 +1104,11 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         }
     }
 
-    private static void Post(Action work)
-    {
-        if (Dispatcher.UIThread.CheckAccess())
-            work();
-        else
-            Dispatcher.UIThread.Post(work);
-    }
+    /// <summary>
+    /// Everything this pane shows, on the UI thread and spaced.
+    ///
+    /// Spacing matters here rather than in the other panes because this is where
+    /// a model streams its thinking: see <see cref="Streamed"/>.
+    /// </summary>
+    private readonly Streamed _screen = new();
 }
