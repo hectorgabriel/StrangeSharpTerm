@@ -15,6 +15,7 @@
     -->
     <UserControl.Resources>
         <views:IconConverter x:Key="Icon" />
+        <views:IllustrationConverter x:Key="Illustration" />
     </UserControl.Resources>
 
     <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
@@ -131,6 +132,7 @@
              panel says what it is for and offers the one thing to do. -->
         <StackPanel Grid.Row="4" Margin="16,12" VerticalAlignment="Top" Spacing="10"
                     IsVisible="{Binding !HasRoot}">
+            <Image Width="64" Height="64" HorizontalAlignment="Left" Source="{Binding Source=folder, Converter={StaticResource Illustration}}" />
             <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
                        Text="Choose a folder on this machine to work in. It is the only place the assistant will be able to read or write here, so pick the project rather than your home directory." />
             <Button HorizontalAlignment="Left" Content="Choose a folder…"

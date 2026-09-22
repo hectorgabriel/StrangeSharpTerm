@@ -12,6 +12,7 @@
     -->
     <UserControl.Resources>
         <views:IconConverter x:Key="Icon" />
+        <views:IllustrationConverter x:Key="Illustration" />
     </UserControl.Resources>
 
     <Grid RowDefinitions="Auto,*" Background="{DynamicResource BackgroundBrush}">
@@ -73,9 +74,11 @@
                 </ItemsControl>
 
                 <!-- No tunnels is the ordinary case, and says what one would be for. -->
-                <TextBlock Classes="muted" Margin="8,16" TextWrapping="Wrap" FontSize="12"
-                           IsVisible="{Binding IsEmpty}"
-                           Text="This host has no port forwards. One would let you reach a database or a web server on it as though it were running here." />
+                <StackPanel Margin="8,16" Spacing="10" IsVisible="{Binding IsEmpty}">
+                    <Image Width="64" Height="64" HorizontalAlignment="Left" Source="{Binding Source=link, Converter={StaticResource Illustration}}" />
+                    <TextBlock Classes="muted" TextWrapping="Wrap" FontSize="12"
+                               Text="This host has no port forwards. One would let you reach a database or a web server on it as though it were running here." />
+                </StackPanel>
             </StackPanel>
         </ScrollViewer>
     </Grid>

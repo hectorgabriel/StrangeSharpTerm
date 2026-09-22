@@ -13,6 +13,7 @@
 
     <Window.Resources>
         <views:IconConverter x:Key="Icon" />
+        <views:IllustrationConverter x:Key="Illustration" />
 
         <!-- A bar and what it measures. Memory and disk are the same thing said
              about different numbers, so they are the same template. -->
@@ -303,9 +304,13 @@
                                  Driving="{Binding Driving}"
                                  FocusCommand="{Binding FocusPaneCommand}" />
 
-            <TextBlock Grid.Row="3" Classes="muted" Margin="24" TextWrapping="Wrap"
-                       IsVisible="{Binding ShowsEmptyState}"
-                       Text="Choose a host on the left." />
+            <StackPanel Grid.Row="3" Margin="24" Spacing="12"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        IsVisible="{Binding ShowsEmptyState}">
+                <Image Width="96" Height="96" HorizontalAlignment="Center" Source="{Binding Source=computer, Converter={StaticResource Illustration}}" />
+                <TextBlock Classes="muted" TextWrapping="Wrap" HorizontalAlignment="Center"
+                           Text="Choose a host on the left." />
+            </StackPanel>
 
             <!-- With nothing open, the selected host explains itself: what a
                  connection would actually use, inheritance included. -->

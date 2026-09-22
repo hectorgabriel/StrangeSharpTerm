@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:StrangeSharpTerm.App.ViewModels"
+        xmlns:views="clr-namespace:StrangeSharpTerm.App.Views"
         x:Class="StrangeSharpTerm.App.Views.SnippetsWindow"
         x:DataType="vm:SnippetsViewModel"
         Title="Snippets"
@@ -8,6 +9,10 @@
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BackgroundBrush}"
         Foreground="{DynamicResource TextBrush}">
+
+    <Window.Resources>
+        <views:IllustrationConverter x:Key="Illustration" />
+    </Window.Resources>
 
     <!--
         Commands worth keeping. One scoped to a folder is offered on the hosts
@@ -32,9 +37,12 @@
             </ListBox>
         </Border>
 
-        <TextBlock Grid.Row="1" Classes="muted" Margin="16" VerticalAlignment="Top" TextWrapping="Wrap"
-                   IsVisible="{Binding IsEmpty}"
-                   Text="No snippets yet. A snippet is a command worth keeping — write {{name}} in it to be asked for a value each time it runs. Open one from the command palette." />
+        <StackPanel Grid.Row="1" Margin="24" Spacing="12" VerticalAlignment="Center"
+                    IsVisible="{Binding IsEmpty}">
+            <Image Width="64" Height="64" HorizontalAlignment="Center" Source="{Binding Source=flash, Converter={StaticResource Illustration}}" />
+            <TextBlock Classes="muted" TextWrapping="Wrap" TextAlignment="Center"
+                       Text="No snippets yet. A snippet is a command worth keeping — write {{name}} in it to be asked for a value each time it runs. Open one from the command palette." />
+        </StackPanel>
 
         <Grid Grid.Row="2" ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="0,14,0,0">
             <Button Grid.Column="0" Padding="12,6" Margin="0,0,6,0" Command="{Binding AddCommand}">
