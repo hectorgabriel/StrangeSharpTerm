@@ -35,20 +35,22 @@
             <TextBlock Grid.Column="0" Classes="muted" FontSize="11" VerticalAlignment="Center"
                        TextTrimming="CharacterEllipsis" Text="{Binding Where}" />
 
-            <Button Grid.Column="1" Classes="row" Padding="6" Margin="4,0,0,0" ToolTip.Tip="Open this folder"
+            <Button Grid.Column="1" Classes="row" Padding="2" Margin="4,0,0,0" ToolTip.Tip="Open this folder"
                     Command="{Binding OpenRootCommand}">
-                <Path Classes="icon" Width="14" Height="14"
-                      Data="{Binding Source=IconFolderOpen, Converter={StaticResource Icon}}" />
+                <Image Width="22" Height="22"
+                       RenderOptions.BitmapInterpolationMode="HighQuality"
+                       Source="{Binding Source=folder, Converter={StaticResource Illustration}}" />
             </Button>
             <Button Grid.Column="2" Classes="row" Padding="6" ToolTip.Tip="Read it again"
                     Command="{Binding RefreshCommand}">
                 <Path Classes="icon" Width="14" Height="14"
                       Data="{Binding Source=IconRefreshCw, Converter={StaticResource Icon}}" />
             </Button>
-            <Button Grid.Column="3" Classes="row" Padding="6" ToolTip.Tip="New file"
+            <Button Grid.Column="3" Classes="row" Padding="2" ToolTip.Tip="New file"
                     Command="{Binding NewFileCommand}">
-                <Path Classes="icon" Width="14" Height="14"
-                      Data="{Binding Source=IconFilePlus, Converter={StaticResource Icon}}" />
+                <Image Width="22" Height="22"
+                       RenderOptions.BitmapInterpolationMode="HighQuality"
+                       Source="{Binding Source=file-plus, Converter={StaticResource Illustration}}" />
             </Button>
 
             <!-- The rest, where they cost no width. A flyout rather than more
@@ -115,8 +117,13 @@
             <TreeView.ItemTemplate>
                 <TreeDataTemplate ItemsSource="{Binding Children}" x:DataType="vm:WorkspaceNode">
                     <Grid ColumnDefinitions="Auto,*" Margin="0,1" DoubleTapped="Opened">
-                        <Path Grid.Column="0" Classes="icon" Width="13" Height="13" Margin="0,0,6,0"
-                              Data="{Binding IconKey, Converter={StaticResource Icon}}" />
+                        <!-- A picture where 3dicons has one, the line icon for a link. -->
+                        <Panel Grid.Column="0" Width="16" Height="16" Margin="0,0,6,0">
+                            <Path Classes="icon" Width="13" Height="13"
+                                  Data="{Binding IconKey, Converter={StaticResource Icon}}" />
+                            <Image RenderOptions.BitmapInterpolationMode="HighQuality"
+                                   Source="{Binding IconKey, Converter={StaticResource Illustration}}" />
+                        </Panel>
                         <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis" />
                     </Grid>

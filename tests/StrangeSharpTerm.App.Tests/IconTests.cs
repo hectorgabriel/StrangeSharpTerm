@@ -1,4 +1,6 @@
 using System.Xml.Linq;
+using System.Text.RegularExpressions;
+using StrangeSharpTerm.App.Views;
 
 namespace StrangeSharpTerm.App.Tests;
 
@@ -66,5 +68,35 @@ public class IconTests
         text.ShouldContain("build/icons/generate.py");
         text.ShouldContain("Lucide 1.45.0");
         File.Exists(Path.Combine(Path.GetDirectoryName(IconPath())!, "LICENSE-lucide.txt")).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void EveryPictureAViewAsksForIsOneThatWasFetched()
+    {
+        // A misspelt picture compiles, and then takes the app down the first time
+        // the view is shown: the asset loader throws on a name it cannot find.
+        var app = Path.GetDirectoryName(Path.GetDirectoryName(IconPath()))!;
+        var fetched = Path.Combine(app, "Illustrations");
+
+        var asked = Directory.EnumerateFiles(app, "*.axaml", SearchOption.AllDirectories)
+            .SelectMany(file => Regex.Matches(File.ReadAllText(file),
+                    @"Binding Source=([a-z0-9-]+), Converter=\{StaticResource Illustration\}")
+                .Select(match => (File: Path.GetFileName(file), Name: match.Groups[1].Value)))
+            .Concat(IllustrationConverter.ForIcon.Select(pair => (File: pair.Key, Name: pair.Value)))
+            .ToList();
+
+        asked.ShouldNotBeEmpty();
+        foreach (var (file, name) in asked)
+            File.Exists(Path.Combine(fetched, $"{name}.png"))
+                .ShouldBeTrue($"{file} asks for {name}, which build/icons/fetch_3dicons.py did not fetch");
+    }
+
+    [Fact]
+    public void EveryKeyGivenAPictureIsALucideKeyAViewModelCanName()
+    {
+        // A misspelt key would never match what a view model asks for, and the
+        // row would quietly keep its line icon.
+        foreach (var key in IllustrationConverter.ForIcon.Keys)
+            Geometries.ShouldContainKey(key, $"{key} names a Lucide icon that does not exist");
     }
 }
