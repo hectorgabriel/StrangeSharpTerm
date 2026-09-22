@@ -59,10 +59,9 @@
                                         <TextBlock Classes="muted" FontSize="11" Text="{Binding Description}" />
                                     </StackPanel>
 
-                                    <Path Grid.Column="2" Classes="icon" Width="18" Height="18"
-                                          VerticalAlignment="Center" IsVisible="{Binding IsChosen}"
-                                          Stroke="{DynamicResource AccentBrush}"
-                                          Data="{Binding Source=IconCircleCheck, Converter={StaticResource Icon}}" />
+                                    <Image Grid.Column="2" Width="18" Height="18"
+                                           VerticalAlignment="Center" IsVisible="{Binding IsChosen}"
+                                           Source="{Binding Source=ColorIconCheckmarkCircle, Converter={StaticResource Icon}}" />
                                 </Grid>
                             </Button>
                         </DataTemplate>
@@ -91,10 +90,9 @@
                                         <TextBlock Classes="muted" FontSize="11" Text="{Binding DataGoesTo}" />
                                         <TextBlock Classes="muted" FontSize="11" Text="{Binding KeyNote}" />
                                     </StackPanel>
-                                    <Path Grid.Column="1" Classes="icon" Width="18" Height="18"
-                                          VerticalAlignment="Center" IsVisible="{Binding IsChosen}"
-                                          Stroke="{DynamicResource AccentBrush}"
-                                          Data="{Binding Source=IconCircleCheck, Converter={StaticResource Icon}}" />
+                                    <Image Grid.Column="1" Width="18" Height="18"
+                                           VerticalAlignment="Center" IsVisible="{Binding IsChosen}"
+                                           Source="{Binding Source=ColorIconCheckmarkCircle, Converter={StaticResource Icon}}" />
                                 </Grid>
                             </Button>
                         </DataTemplate>
