@@ -165,10 +165,10 @@
             <!-- The theme moved into the settings sheet, which is what the foot of
                  the sidebar now opens. -->
             <Button Grid.Row="3" x:Name="SettingsButton" Classes="row" Margin="8,4,8,10"
-                    HorizontalAlignment="Left" Padding="8,6"
+                    HorizontalAlignment="Left" Padding="8,3"
                     Command="{Binding OpenSettingsCommand}" ToolTip.Tip="Settings">
                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <Image Width="14" Height="14" VerticalAlignment="Center"
+                    <Image Width="20" Height="20" VerticalAlignment="Center"
                            RenderOptions.BitmapInterpolationMode="HighQuality"
 
                            Source="{Binding Source=setting, Converter={StaticResource Illustration}}" />
@@ -232,17 +232,19 @@
                      one, because which conversation you want is the choice: one
                      host's, or all of them at once. -->
                 <Border Width="1" Margin="6,2" Background="{DynamicResource BorderBrush}" />
-                <Button Classes="row" Padding="6" ToolTip.Tip="Assistant"
+                <!-- A picture wants more room than a line icon: the padding gives back
+                     what the image takes, so the strip is no taller. -->
+                <Button Classes="row" Padding="2" ToolTip.Tip="Assistant"
                         Classes.selected="{Binding DockShowsAssistant}"
                         Command="{Binding OpenAssistantCommand}">
-                    <Image Width="14" Height="14"
+                    <Image Width="22" Height="22"
                            RenderOptions.BitmapInterpolationMode="HighQuality"
                            Source="{Binding Source=chat-bubble, Converter={StaticResource Illustration}}" />
                 </Button>
-                <Button Classes="row" Padding="6" ToolTip.Tip="Ask several hosts"
+                <Button Classes="row" Padding="2" ToolTip.Tip="Ask several hosts"
                         Classes.selected="{Binding DockShowsOrchestrator}"
                         Command="{Binding AskSeveralHostsCommand}">
-                    <Image Width="14" Height="14"
+                    <Image Width="22" Height="22"
                            RenderOptions.BitmapInterpolationMode="HighQuality"
                            Source="{Binding Source=cube, Converter={StaticResource Illustration}}" />
                 </Button>
