@@ -167,8 +167,8 @@
                     HorizontalAlignment="Left" Padding="8,6"
                     Command="{Binding OpenSettingsCommand}" ToolTip.Tip="Settings">
                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                    <Path Classes="icon" Width="14" Height="14" Opacity="0.7" VerticalAlignment="Center"
-                          Data="{Binding Source=IconSettings, Converter={StaticResource Icon}}" />
+                    <Image Width="14" Height="14" VerticalAlignment="Center"
+                           Source="{Binding Source=ColorIconSettings, Converter={StaticResource Icon}}" />
                     <TextBlock Classes="muted" FontSize="12" Text="Settings" VerticalAlignment="Center" />
                 </StackPanel>
             </Button>
@@ -222,8 +222,7 @@
                 <Button Classes="row" Padding="6" ToolTip.Tip="Close this pane"
                         IsVisible="{Binding Panes.Count}"
                         Command="{Binding ClosePaneCommand}">
-                    <Path Classes="icon" Width="14" Height="14"
-                          Data="{Binding Source=IconCircleX, Converter={StaticResource Icon}}" />
+                    <Image Width="14" Height="14" Source="{Binding Source=ColorIconDismissCircle, Converter={StaticResource Icon}}" />
                 </Button>
 
                 <!-- The dock, from the side it opens on. Two buttons rather than
@@ -233,14 +232,12 @@
                 <Button Classes="row" Padding="6" ToolTip.Tip="Assistant"
                         Classes.selected="{Binding DockShowsAssistant}"
                         Command="{Binding OpenAssistantCommand}">
-                    <Path Classes="icon" Width="14" Height="14"
-                          Data="{Binding Source=IconSparkles, Converter={StaticResource Icon}}" />
+                    <Image Width="14" Height="14" Source="{Binding Source=ColorIconBotSparkle, Converter={StaticResource Icon}}" />
                 </Button>
                 <Button Classes="row" Padding="6" ToolTip.Tip="Ask several hosts"
                         Classes.selected="{Binding DockShowsOrchestrator}"
                         Command="{Binding AskSeveralHostsCommand}">
-                    <Path Classes="icon" Width="14" Height="14"
-                          Data="{Binding Source=IconLayers, Converter={StaticResource Icon}}" />
+                    <Image Width="14" Height="14" Source="{Binding Source=ColorIconAgents, Converter={StaticResource Icon}}" />
                 </Button>
             </StackPanel>
 
@@ -292,8 +289,7 @@
             <Border Grid.Row="2" Classes="banner" Margin="8,8,8,0"
                     IsVisible="{Binding Failure, Converter={x:Static ObjectConverters.IsNotNull}}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Path Classes="icon" Width="14" Height="14" Stroke="{DynamicResource DangerBrush}"
-                          Data="{Binding Source=IconTriangleAlert, Converter={StaticResource Icon}}" />
+                    <Image Width="14" Height="14" Source="{Binding Source=ColorIconWarning, Converter={StaticResource Icon}}" />
                     <TextBlock Text="{Binding Failure}" TextWrapping="Wrap" VerticalAlignment="Center" />
                 </StackPanel>
             </Border>
@@ -363,8 +359,7 @@
                             </Button>
                             <Button Command="{Binding EditSelectedCommand}" Padding="12,6">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Path Classes="icon" Width="14" Height="14"
-                                          Data="{Binding Source=IconSlidersHorizontal, Converter={StaticResource Icon}}" />
+                                    <Image Width="14" Height="14" Source="{Binding Source=ColorIconOptions, Converter={StaticResource Icon}}" />
                                     <TextBlock Text="Edit" />
                                 </StackPanel>
                             </Button>
