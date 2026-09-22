@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vendors a few 3dicons illustrations: the empty states, and three places.
+"""Vendors the 3dicons pictures: the empty states, and every icon they can draw.
 
 3dicons (https://3dicons.co, Vijay Verma) are rendered in Blender and published
 as 400x400 PNGs under CC0. They are pictures, not glyphs: at the 14px the
@@ -7,9 +7,10 @@ toolbar draws an icon they are a smudge, and they cannot take a theme's colour.
 So they go where there is room and nothing else to look at -- a pane, a
 window or a panel with nothing in it yet -- and the line icons stay Lucide.
 
-Three small ones are the exception, by choice rather than fit: settings, the
-assistant and the orchestrator, each a place of its own rather than an action,
-wear the same pictures at 14 points.
+They also stand in for every line icon that has a true counterpart here -- a
+folder, a file, a host, a bin -- drawn at 16 to 22 points, a little larger
+than the line icons they replace because a picture needs the room. Controls
+with no object to picture, a chevron or a close, stay Lucide.
 
     ./build/icons/fetch_3dicons.py       # re-download into Illustrations/
 
@@ -43,6 +44,16 @@ ICONS = {
     # The three places, drawn small; chat-bubble above is the assistant's too.
     "setting": "settings, at the foot of the sidebar",
     "cube": "the orchestrator -- SF Symbols' square.stack.3d.up, in the Swift app",
+    # Every other icon with a true counterpart in the set. computer, folder and
+    # link above serve twice: a host and a terminal, a folder open or shut, a
+    # tunnel. The rest -- chevrons, close, split, arrows -- stay Lucide.
+    "file": "a file, in the browser and the workspace",
+    "file-plus": "a new file in the workspace",
+    "trash-can": "delete",
+    "plus": "add a host or a folder",
+    "megaphone": "type into every pane at once",
+    "tick": "the chosen theme or provider",
+    "pencil": "edit a host",
 }
 
 

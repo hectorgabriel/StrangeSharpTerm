@@ -25,6 +25,7 @@
              Application.Current cannot be built without one, and the plain unit
              tests build these controls with no application at all. -->
         <views:IconConverter x:Key="Icon" />
+        <views:IllustrationConverter x:Key="Illustration" />
     </Window.Resources>
 
     <Grid RowDefinitions="Auto,*,Auto" Margin="20">
@@ -59,9 +60,10 @@
                                         <TextBlock Classes="muted" FontSize="11" Text="{Binding Description}" />
                                     </StackPanel>
 
-                                    <Image Grid.Column="2" Width="18" Height="18"
+                                    <Image Grid.Column="2" Width="20" Height="20"
                                            VerticalAlignment="Center" IsVisible="{Binding IsChosen}"
-                                           Source="{Binding Source=ColorIconCheckmarkCircle, Converter={StaticResource Icon}}" />
+                                           RenderOptions.BitmapInterpolationMode="HighQuality"
+                                           Source="{Binding Source=tick, Converter={StaticResource Illustration}}" />
                                 </Grid>
                             </Button>
                         </DataTemplate>
@@ -90,9 +92,10 @@
                                         <TextBlock Classes="muted" FontSize="11" Text="{Binding DataGoesTo}" />
                                         <TextBlock Classes="muted" FontSize="11" Text="{Binding KeyNote}" />
                                     </StackPanel>
-                                    <Image Grid.Column="1" Width="18" Height="18"
+                                    <Image Grid.Column="1" Width="20" Height="20"
                                            VerticalAlignment="Center" IsVisible="{Binding IsChosen}"
-                                           Source="{Binding Source=ColorIconCheckmarkCircle, Converter={StaticResource Icon}}" />
+                                           RenderOptions.BitmapInterpolationMode="HighQuality"
+                                           Source="{Binding Source=tick, Converter={StaticResource Illustration}}" />
                                 </Grid>
                             </Button>
                         </DataTemplate>

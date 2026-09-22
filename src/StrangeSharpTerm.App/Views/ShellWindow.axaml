@@ -86,7 +86,7 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
-                    <Button Classes="row" Padding="6" ToolTip.Tip="Add"
+                    <Button Classes="row" Padding="2" ToolTip.Tip="Add"
                             IsVisible="{Binding SidebarShowsHosts}">
                         <Button.Flyout>
                             <MenuFlyout>
@@ -94,8 +94,9 @@
                                 <MenuItem Header="New folder…" Command="{Binding NewFolderCommand}" />
                             </MenuFlyout>
                         </Button.Flyout>
-                        <Path Classes="icon" Width="14" Height="14"
-                              Data="{Binding Source=IconPlus, Converter={StaticResource Icon}}" />
+                        <Image Width="22" Height="22"
+                               RenderOptions.BitmapInterpolationMode="HighQuality"
+                               Source="{Binding Source=plus, Converter={StaticResource Illustration}}" />
                     </Button>
                     <Button Classes="row" Padding="6" ToolTip.Tip="Hide the hosts"
                             Command="{Binding ToggleSidebarCommand}">
@@ -128,7 +129,7 @@
                             <DataTemplate x:DataType="vm:SidebarRow">
                                 <Button Classes="row" Classes.selected="{Binding IsSelected}"
                                         HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                        Padding="6,4"
+                                        Padding="6,3"
                                         Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).ActivateCommand}"
                                         CommandParameter="{Binding}">
                                     <Button.ContextFlyout>
@@ -144,8 +145,14 @@
                                     <StackPanel Orientation="Horizontal" Spacing="6" Margin="{Binding Indent}">
                                         <Path Classes="icon" Width="12" Height="12" Opacity="0.6"
                                               Data="{Binding ChevronKey, Converter={StaticResource Icon}}" />
-                                        <Path Classes="icon" Width="14" Height="14"
-                                              Data="{Binding IconKey, Converter={StaticResource Icon}}" />
+                                        <!-- A picture where 3dicons has one, the line icon where it
+                                             does not: the converters see to it that only one draws. -->
+                                        <Panel Width="18" Height="18">
+                                            <Path Classes="icon" Width="14" Height="14"
+                                                  Data="{Binding IconKey, Converter={StaticResource Icon}}" />
+                                            <Image RenderOptions.BitmapInterpolationMode="HighQuality"
+                                                   Source="{Binding IconKey, Converter={StaticResource Illustration}}" />
+                                        </Panel>
                                         <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
                                         <TextBlock Classes="muted" Text="{Binding Hostname}" FontSize="11"
                                                    VerticalAlignment="Center" />
@@ -201,12 +208,13 @@
                     <TextBlock Text="Tiles" FontSize="12" />
                 </Button>
 
-                <ToggleButton Classes="row" Padding="6" ToolTip.Tip="Type into every pane"
+                <ToggleButton Classes="row" Padding="2" ToolTip.Tip="Type into every pane"
                               IsVisible="{Binding Panes.Count}"
                               IsChecked="{Binding IsBroadcasting, Mode=TwoWay}"
                               IsEnabled="{Binding CanBroadcast}">
-                    <Path Classes="icon" Width="14" Height="14"
-                          Data="{Binding Source=IconRadioTower, Converter={StaticResource Icon}}" />
+                    <Image Width="22" Height="22"
+                           RenderOptions.BitmapInterpolationMode="HighQuality"
+                           Source="{Binding Source=megaphone, Converter={StaticResource Illustration}}" />
                 </ToggleButton>
                 <!-- Splitting arranges one tab's panes, so it has nothing to say
                      about a window that is showing all of them at once. -->
@@ -225,7 +233,8 @@
                 <Button Classes="row" Padding="6" ToolTip.Tip="Close this pane"
                         IsVisible="{Binding Panes.Count}"
                         Command="{Binding ClosePaneCommand}">
-                    <Image Width="14" Height="14" Source="{Binding Source=ColorIconDismissCircle, Converter={StaticResource Icon}}" />
+                    <Path Classes="icon" Width="14" Height="14"
+                          Data="{Binding Source=IconCircleX, Converter={StaticResource Icon}}" />
                 </Button>
 
                 <!-- The dock, from the side it opens on. Two buttons rather than
@@ -276,8 +285,9 @@
                                         Command="{Binding $parent[ItemsControl].((vm:ShellViewModel)DataContext).FocusTabCommand}"
                                         CommandParameter="{Binding}">
                                     <StackPanel Orientation="Horizontal" Spacing="6">
-                                        <Path Classes="icon" Width="12" Height="12"
-                                              Data="{Binding Source=IconSquareTerminal, Converter={StaticResource Icon}}" />
+                                        <Image Width="16" Height="16"
+                                               RenderOptions.BitmapInterpolationMode="HighQuality"
+                                               Source="{Binding Source=computer, Converter={StaticResource Illustration}}" />
                                         <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
                                     </StackPanel>
                                 </Button>
@@ -298,7 +308,8 @@
             <Border Grid.Row="2" Classes="banner" Margin="8,8,8,0"
                     IsVisible="{Binding Failure, Converter={x:Static ObjectConverters.IsNotNull}}">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Image Width="14" Height="14" Source="{Binding Source=ColorIconWarning, Converter={StaticResource Icon}}" />
+                    <Path Classes="icon" Width="14" Height="14" Stroke="{DynamicResource DangerBrush}"
+                          Data="{Binding Source=IconTriangleAlert, Converter={StaticResource Icon}}" />
                     <TextBlock Text="{Binding Failure}" TextWrapping="Wrap" VerticalAlignment="Center" />
                 </StackPanel>
             </Border>
@@ -349,37 +360,43 @@
                         </ItemsControl>
 
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Theme="{StaticResource PrimaryButton}" Command="{Binding ConnectSelectedCommand}" Padding="12,6">
+                            <Button Theme="{StaticResource PrimaryButton}" Command="{Binding ConnectSelectedCommand}" Padding="12,5.5">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Path Classes="icon" Width="14" Height="14"
-                                          Data="{Binding Source=IconSquareTerminal, Converter={StaticResource Icon}}" />
+                                    <Image Width="18" Height="18"
+                                           RenderOptions.BitmapInterpolationMode="HighQuality"
+                                           Source="{Binding Source=computer, Converter={StaticResource Illustration}}" />
                                     <TextBlock Text="Open a shell" Foreground="{DynamicResource OnAccentBrush}" />
                                 </StackPanel>
                             </Button>
-                            <Button Command="{Binding BrowseFilesCommand}" Padding="12,6">
+                            <Button Command="{Binding BrowseFilesCommand}" Padding="12,5.5">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Path Classes="icon" Width="14" Height="14"
-                                          Data="{Binding Source=IconFolderOpen, Converter={StaticResource Icon}}" />
+                                    <Image Width="18" Height="18"
+                                           RenderOptions.BitmapInterpolationMode="HighQuality"
+                                           Source="{Binding Source=folder, Converter={StaticResource Illustration}}" />
                                     <TextBlock Text="Browse files" />
                                 </StackPanel>
                             </Button>
-                            <Button Command="{Binding OpenTunnelsCommand}" Padding="12,6">
+                            <Button Command="{Binding OpenTunnelsCommand}" Padding="12,5.5">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Path Classes="icon" Width="14" Height="14"
-                                          Data="{Binding Source=IconArrowLeftRight, Converter={StaticResource Icon}}" />
+                                    <Image Width="18" Height="18"
+                                           RenderOptions.BitmapInterpolationMode="HighQuality"
+                                           Source="{Binding Source=link, Converter={StaticResource Illustration}}" />
                                     <TextBlock Text="Tunnels" />
                                 </StackPanel>
                             </Button>
-                            <Button Command="{Binding EditSelectedCommand}" Padding="12,6">
+                            <Button Command="{Binding EditSelectedCommand}" Padding="12,5.5">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Image Width="14" Height="14" Source="{Binding Source=ColorIconOptions, Converter={StaticResource Icon}}" />
+                                    <Image Width="18" Height="18"
+                                           RenderOptions.BitmapInterpolationMode="HighQuality"
+                                           Source="{Binding Source=pencil, Converter={StaticResource Illustration}}" />
                                     <TextBlock Text="Edit" />
                                 </StackPanel>
                             </Button>
-                            <Button Command="{Binding DeleteSelectedCommand}" Padding="12,6">
+                            <Button Command="{Binding DeleteSelectedCommand}" Padding="12,5.5">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <Path Classes="icon" Width="14" Height="14"
-                                          Data="{Binding Source=IconTrash2, Converter={StaticResource Icon}}" />
+                                    <Image Width="18" Height="18"
+                                           RenderOptions.BitmapInterpolationMode="HighQuality"
+                                           Source="{Binding Source=trash-can, Converter={StaticResource Illustration}}" />
                                     <TextBlock Text="Delete" />
                                 </StackPanel>
                             </Button>
