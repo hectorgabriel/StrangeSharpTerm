@@ -3,8 +3,8 @@
 
 A trial beside the Lucide set, not a replacement for it: Fluent's Color style has
 about two hundred icons, and no folder, server, terminal, trash or chevron among
-them. What it does have is the status and settings vocabulary -- a check, a
-warning, a gear -- which is where colour already means something here.
+them. What it does have is the status vocabulary -- a check, a warning, a
+dismissal -- which is where colour already means something here.
 
 Each icon is an SVG of filled paths painted with linear and radial gradients.
 Avalonia has every one of those as a drawing, so the SVG is translated to a
@@ -36,11 +36,8 @@ SVG = "{http://www.w3.org/2000/svg}"
 
 # Fluent name -> the Lucide icon it stands in for, at the sites being tried.
 ICONS = {
-    "settings": "IconSettings (the foot of the sidebar)",
     "options": "IconSlidersHorizontal (edit a host)",
     "dismiss_circle": "IconCircleX (close this pane)",
-    "bot_sparkle": "IconSparkles (the assistant)",
-    "agents": "IconLayers (ask several hosts)",
     "warning": "IconTriangleAlert (a failed connection)",
     "checkmark_circle": "IconCircleCheck (the chosen theme or provider)",
 }
