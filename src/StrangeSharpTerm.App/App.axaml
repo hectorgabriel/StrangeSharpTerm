@@ -18,6 +18,14 @@
     </Application.Resources>
 
     <Application.Styles>
+        <!--
+            The terminal control's template. The control adds this itself, once,
+            from its static constructor, and only if an Application exists by
+            then; when it does not, every terminal is an empty box. Named here it
+            cannot miss, and the control sees it and adds no second copy. First,
+            where the control would have put it.
+        -->
+        <StyleInclude Source="avares://Iciclecreek.Avalonia.Terminal/Themes/Generic.axaml" />
         <FluentTheme />
         <StyleInclude Source="avares://StrangeSharpTerm/Styles/Chrome.axaml" />
     </Application.Styles>
