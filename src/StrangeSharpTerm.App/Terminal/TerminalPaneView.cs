@@ -107,6 +107,12 @@ public sealed class TerminalPaneView : UserControl, IThemedPane, IDisposable
         // that has nothing to draw into. The spike connected after its window had
         // opened, which hid the distinction.
         _terminal.AttachConnection(new SessionPtyConnection(Session));
+        // The control reports a size only when layout changes it, and layout has
+        // already run, so the size it opened at would never reach the server.
+        // Readline then wraps at the old width, and redrawing a wrapped line —
+        // un-highlighting a paste, say — lands a row too high and shows it twice.
+        if (_terminal.Terminal is { } engine)
+            Session.Resize(engine.Cols, engine.Rows);
         Apply(_palette);
 
         // After layout: a control cannot take focus before it has a place on
