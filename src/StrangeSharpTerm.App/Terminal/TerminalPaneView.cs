@@ -106,7 +106,13 @@ public sealed class TerminalPaneView : UserControl, IThemedPane, IDisposable
         // builds its surface between the two, and a connection handed over before
         // that has nothing to draw into. The spike connected after its window had
         // opened, which hid the distinction.
-        _terminal.AttachConnection(new SessionPtyConnection(Session));
+        //
+        // The view inside the template draws, so it is the one whose font
+        // lookups have to be done ahead of it; the template exists by now.
+        var fonts = _terminal.GetVisualDescendants().OfType<TerminalView>().FirstOrDefault() is { } view
+            ? FallbackFonts.For(view)
+            : null;
+        _terminal.AttachConnection(new SessionPtyConnection(Session, fonts));
         // The control reports a size only when layout changes it, and layout has
         // already run, so the size it opened at would never reach the server.
         // Readline then wraps at the old width, and redrawing a wrapped line —
