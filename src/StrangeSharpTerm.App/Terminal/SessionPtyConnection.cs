@@ -11,9 +11,14 @@ namespace StrangeSharpTerm.App.Terminal;
 /// no local process behind any of it — the pty belongs to the server — which is
 /// exactly why this works the same on both platforms.
 /// </summary>
-internal sealed class SessionPtyConnection(TerminalSession session) : IPtyConnection
+internal sealed class SessionPtyConnection(TerminalSession session, FallbackFonts? fonts = null) : IPtyConnection
 {
-    public Stream ReaderStream => session.Stream;
+    /// <summary>
+    /// The session's stream, with each chunk shown to <paramref name="fonts"/>
+    /// on the way past: on the control's reading thread, before the control
+    /// writes it into its engine, so nothing it draws is new to it by then.
+    /// </summary>
+    public Stream ReaderStream { get; } = fonts is null ? session.Stream : new Observed(session.Stream, fonts.Observe);
 
     public Stream WriterStream => session.Stream;
 
@@ -67,4 +72,53 @@ internal sealed class SessionPtyConnection(TerminalSession session) : IPtyConnec
     }
 
     public void Dispose() => session.Dispose();
+
+    /// <summary>
+    /// Reads through to another stream and hands on what it read. Writes are
+    /// not its business: the control writes keystrokes to <see cref="WriterStream"/>.
+    /// </summary>
+    private sealed class Observed(Stream inner, Observer observe) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+        {
+            var read = inner.Read(buffer);
+            if (read > 0)
+                observe(buffer[..read]);
+            return read;
+        }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = await inner.ReadAsync(buffer, cancellationToken);
+            if (read > 0)
+                observe(buffer.Span[..read]);
+            return read;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override void Flush() { }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    private delegate void Observer(ReadOnlySpan<byte> bytes);
 }
