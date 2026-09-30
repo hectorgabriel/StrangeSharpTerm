@@ -133,7 +133,7 @@ public class DrivingTests
             driving.ShouldBeEmpty();
 
             // And running it narrates, in and out, exactly as Ask mode does.
-            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Headless.Finish(model.CarryPlanCommand.ExecuteAsync(null));
 
             driving.Count.ShouldBe(2);
             driving[0].ShouldSatisfyAllConditions(

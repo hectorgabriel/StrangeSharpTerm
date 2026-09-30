@@ -370,4 +370,74 @@ public class PlannerTests
 
         reading.ShouldBeOfType<PlanReading.Refused>().Reason.ShouldBe("The key was refused.");
     }
+
+    /// <summary>
+    /// A question about the plan is answered, and not with a plan.
+    ///
+    /// Everything said to the planner used to be read as a request for one, so
+    /// "why web-01?" came back as a plan or as a refusal -- there was no way to
+    /// argue with it short of throwing it away.
+    /// </summary>
+    [Fact]
+    public async Task AQuestionAboutThePlanIsAnsweredInProse()
+    {
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Says(Answer),
+            ScriptedBackend.Says("Because it is the only host with enough memory."));
+        var planner = new Planner(backend);
+
+        await planner.Draft("build a cluster", ["web-01"], TestContext.Current.CancellationToken);
+        var discussed = await planner.Discuss("why web-01?", ["web-01"], TestContext.Current.CancellationToken);
+
+        discussed.Failed.ShouldBeNull();
+        discussed.Answer.ShouldBe("Because it is the only host with enough memory.");
+        // Told this turn is a discussion, and shown the plan it is about.
+        backend.Requests[1].System.ShouldContain("This turn is a discussion");
+        backend.Requests[1].Messages.Select(message => message.Text).ShouldContain(Answer);
+        planner.Turns.ShouldBe(2);
+    }
+
+    /// <summary>
+    /// The revision is written by a planner that remembers being argued with.
+    /// </summary>
+    [Fact]
+    public async Task TheNextPlanIsWrittenWithTheDiscussionBehindIt()
+    {
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Says(Answer),
+            ScriptedBackend.Says("You are right, containerd is the better choice."),
+            ScriptedBackend.Says(Answer));
+        var planner = new Planner(backend);
+
+        await planner.Draft("build a cluster", ["web-01"], TestContext.Current.CancellationToken);
+        await planner.Discuss("should it not be containerd?", ["web-01"], TestContext.Current.CancellationToken);
+        await planner.Draft("revise it", ["web-01"], TestContext.Current.CancellationToken);
+
+        var revising = backend.Requests[2];
+        revising.System.ShouldNotContain("This turn is a discussion");
+        revising.Messages.Select(message => message.Text)
+            .ShouldContain("You are right, containerd is the better choice.");
+    }
+
+    /// <summary>
+    /// A long think reaches whoever listens as a handful of copies, not one per
+    /// token -- and the last one is all of it.
+    /// </summary>
+    [Fact]
+    public async Task ThinkingIsHandedOnSpacedAndWhole()
+    {
+        const int tokens = 2000;
+        var streamed = new List<AssistEvent>();
+        for (var token = 0; token < tokens; token++)
+            streamed.Add(new AssistEvent.Reasoning("word "));
+        streamed.AddRange(ScriptedBackend.Says(Answer));
+        var planner = new Planner(new ScriptedBackend(streamed));
+        var heard = new List<string>();
+        planner.Thought += (_, thought) => heard.Add(thought);
+
+        await planner.Draft("build a cluster", ["web-01"], TestContext.Current.CancellationToken);
+
+        heard[^1].ShouldBe(string.Concat(Enumerable.Repeat("word ", tokens)));
+        heard.Count.ShouldBeLessThan(tokens / 10);
+    }
 }

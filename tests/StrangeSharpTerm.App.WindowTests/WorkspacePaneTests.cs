@@ -145,7 +145,7 @@ public class WorkspacePaneTests
             Dispatcher.UIThread.RunJobs();
             model.Phases.ShouldHaveSingleItem();
 
-            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Headless.Finish(model.CarryPlanCommand.ExecuteAsync(null));
             Dispatcher.UIThread.RunJobs();
 
             // The worker was asked, and offered nothing about the host's files.

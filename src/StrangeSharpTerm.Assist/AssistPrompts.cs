@@ -308,6 +308,25 @@ public static class AssistPrompts
     }
 
     /// <summary>
+    /// What turns the planner into something to argue with, for one turn.
+    ///
+    /// Appended after the planner's own prompt rather than replacing it: the
+    /// rules for what a plan may contain are exactly what a question like "why
+    /// not sudo tee?" is about, and a planner that had forgotten them would
+    /// defend a plan it could never have written.
+    /// </summary>
+    public static string PlannerDiscussion { get; } = string.Join("\n",
+        "This turn is a discussion, not a request for a plan. The user is questioning the plan,",
+        "or the approach, before anything runs. Ignore the instruction above to answer with JSON:",
+        "answer in plain prose, briefly, and write no plan.",
+        "",
+        "Explain your reasoning where asked. Where the user has a point, say so plainly and say",
+        "what you would change. Where you disagree, say why, with the concrete risk. Do not",
+        "agree just to be agreeable -- the plan will run on real servers.",
+        "",
+        "The user will ask for a revised plan when they want one; do not write it now.");
+
+    /// <summary>
     /// What writes a saving phase's file. It chooses the words and nothing
     /// else: the file is the one the person read in the plan.
     /// </summary>

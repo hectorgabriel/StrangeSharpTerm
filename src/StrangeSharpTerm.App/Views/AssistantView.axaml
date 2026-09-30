@@ -93,7 +93,7 @@
                                     </Button>
                                     <TextBlock Classes="muted" FontSize="11" FontStyle="Italic"
                                                TextWrapping="Wrap" IsVisible="{Binding ShowsReasoning}"
-                                               Text="{Binding Reasoning}" />
+                                               Text="{Binding ReasoningShown}" />
 
                                     <!-- The answer, with its bold, its lists and its
                                          fenced blocks drawn as what they are. Every
