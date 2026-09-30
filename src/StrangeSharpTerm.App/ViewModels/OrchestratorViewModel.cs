@@ -151,9 +151,25 @@ public sealed partial class FindingRow : ObservableObject, IDisposable
 }
 
 /// <summary>A phase of a plan, as the pane draws it and lets it be switched off.</summary>
-public sealed partial class PhaseRow(PlanPhase phase, int number) : ObservableObject
+/// <param name="before">
+/// The version this one revised, or null for a first draft: what lets the row
+/// say it is new or changed, so a revision is read for what it changed rather
+/// than from the top.
+/// </param>
+public sealed partial class PhaseRow(PlanPhase phase, int number, RunPlan? before = null) : ObservableObject
 {
     public PlanPhase Phase { get; } = phase;
+
+    /// <summary>"new", "changed", or empty where the last version did exactly this.</summary>
+    public string Change { get; } = before switch
+    {
+        null => "",
+        _ when before.Phases.Any(earlier => earlier.DoesTheSameAs(phase)) => "",
+        _ when before.Phases.Any(earlier => earlier.Name == phase.Name) => "changed",
+        _ => "new",
+    };
+
+    public bool IsChanged => Change.Length > 0;
 
     public string Number => $"{number}.";
 
@@ -476,13 +492,14 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     ///
     /// The screen shows one plan at a time, so without this there is nothing to
     /// tell you whether "put it on the other one" will be understood as a change
-    /// to the last plan or read cold.
+    /// to the last plan or read cold. Counted as exchanges rather than plans,
+    /// since a question about a plan, or a critique of one, is remembered too.
     /// </summary>
     public string Continuing => _planner.Turns switch
     {
         0 => "",
-        1 => "continuing from 1 earlier plan",
-        var turns => $"continuing from {turns} earlier plans",
+        1 => "the planner remembers 1 earlier exchange",
+        var turns => $"the planner remembers {turns} earlier exchanges",
     };
 
     public bool IsContinuing => _planner.Turns > 0;
@@ -603,6 +620,110 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 
     public bool CanReviseFromDiscussion => IsPlanning && HasDiscussion && !IsRunning && Chosen.Count > 0;
 
+    /// <summary>
+    /// Asks the planner to find fault with its own plan. The answer lands under
+    /// the plan like any discussion, where "Revise the plan with this" can act on it.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCarryPlan))]
+    public Task Critique() => Discuss("Critique this plan", AssistPrompts.PlannerCritique);
+
+    /// <summary>
+    /// One plan the planner wrote, the change it was written for, and which
+    /// version it revised -- not always the one before it in the list, since a
+    /// revision can be asked for with an older version on screen.
+    /// </summary>
+    private sealed record PlanVersion(RunPlan Plan, string Revised, PlanVersion? Revising);
+
+    /// <summary>
+    /// Every plan written for the goal on screen, oldest first.
+    ///
+    /// A revision used to replace its plan outright, so after three rounds of
+    /// argument there was no way to see what the argument had changed, or to go
+    /// back to the version that was better.
+    /// </summary>
+    private readonly List<PlanVersion> _versions = [];
+
+    /// <summary>Which of them is on screen, and so which one runs.</summary>
+    private int _shown = -1;
+
+    public bool HasVersions => IsPlanning && _versions.Count > 1;
+
+    public string VersionNote => _versions.Count == 0 ? "" : $"version {_shown + 1} of {_versions.Count}";
+
+    /// <summary>What the version on screen dropped from the one before it.</summary>
+    public string Dropped
+    {
+        get
+        {
+            if (_shown < 0 || _versions[_shown].Revising is not { } before)
+                return "";
+            var now = _versions[_shown].Plan.Phases;
+            var gone = before.Plan.Phases
+                .Where(earlier => now.All(phase => phase.Name != earlier.Name))
+                .Select(earlier => earlier.Name)
+                .ToList();
+            return gone.Count == 0 ? "" : $"dropped: {string.Join(", ", gone)}";
+        }
+    }
+
+    public bool HasDropped => Dropped.Length > 0;
+
+    [RelayCommand(CanExecute = nameof(CanShowEarlier))]
+    public void ShowEarlier() => Show(_shown - 1);
+
+    public bool CanShowEarlier => !IsRunning && _shown > 0;
+
+    [RelayCommand(CanExecute = nameof(CanShowLater))]
+    public void ShowLater() => Show(_shown + 1);
+
+    public bool CanShowLater => !IsRunning && _shown < _versions.Count - 1;
+
+    /// <summary>
+    /// Puts a version on screen, marked against the one before it.
+    ///
+    /// The planner is told only when the next question goes: stepping back
+    /// through versions to read them is not a decision, and asking something
+    /// with an older one on screen is.
+    /// </summary>
+    private void Show(int index)
+    {
+        if (index < 0 || index >= _versions.Count)
+            return;
+
+        _shown = index;
+        var (plan, revised, revising) = _versions[index];
+        var before = revising?.Plan;
+
+        Phases.Clear();
+        Forget(Findings);
+        foreach (var (phase, number) in plan.Phases.Select((phase, at) => (phase, at + 1)))
+            Phases.Add(new PhaseRow(phase, number, before));
+        Revised = revised;
+        Progress = $"{plan.Summary} · not run yet";
+        Versioned();
+    }
+
+    /// <summary>Everything that reads which version is on screen.</summary>
+    private void Versioned()
+    {
+        OnPropertyChanged(nameof(HasVersions));
+        OnPropertyChanged(nameof(VersionNote));
+        OnPropertyChanged(nameof(Dropped));
+        OnPropertyChanged(nameof(HasDropped));
+        ShowEarlierCommand.NotifyCanExecuteChanged();
+        ShowLaterCommand.NotifyCanExecuteChanged();
+        PlanChanged();
+    }
+
+    /// <summary>Tells the planner which plan the next question is about.</summary>
+    private void SayWhichPlan()
+    {
+        if (_shown >= 0 && _shown < _versions.Count - 1)
+            _planner.ReturnTo(_versions[_shown].Plan);
+        else
+            _planner.Current();
+    }
+
     /// <summary>Everything that reads whether a plan is on screen.</summary>
     private void PlanChanged()
     {
@@ -610,6 +731,7 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         OnPropertyChanged(nameof(RunLabel));
         OnPropertyChanged(nameof(PlanWatermark));
         CarryPlanCommand.NotifyCanExecuteChanged();
+        CritiqueCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(ShowsCarryPlan));
     }
 
@@ -625,6 +747,8 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         OnPropertyChanged(nameof(ShowsGoal));
         OnPropertyChanged(nameof(HasRevision));
         OnPropertyChanged(nameof(PlanWatermark));
+        OnPropertyChanged(nameof(HasVersions));
+        CritiqueCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnInstructionChanged(string value) => RunCommand.NotifyCanExecuteChanged();
@@ -644,6 +768,9 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         CarryPlanCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(ShowsCarryPlan));
         ReviseFromDiscussionCommand.NotifyCanExecuteChanged();
+        CritiqueCommand.NotifyCanExecuteChanged();
+        ShowEarlierCommand.NotifyCanExecuteChanged();
+        ShowLaterCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(ThinkingShown));
     }
 
@@ -873,6 +1000,9 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 
         Thinking = "";
         IsThinkingOpen = true;
+        SayWhichPlan();
+        // A first draft starts a new line of versions; a revision adds to it.
+        var revising = HasPlan;
 
         await Working(async token =>
         {
@@ -884,14 +1014,16 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
                     case PlanReading.Ok(var plan):
                         // Replaced only now, so a revision that is refused, or
                         // stopped, leaves the plan it was revising to read.
-                        Phases.Clear();
-                        Forget(Findings);
                         Discussion.Clear();
                         OnPropertyChanged(nameof(HasDiscussion));
                         ReviseFromDiscussionCommand.NotifyCanExecuteChanged();
-                        foreach (var (phase, number) in plan.Phases.Select((phase, index) => (phase, index + 1)))
-                            Phases.Add(new PhaseRow(phase, number));
-                        Progress = $"{plan.Summary} · not run yet";
+                        // Marked against the version that was on screen when
+                        // the change was asked for, which is the one it revised.
+                        var before = revising && _shown >= 0 ? _versions[_shown] : null;
+                        if (before is null)
+                            _versions.Clear();
+                        _versions.Add(new PlanVersion(plan, before is null ? "" : goal, before));
+                        Show(_versions.Count - 1);
                         // The plan is what to read now. The reasoning stays a
                         // click away rather than pushing it off the screen.
                         IsThinkingOpen = false;
@@ -902,6 +1034,9 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
                     case PlanReading.Refused(var reason):
                         Refusal = reason;
                         Progress = HasPlan ? "the plan below is unchanged" : "";
+                        // And so is what it was revised for.
+                        if (_shown >= 0)
+                            Revised = _versions[_shown].Revised;
                         break;
                 }
                 PlanChanged();
@@ -915,13 +1050,17 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// Puts a question to the planner and shows its answer under the plan,
     /// which stays as it was.
     /// </summary>
-    private async Task Discuss()
+    /// <param name="shown">What the question is shown as, when it is not what was typed.</param>
+    /// <param name="sent">What the planner is asked, when it is not what was typed.</param>
+    private async Task Discuss(string? shown = null, string? sent = null)
     {
-        var question = Instruction.Trim();
-        Instruction = "";
+        var question = sent ?? Instruction.Trim();
+        if (sent is null)
+            Instruction = "";
         Refusal = null;
+        SayWhichPlan();
 
-        var row = new DiscussionRow(question);
+        var row = new DiscussionRow(shown ?? question);
         Discussion.Add(row);
         OnPropertyChanged(nameof(HasDiscussion));
 
@@ -1052,6 +1191,9 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     public void Discard()
     {
         Phases.Clear();
+        _versions.Clear();
+        _shown = -1;
+        Versioned();
         Discussion.Clear();
         OnPropertyChanged(nameof(HasDiscussion));
         ReviseFromDiscussionCommand.NotifyCanExecuteChanged();

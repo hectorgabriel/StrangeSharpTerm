@@ -171,4 +171,36 @@ public class RunPlanTests
 
     private static string Refused(string answer) =>
         RunPlan.Read(answer, Hosts).ShouldBeOfType<PlanReading.Refused>().Reason;
+
+    /// <summary>
+    /// A plan handed back to the planner reads as the plan it was: the same
+    /// phases, and none of the ones switched off.
+    /// </summary>
+    [Fact]
+    public void APlanWrittenOutReadsBackAsTheSamePlan()
+    {
+        var plan = RunPlan.Read(Cluster, Hosts).ShouldBeOfType<PlanReading.Ok>().Plan;
+        plan.Phases[^1].IsEnabled = false;
+
+        var again = RunPlan.Read(plan.ToJson(), Hosts).ShouldBeOfType<PlanReading.Ok>().Plan;
+
+        again.Phases.Count.ShouldBe(plan.Phases.Count - 1);
+        again.Phases.Zip(plan.Phases).ShouldAllBe(pair => pair.First.DoesTheSameAs(pair.Second));
+    }
+
+    /// <summary>
+    /// Two phases that would run the same commands on the same hosts are the
+    /// same phase, however differently the reason is worded -- and a record's
+    /// own equality, which compares lists by reference, would say otherwise.
+    /// </summary>
+    [Fact]
+    public void APhaseIsTheSameWhenItWouldDoTheSame()
+    {
+        var one = new PlanPhase { Name = "Look", Hosts = ["web-01"], Commands = ["uptime"], Why = "to see" };
+        var reworded = new PlanPhase { Name = "Look", Hosts = ["web-01"], Commands = ["uptime"], Why = "to check" };
+        var elsewhere = new PlanPhase { Name = "Look", Hosts = ["web-02"], Commands = ["uptime"] };
+
+        one.DoesTheSameAs(reworded).ShouldBeTrue();
+        one.DoesTheSameAs(elsewhere).ShouldBeFalse();
+    }
 }

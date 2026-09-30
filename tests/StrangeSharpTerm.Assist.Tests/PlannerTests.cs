@@ -440,4 +440,31 @@ public class PlannerTests
         heard[^1].ShouldBe(string.Concat(Enumerable.Repeat("word ", tokens)));
         heard.Count.ShouldBeLessThan(tokens / 10);
     }
+
+    /// <summary>
+    /// Going back to an earlier version is said with the next question, and
+    /// once: without it, "drop the second phase" is applied to the plan written
+    /// last, which nobody is looking at any more.
+    /// </summary>
+    [Fact]
+    public async Task GoingBackToAnEarlierPlanIsSaidWithTheNextQuestionOnce()
+    {
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Says(Answer),
+            ScriptedBackend.Says("Noted."),
+            ScriptedBackend.Says("Still noted."));
+        var planner = new Planner(backend);
+        var earlier = RunPlan.Read(Answer, ["web-01"]).ShouldBeOfType<PlanReading.Ok>().Plan;
+
+        await planner.Draft("build a cluster", ["web-01"], TestContext.Current.CancellationToken);
+        planner.ReturnTo(earlier);
+        await planner.Discuss("is this one safer?", ["web-01"], TestContext.Current.CancellationToken);
+        await planner.Discuss("and now?", ["web-01"], TestContext.Current.CancellationToken);
+
+        var told = backend.Requests[1].Messages[^1].Text.ShouldNotBeNull();
+        told.ShouldContain("went back to this earlier version");
+        told.ShouldContain("apt-get install -y containerd");
+        told.ShouldEndWith("is this one safer?");
+        backend.Requests[2].Messages[^1].Text.ShouldBe("and now?");
+    }
 }
