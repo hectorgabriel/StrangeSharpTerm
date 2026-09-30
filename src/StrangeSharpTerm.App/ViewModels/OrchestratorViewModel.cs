@@ -159,7 +159,7 @@ public sealed partial class PhaseRow(PlanPhase phase, int number) : ObservableOb
 
     public string Name => Phase.Name;
 
-    public string Hosts => string.Join(", ", Phase.Hosts);
+    public string Hosts => Phase.Saves ? "this machine" : string.Join(", ", Phase.Hosts);
 
     /// <summary>Why this phase is on these hosts, where the planner said.</summary>
     public string? Why => Phase.Why;
@@ -172,7 +172,7 @@ public sealed partial class PhaseRow(PlanPhase phase, int number) : ObservableOb
     /// Not summarised and not counted: a plan is worth reviewing only to the
     /// extent the thing reviewed is the thing that runs.
     /// </summary>
-    public string Commands => string.Join("\n", Phase.Commands);
+    public string Commands => Phase.Saves ? $"save → {Phase.Save}" : string.Join("\n", Phase.Commands);
 
     public bool Yields => Phase.Capture is { Length: > 0 };
 
@@ -318,7 +318,9 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         // the conversation is the point of them.
         // The same folder as Ask mode, read-only: a plan is often written from a
         // runbook, and the runbook is here.
-        _planner = new Planner(backend, localWorkspace);
+        // Saving a file here is the one thing a plan may write, and only while
+        // the switch says so -- asked on every draft, not once.
+        _planner = new Planner(backend, localWorkspace, () => MayEditFiles);
         // Spaced rather than shown as it arrives: this is a token at a time, and
         // each one carries the whole think so far, so drawing every one of them
         // re-wraps a paragraph that only grows. The newest is the only one worth
@@ -793,7 +795,10 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             (row.Outcome, row.Captured, row.Note) = ("", null, null);
         }
 
-        var runner = new PlanRunner(AgentFor);
+        var saver = new PlanSaver(_backend, _localWorkspace, this, () => MayEditFiles);
+        saver.Wrote += (_, change) => _screen.Now(() => WroteHere?.Invoke(this, change));
+        saver.Looked += (_, step) => _screen.Now(() => Progress = step.Command);
+        var runner = new PlanRunner(AgentFor, saver);
 
         // A row per host the moment the phase is sent, each following its agent
         // from now on -- the agent's transcript spans the whole plan, and this
@@ -859,49 +864,11 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             // it. Without this the plan is written, the hosts carry it out, and
             // the next question is answered by the one participant that never
             // found out whether any of it worked.
-            var reported = Reported(result);
-            _planner.Record(reported);
+            _planner.Record(result.Report());
         });
     }
 
-    /// <summary>
-    /// What a run amounts to, in the shape the summariser already reads: each
-    /// phase, what became of it, and what each of its hosts said.
-    /// </summary>
-    private static string Reported(PlanRunResult run)
-    {
-        List<string> lines = [];
-        foreach (var phase in run.Phases)
-        {
-            lines.Add($"# {phase.Phase.Name} ({Describe(phase.Outcome)})");
-            if (phase.Note is { Length: > 0 } note)
-                lines.Add(note);
-            if (phase is { CapturedName: { Length: > 0 } name, Captured: { Length: > 0 } value })
-                lines.Add($"{name} = {value}");
-            foreach (var finding in phase.Findings)
-            {
-                lines.Add($"## {finding.Alias} ({finding.Label})");
-                lines.Add(finding.Text);
-            }
-            lines.Add("");
-        }
-
-        if (run.Stopped && run.StoppedBecause is { Length: > 0 } because)
-            lines.Add($"The run stopped: {because}");
-
-        // The same string on either operating system, as the context block is.
-        return string.Join('\n', lines).Replace("\r", "").Trim();
-    }
-
-    private static string Describe(PhaseOutcome outcome) => outcome switch
-    {
-        PhaseOutcome.Completed => "done",
-        PhaseOutcome.Disabled => "switched off",
-        PhaseOutcome.Stalled => "no host completed it",
-        PhaseOutcome.NothingCaptured => "produced no value",
-        PhaseOutcome.Unfilled => "skipped",
-        _ => "not reached",
-    };
+    private static string Describe(PhaseOutcome outcome) => PlanRunResult.Describe(outcome);
 
     /// <summary>Throws the plan away and starts again. Nothing it already ran is undone.</summary>
     [RelayCommand]

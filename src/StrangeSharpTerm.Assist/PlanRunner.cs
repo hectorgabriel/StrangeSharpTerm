@@ -21,6 +21,12 @@ public enum PhaseOutcome
 
     /// <summary>An earlier phase ended the run.</summary>
     NotReached,
+
+    /// <summary>A saving phase wrote its file.</summary>
+    Saved,
+
+    /// <summary>A saving phase wrote nothing: refused, switched off, or no folder open.</summary>
+    NotSaved,
 }
 
 /// <summary>What one phase did.</summary>
@@ -33,7 +39,54 @@ public sealed record PhaseResult(
     string? Note = null);
 
 /// <summary>A whole planned run.</summary>
-public sealed record PlanRunResult(IReadOnlyList<PhaseResult> Phases, bool Stopped, string? StoppedBecause = null);
+public sealed record PlanRunResult(IReadOnlyList<PhaseResult> Phases, bool Stopped, string? StoppedBecause = null)
+{
+    /// <summary>What happened to a phase, in the words the pane shows beside it.</summary>
+    public static string Describe(PhaseOutcome outcome) => outcome switch
+    {
+        PhaseOutcome.Completed => "done",
+        PhaseOutcome.Disabled => "switched off",
+        PhaseOutcome.Stalled => "no host completed it",
+        PhaseOutcome.NothingCaptured => "produced no value",
+        PhaseOutcome.Unfilled => "skipped",
+        PhaseOutcome.Saved => "saved",
+        PhaseOutcome.NotSaved => "not saved",
+        _ => "not reached",
+    };
+
+    /// <summary>
+    /// What a run amounts to, for a model to read: each phase, what became of
+    /// it, and what each of its hosts said. The planner is told this after a
+    /// run, and a saving phase is told it for the phases before it.
+    /// </summary>
+    public static string Report(IEnumerable<PhaseResult> phases, string? stoppedBecause = null)
+    {
+        List<string> lines = [];
+        foreach (var phase in phases)
+        {
+            lines.Add($"# {phase.Phase.Name} ({Describe(phase.Outcome)})");
+            if (phase.Note is { Length: > 0 } note)
+                lines.Add(note);
+            if (phase is { CapturedName: { Length: > 0 } name, Captured: { Length: > 0 } value })
+                lines.Add($"{name} = {value}");
+            foreach (var finding in phase.Findings)
+            {
+                lines.Add($"## {finding.Alias} ({finding.Label})");
+                lines.Add(finding.Text);
+            }
+            lines.Add("");
+        }
+
+        if (stoppedBecause is { Length: > 0 } because)
+            lines.Add($"The run stopped: {because}");
+
+        // The same string on either operating system, as the context block is.
+        return string.Join('\n', lines).Replace("\r", "").Trim();
+    }
+
+    /// <inheritdoc cref="Report(IEnumerable{PhaseResult}, string?)"/>
+    public string Report() => Report(Phases, Stopped ? StoppedBecause : null);
+}
 
 /// <summary>
 /// Carries out a plan.
@@ -47,7 +100,11 @@ public sealed record PlanRunResult(IReadOnlyList<PhaseResult> Phases, bool Stopp
 /// or one that did not produce the value later phases need -- ends the run and
 /// says so. What was already done stays on screen.
 /// </summary>
-public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
+/// <param name="saver">
+/// What writes a saving phase's file on this machine. Null where nothing can,
+/// and such a phase is then recorded as not saved.
+/// </param>
+public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor, IPlanSaver? saver = null)
 {
     /// <summary>
     /// The instruction appended to a capturing phase.
@@ -107,6 +164,21 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
             if (!phase.IsEnabled)
             {
                 results.Add(Record(new PhaseResult(phase, PhaseOutcome.Disabled, [])));
+                continue;
+            }
+
+            // Not a stop when it fails: nothing later depends on a file here,
+            // and a refused write is the person's answer rather than a fault.
+            if (phase.Saves)
+            {
+                Starting?.Invoke(this, phase);
+                var saved = saver is null
+                    ? new PlanSave(false, $"Nothing here can write files, so {phase.Save} was not saved.")
+                    : await Save(saver, phase, results, cancellationToken);
+                results.Add(Record(new PhaseResult(
+                    phase, saved.Saved ? PhaseOutcome.Saved : PhaseOutcome.NotSaved, [], Note: saved.Note)));
+                if (cancellationToken.IsCancellationRequested)
+                    stopped = $"Stopped before {phase.Save} was saved.";
                 continue;
             }
 
@@ -172,6 +244,26 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor)
         }
 
         return new PlanRunResult(results, stopped is not null, stopped);
+    }
+
+    private static async Task<PlanSave> Save(
+        IPlanSaver saver,
+        PlanPhase phase,
+        IReadOnlyList<PhaseResult> before,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await saver.Save(phase, PlanRunResult.Report(before), cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return new PlanSave(false, "Stopped.");
+        }
+        catch (Exception e)
+        {
+            return new PlanSave(false, e.Message);
+        }
     }
 
     private async Task<IReadOnlyList<HostFinding>> Carry(

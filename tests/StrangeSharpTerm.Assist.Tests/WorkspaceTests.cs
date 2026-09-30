@@ -671,6 +671,8 @@ public class FleetWorkspaceTests
         backend.Requests.Single().Tools.Select(tool => tool.Name)
             .ShouldNotContain(WorkspaceTools.WriteLocalFile);
         backend.Requests.Single().System.ShouldContain("editing is turned off");
+        // Named, so the model sends the person to the switch rather than to scp.
+        backend.Requests.Single().System.ShouldContain("\"Write files here\"");
     }
 
     [Fact]
@@ -687,6 +689,26 @@ public class FleetWorkspaceTests
             TestContext.Current.CancellationToken);
 
         backend.Requests.Single().Tools.Select(tool => tool.Name).ShouldBe([AssistTools.RunCommand]);
+        backend.Requests.Single().System.ShouldContain("open a folder");
+    }
+
+    [Fact]
+    public async Task ItIsToldItsCommandsCannotReachThisMachine()
+    {
+        var backend = new ScriptedBackend(ScriptedBackend.Says("Noted."));
+        var agent = new FleetAgent(backend, new StandingAnswer(true), null, new FakeWorkspace("/Users/you/runbooks"));
+
+        await agent.Ask(
+            "save the report here",
+            Hosts("web-01"),
+            mayRunCommands: true,
+            mayEditFiles: true,
+            TestContext.Current.CancellationToken);
+
+        var system = backend.Requests.Single().System;
+        system.ShouldContain("never on the user's own machine");
+        system.ShouldContain("write_local_file");
+        system.ShouldNotContain("\"Write files here\"");
     }
 }
 

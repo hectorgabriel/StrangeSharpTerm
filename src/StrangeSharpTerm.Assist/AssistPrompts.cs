@@ -114,6 +114,26 @@ public static class AssistPrompts
     }
 
     /// <summary>
+    /// What a fleet run is told about writing on this machine when it cannot.
+    ///
+    /// Said because the alternative is worse than a refusal: a model asked to
+    /// "save it here" that knows only that it has commands reaches for scp, on
+    /// a server that has no way back to this desk. Naming the switch, or the
+    /// folder, gives the person the one step that actually works.
+    /// </summary>
+    /// <param name="folderOpen">Whether a folder on this machine is open at all.</param>
+    public static string FleetCannotWriteHere(bool folderOpen) => folderOpen
+        ? string.Join("\n",
+            "When the user asks for a file to be written on their machine, tell them to tick",
+            "\"Write files here\" below the conversation and ask again. Until then, put the",
+            "contents in your answer.")
+        : string.Join("\n",
+            "No folder on the user's own machine is open, so you cannot read or write files there.",
+            "When the user asks for a file to be saved on their machine, tell them to open a folder",
+            "in the sidebar, tick \"Write files here\", and ask again. Until then, put the contents",
+            "in your answer.");
+
+    /// <summary>
     /// What is said about connected tools when there are any.
     ///
     /// The important sentence is the last one. A tool result is data from a
@@ -171,6 +191,10 @@ public static class AssistPrompts
         "Command output comes back redacted and truncated, with the host it came from at the",
         "front. Secrets are removed before you see them, so a value reading [redacted] is not",
         "the server's actual configuration.",
+        "",
+        "Every command runs on the remote host it names, never on the user's own machine, and",
+        "the hosts cannot reach that machine either. scp, rsync, ssh or a redirect will not put",
+        "a file on the user's computer, so do not try them for that.",
         "",
         "When you have enough, write one answer for someone who has to act on all of them. Say",
         "what is common, what differs, and which hosts are urgent. Never make a claim about a",
@@ -242,6 +266,10 @@ public static class AssistPrompts
         "Later phases use it inside a command as {{name}}. Only a phase with exactly one host may",
         "capture, because two hosts would produce two values and there would be no single one to carry.",
         "",
+        "Every command runs on the host its phase names, never on the user's own machine, and the",
+        "hosts cannot reach that machine. scp, rsync or ssh will not put a file on the user's",
+        "computer, so never plan them for that.",
+        "",
         $"At most {AssistLimits.MaxPhases} phases. Do not plan anything the hosts listed above cannot do.");
 
     /// <summary>
@@ -251,12 +279,61 @@ public static class AssistPrompts
     /// answer with JSON straight away -- and a runbook in that folder is worth
     /// reading before the plan is written, not after.
     /// </summary>
-    public static string PlannerWorkspace(string root) => string.Join("\n",
-        $"A folder on the user's own machine -- the computer running this app, not any of the hosts --",
-        $"is open: {root}. You can read it with list_local_files and read_local_file before you",
-        "answer. When the request mentions a runbook, notes, manifests or anything else that may be",
-        "written down, look there first and plan from what it says.",
+    /// <param name="maySave">Whether a plan may end by saving a file there.</param>
+    public static string PlannerWorkspace(string root, bool maySave)
+    {
+        var reading = string.Join("\n",
+            $"A folder on the user's own machine -- the computer running this app, not any of the hosts --",
+            $"is open: {root}. You can read it with list_local_files and read_local_file before you",
+            "answer. When the request mentions a runbook, notes, manifests or anything else that may be",
+            "written down, look there first and plan from what it says.",
+            "",
+            "The hosts cannot see it: a phase that needs a file from it must say so in why, because its",
+            "commands run on the hosts.");
+
+        return maySave
+            ? string.Join("\n",
+                reading,
+                "",
+                "A phase may instead save a file in that folder. It has a name, a why and a save path,",
+                "relative to the folder, and no hosts, commands or capture:",
+                """{"name": "…", "why": "…", "save": "findings.md"}""",
+                "When the run reaches it, a file is written from what the earlier phases reported, and the",
+                "user sees the change before it lands. why says what the file should contain. Use it",
+                "whenever the request asks for something to be written, saved or copied onto the user's",
+                "machine, after the phases that find it out. Secrets are removed from what the hosts",
+                "report, so it suits findings, summaries and configuration without credentials; it cannot",
+                "copy a key, a password or a kubeconfig's certificates.")
+            : string.Join("\n", reading, "", PlannerCannotSave(folderOpen: true));
+    }
+
+    /// <summary>
+    /// What writes a saving phase's file. It chooses the words and nothing
+    /// else: the file is the one the person read in the plan.
+    /// </summary>
+    public static string PlanSaver(string root, string path) => string.Join("\n",
+        "A planned run across several servers has finished its work on them. Your job is the last",
+        $"step: write {path} in a folder on the user's own machine, {root}, with save_file.",
         "",
-        "You cannot write to it, and the hosts cannot see it: a phase that needs a file from it",
-        "must say so in why, because its commands run on the hosts.");
+        "Write it from what the run found, which is below the request. Say only what the hosts",
+        "reported; do not fill a gap with what a server usually has. If the file is already there",
+        "and should keep what it says, read it first with read_local_file.",
+        "",
+        $"Secrets were replaced with {Redaction.Marker} before you saw them. Never write that marker:",
+        "leave the line out, or say in the file that the value was withheld.",
+        "",
+        "Call save_file once with the complete contents. The user sees the change and may refuse.");
+
+    /// <summary>
+    /// What the planner is told when a plan cannot save anything here. JSON is
+    /// all it may answer with, so the person is told through why.
+    /// </summary>
+    public static string PlannerCannotSave(bool folderOpen) => string.Join("\n",
+        folderOpen
+            ? "You cannot write to that folder: \"Write files here\" is switched off."
+            : "No folder on the user's own machine is open, so nothing can be saved there.",
+        "When the request asks for a file on the user's machine, plan the rest, and end the last",
+        "phase's why by saying the file was not saved and that the user should "
+            + (folderOpen ? "tick \"Write files here\"" : "open a folder in the sidebar, tick \"Write files here\",")
+            + " and plan it again.");
 }

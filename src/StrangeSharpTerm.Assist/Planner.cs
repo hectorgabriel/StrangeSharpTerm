@@ -22,7 +22,15 @@ namespace StrangeSharpTerm.Assist;
 /// Reading only: a plan writes nothing, and the run that follows it is where
 /// anything changes.
 /// </param>
-public sealed class Planner(IAssistBackend backend, IWorkspaceAccess? localWorkspace = null)
+/// <param name="maySave">
+/// Whether a plan may end in a phase that saves a file in that folder -- the
+/// pane's Write files here switch. Asked on every draft, because it is flipped
+/// while the pane is open. Null means never.
+/// </param>
+public sealed class Planner(
+    IAssistBackend backend,
+    IWorkspaceAccess? localWorkspace = null,
+    Func<bool>? maySave = null)
 {
     /// <summary>
     /// The model's reasoning, as it arrives, where the provider offers it.
@@ -101,7 +109,7 @@ public sealed class Planner(IAssistBackend backend, IWorkspaceAccess? localWorks
                 return new PlanReading.Refused(e.Message);
             }
 
-            var reading = RunPlan.Read(answer, hosts);
+            var reading = RunPlan.Read(answer, hosts, MaySave);
 
             // Kept whatever it says, refusals included. A plan refused for naming a
             // host nobody selected is exactly the turn the next one needs to see, or
@@ -157,8 +165,8 @@ public sealed class Planner(IAssistBackend backend, IWorkspaceAccess? localWorks
                     // fresh each time: what is ticked changes between turns, and
                     // an earlier turn's list must not outlive it.
                     System = Here is { } here
-                        ? string.Join("\n\n", AssistPrompts.Planner(hosts), AssistPrompts.PlannerWorkspace(here.RootLabel))
-                        : AssistPrompts.Planner(hosts),
+                        ? string.Join("\n\n", AssistPrompts.Planner(hosts), AssistPrompts.PlannerWorkspace(here.RootLabel, MaySave))
+                        : string.Join("\n\n", AssistPrompts.Planner(hosts), AssistPrompts.PlannerCannotSave(folderOpen: false)),
                     Messages = [.. working],
                     // None on the last turn, so it has to answer with a plan.
                     Tools = Here is not null && turn < AssistLimits.RunBudget ? WorkspaceTools.ReadingLocal : [],
@@ -199,6 +207,9 @@ public sealed class Planner(IAssistBackend backend, IWorkspaceAccess? localWorks
 
     /// <inheritdoc cref="FleetAgent"/>
     private IWorkspaceAccess? Here => localWorkspace is { Root.Length: > 0 } open ? open : null;
+
+    /// <summary>Whether a plan drafted now may save a file here.</summary>
+    private bool MaySave => Here is not null && maySave?.Invoke() == true;
 
     /// <summary>
     /// A file read while drafting, on this machine, as the pane shows it.
