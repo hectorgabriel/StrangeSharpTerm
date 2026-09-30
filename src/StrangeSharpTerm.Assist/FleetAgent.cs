@@ -264,10 +264,16 @@ public sealed class FleetAgent(
         return offered;
     }
 
-    private string System(bool mayEditFiles) =>
-        Here is { } here
-            ? string.Join("\n\n", AssistPrompts.Fleet, AssistPrompts.LocalWorkspace(here.RootLabel, mayEditFiles))
-            : AssistPrompts.Fleet;
+    private string System(bool mayEditFiles) => Here switch
+    {
+        { } here when mayEditFiles =>
+            string.Join("\n\n", AssistPrompts.Fleet, AssistPrompts.LocalWorkspace(here.RootLabel, true)),
+        { } here => string.Join("\n\n",
+            AssistPrompts.Fleet,
+            AssistPrompts.LocalWorkspace(here.RootLabel, false),
+            AssistPrompts.FleetCannotWriteHere(folderOpen: true)),
+        null => string.Join("\n\n", AssistPrompts.Fleet, AssistPrompts.FleetCannotWriteHere(folderOpen: false)),
+    };
 
     /// <summary>A file on this machine was written by the assistant.</summary>
     public event EventHandler<FileChange>? WroteHere;

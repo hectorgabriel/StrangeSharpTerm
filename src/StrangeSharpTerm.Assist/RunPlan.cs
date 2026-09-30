@@ -42,6 +42,21 @@ public sealed record PlanPhase
     public string? Capture { get; init; }
 
     /// <summary>
+    /// The file this phase writes in the folder open on this machine, or null
+    /// for an ordinary phase.
+    ///
+    /// A saving phase has no hosts and no commands. The hosts cannot reach this
+    /// machine, so without it the only way a plan could say "and put it here"
+    /// was scp -- run on a server with no route back to the desk. What is
+    /// written is made from what the earlier phases reported, and it stops at
+    /// the gate with its diff like any other write.
+    /// </summary>
+    public string? Save { get; init; }
+
+    /// <summary>Whether this phase writes a file here rather than running anything on a host.</summary>
+    public bool Saves => Save is { Length: > 0 };
+
+    /// <summary>
     /// Whether it will run. A plan is shown in full and phases can be switched
     /// off, because a plan summarised into "3 phases, 4 hosts" would be a plan
     /// nobody could review.
@@ -66,7 +81,11 @@ public sealed partial record RunPlan(IReadOnlyList<PlanPhase> Phases)
     /// with a Run button beneath it puts the whole weight of the check on
     /// somebody reading carefully.
     /// </summary>
-    public static PlanReading Read(string? answer, IReadOnlyList<string> selectedHosts)
+    /// <param name="maySave">
+    /// Whether a phase may write a file on this machine: a folder is open and
+    /// the switch that allows writing there is on.
+    /// </param>
+    public static PlanReading Read(string? answer, IReadOnlyList<string> selectedHosts, bool maySave = false)
     {
         if (string.IsNullOrWhiteSpace(answer))
             return new PlanReading.Refused("The planner returned nothing.");
@@ -104,11 +123,12 @@ public sealed partial record RunPlan(IReadOnlyList<PlanPhase> Phases)
                         .Where(command => command.Length > 0)]
                     : [],
                 Capture = Text(phase, "capture") is { Length: > 0 } capture ? capture : null,
+                Save = Text(phase, "save") is { Length: > 0 } save ? save : null,
             });
         }
 
         var plan = new RunPlan(read);
-        return Check(plan, selectedHosts) is { } refusal
+        return Check(plan, selectedHosts, maySave) is { } refusal
             ? new PlanReading.Refused(refusal)
             : new PlanReading.Ok(plan);
     }
@@ -118,7 +138,7 @@ public sealed partial record RunPlan(IReadOnlyList<PlanPhase> Phases)
     ///
     /// Null when there is none.
     /// </summary>
-    internal static string? Check(RunPlan plan, IReadOnlyList<string> selectedHosts)
+    internal static string? Check(RunPlan plan, IReadOnlyList<string> selectedHosts, bool maySave = false)
     {
         if (plan.Phases.Count == 0)
             return "The plan had no phases in it.";
@@ -131,6 +151,22 @@ public sealed partial record RunPlan(IReadOnlyList<PlanPhase> Phases)
 
         foreach (var (phase, number) in plan.Phases.Select((phase, index) => (phase, index + 1)))
         {
+            if (phase.Saves)
+            {
+                if (!maySave)
+                    return $"Phase {number}, {phase.Name}, saves {phase.Save} on the user's machine, and writing there is switched off.";
+
+                // One thing or the other. A phase that both ran commands and
+                // saved would put two different machines under one checkbox.
+                if (phase.Hosts.Count > 0 || phase.Commands.Count > 0 || phase.Capture is { Length: > 0 })
+                    return $"Phase {number}, {phase.Name}, saves {phase.Save}, so it cannot also name hosts, commands or a capture.";
+
+                if (RunPlan.PlaceholdersIn(phase.Save).Count > 0)
+                    return $"Phase {number}, {phase.Name}, saves to {phase.Save}, and a file's name cannot use a captured value.";
+
+                continue;
+            }
+
             if (phase.Hosts.Count == 0)
                 return $"Phase {number}, {phase.Name}, names no hosts.";
 
