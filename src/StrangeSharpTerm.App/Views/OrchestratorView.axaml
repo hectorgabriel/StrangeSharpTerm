@@ -216,6 +216,24 @@
                     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding HasPlan}"
                                Text="Nothing has run. Read it, switch off anything you do not want, then run it." />
 
+                    <!-- Which version this is, once there is more than one, and
+                         a way back to the others. Each phase below is marked
+                         against the version it revised. -->
+                    <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasVersions}">
+                        <Button Classes="row" Padding="8,2" Command="{Binding ShowEarlierCommand}"
+                                ToolTip.Tip="The version before this one">
+                            <TextBlock Text="‹" FontSize="12" />
+                        </Button>
+                        <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center"
+                                   Text="{Binding VersionNote}" />
+                        <Button Classes="row" Padding="8,2" Command="{Binding ShowLaterCommand}"
+                                ToolTip.Tip="The version after this one">
+                            <TextBlock Text="›" FontSize="12" />
+                        </Button>
+                    </StackPanel>
+                    <TextBlock Classes="warning" FontSize="11" TextWrapping="Wrap"
+                               IsVisible="{Binding HasDropped}" Text="{Binding Dropped}" />
+
                     <ItemsControl ItemsSource="{Binding Phases}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:PhaseRow">
@@ -225,8 +243,13 @@
                                                   VerticalAlignment="Top" IsChecked="{Binding IsEnabled}" />
                                         <TextBlock Grid.Row="0" Grid.Column="1" Classes="muted" Margin="0,0,8,0"
                                                    Text="{Binding Number}" />
-                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding Name}"
-                                                   FontWeight="SemiBold" TextWrapping="Wrap" />
+                                        <WrapPanel Grid.Row="0" Grid.Column="2" ItemSpacing="6">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            <!-- What a revision changed, so it is read for that
+                                                 rather than from the top again. -->
+                                            <TextBlock Classes="warning" FontSize="10" VerticalAlignment="Center"
+                                                       IsVisible="{Binding IsChanged}" Text="{Binding Change}" />
+                                        </WrapPanel>
                                         <TextBlock Grid.Row="0" Grid.Column="3" Classes="muted" FontSize="11"
                                                    Text="{Binding Hosts}" />
 
@@ -313,6 +336,8 @@
                                     <TextBlock Classes="section" Text="YOU" />
                                     <SelectableTextBlock Text="{Binding Question}" TextWrapping="Wrap" />
                                     <TextBlock Classes="section" Text="PLANNER" Margin="0,4,0,0" />
+                                    <TextBlock Classes="muted" FontSize="12" FontStyle="Italic"
+                                               IsVisible="{Binding IsWaiting}" Text="thinking…" />
                                     <views:MarkdownView Text="{Binding Answer}" />
                                 </StackPanel>
                             </DataTemplate>
@@ -499,6 +524,12 @@
                         HorizontalAlignment="Right" Margin="0,0,0,8" IsVisible="{Binding HasPlan}">
                 <Button Padding="12,6" Command="{Binding DiscardCommand}">
                     <TextBlock Text="Discard" />
+                </Button>
+                <!-- The planner, asked to find fault with its own plan. The
+                     answer lands under the plan, ready to revise from. -->
+                <Button Padding="12,6" IsVisible="{Binding ShowsCarryPlan}" Command="{Binding CritiqueCommand}"
+                        ToolTip.Tip="Ask the planner what could go wrong with this plan">
+                    <TextBlock Text="Critique" />
                 </Button>
                 <!-- Deliberately not the primary button: the one Return presses
                      is the one next to the field, and running on a fleet should

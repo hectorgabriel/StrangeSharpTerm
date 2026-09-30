@@ -81,17 +81,48 @@ public sealed class Planner(
     }
 
     /// <summary>
+    /// The plan the person went back to, waiting to be carried into the next
+    /// question the way a run's report is. Empty when the plan on screen is
+    /// the one the planner last wrote.
+    /// </summary>
+    private string _returnedTo = "";
+
+    /// <summary>
+    /// Tells the planner the person set its latest plan aside for an earlier
+    /// one.
+    ///
+    /// Its history ends with the plan it wrote last, so without this "drop the
+    /// second phase" is applied to a plan nobody is looking at any more.
+    /// </summary>
+    public void ReturnTo(RunPlan plan) => _returnedTo = plan.ToJson();
+
+    /// <summary>Says the plan on screen is the one the planner last wrote.</summary>
+    public void Current() => _returnedTo = "";
+
+    /// <summary>
     /// The question, with whatever the last run reported folded in ahead of it.
     /// The report is let go only once an answer has come back, so a request
     /// that fails carries it into the next one.
     /// </summary>
-    private AssistMessage Asking(string text) => new()
+    private AssistMessage Asking(string text)
     {
-        Role = AssistRole.User,
-        Text = _reported.Length == 0
-            ? text
-            : $"What happened when the last plan ran:\n\n{_reported}\n\n{text}",
-    };
+        var ahead = new List<string>();
+        if (_reported.Length > 0)
+            ahead.Add($"What happened when the last plan ran:\n\n{_reported}");
+        if (_returnedTo.Length > 0)
+            ahead.Add(
+                "I set your latest plan aside and went back to this earlier version. It is the "
+                    + $"current plan now; anything below is about it:\n\n{_returnedTo}");
+        ahead.Add(text);
+        return new AssistMessage { Role = AssistRole.User, Text = string.Join("\n\n", ahead) };
+    }
+
+    /// <summary>Lets go of what was folded into a question that has now been answered.</summary>
+    private void Carried()
+    {
+        _reported = "";
+        _returnedTo = "";
+    }
 
     public async Task<PlanReading> Draft(
         string goal,
@@ -124,7 +155,7 @@ public sealed class Planner(
             _conversation.Add(asked);
             _conversation.Add(new AssistMessage { Role = AssistRole.Assistant, Text = answer });
             // Carried, so it is not carried twice. It is in the history now.
-            _reported = "";
+            Carried();
 
             // Every refusal names what to change, so the model is given it once
             // before the person is: a plan with a sudo in the wrong shape is a
@@ -173,7 +204,7 @@ public sealed class Planner(
 
         _conversation.Add(asked);
         _conversation.Add(new AssistMessage { Role = AssistRole.Assistant, Text = answer });
-        _reported = "";
+        Carried();
         return new Discussed(question, answer.Trim(), null);
     }
 

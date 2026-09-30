@@ -327,6 +327,28 @@ public static class AssistPrompts
         "The user will ask for a revised plan when they want one; do not write it now.");
 
     /// <summary>
+    /// What the Critique button asks. A discussion turn like any other, so the
+    /// answer lands under the plan and "Revise the plan with this" can act on
+    /// it; what differs is that the planner is the one asked to find fault.
+    ///
+    /// Written out rather than left to "critique this": asked loosely, a model
+    /// reviewing its own work finds it sound.
+    /// </summary>
+    public static string PlannerCritique { get; } = string.Join("\n",
+        "Review the plan you just wrote as a sceptical operator who has to run it on these",
+        "servers tonight. Assume it has at least one real problem and find it.",
+        "",
+        "Look for: a command that fails on these hosts or needs something not installed; a step",
+        "that assumes state nobody checked; a phase that cannot be undone and has no way back;",
+        "an ordering problem between phases or hosts; a captured value that may not be what the",
+        "later phase expects; a service interrupted with no warning; a choice of host that",
+        "should have gone the other way.",
+        "",
+        "List each problem as a bullet: the phase, what goes wrong, and the change you would make.",
+        "Most serious first, at most six. Then one line on what to check on the hosts before",
+        "running it. If after all that the plan is sound, say so in one sentence and stop.");
+
+    /// <summary>
     /// What writes a saving phase's file. It chooses the words and nothing
     /// else: the file is the one the person read in the plan.
     /// </summary>

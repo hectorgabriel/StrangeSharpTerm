@@ -65,6 +65,20 @@ public sealed record PlanPhase
 
     /// <summary>The <c>{{name}}</c> references in this phase's commands.</summary>
     public IReadOnlyList<string> Placeholders => RunPlan.PlaceholdersIn(Commands);
+
+    /// <summary>
+    /// Whether this phase would do exactly what that one does.
+    ///
+    /// Not the record's own equality, which compares the lists by reference and
+    /// so calls every phase of a rewritten plan different. Why is left out: a
+    /// reworded reason is not a change to what runs.
+    /// </summary>
+    public bool DoesTheSameAs(PlanPhase other) =>
+        Name == other.Name
+        && Hosts.SequenceEqual(other.Hosts)
+        && Commands.SequenceEqual(other.Commands)
+        && Capture == other.Capture
+        && Save == other.Save;
 }
 
 /// <summary>A plan, as written and before anything has run.</summary>
@@ -72,6 +86,22 @@ public sealed partial record RunPlan(IReadOnlyList<PlanPhase> Phases)
 {
     /// <summary>What the header says beside the name.</summary>
     public string Summary => $"{Phases.Count} phase{(Phases.Count == 1 ? "" : "s")}";
+
+    /// <summary>
+    /// The plan in the shape the planner writes it, for handing one back to it.
+    /// Switched-off phases are left out: they are not part of what will run.
+    /// </summary>
+    public string ToJson() => JsonSerializer.Serialize(
+        new
+        {
+            phases = Phases.Where(phase => phase.IsEnabled).Select(phase => phase.Saves
+                ? (object)new { name = phase.Name, why = phase.Why, save = phase.Save }
+                : new { name = phase.Name, hosts = phase.Hosts, why = phase.Why, commands = phase.Commands, capture = phase.Capture }),
+        },
+        new JsonSerializerOptions
+        {
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        });
 
     /// <summary>
     /// Reads a plan, or says why it will not be shown.

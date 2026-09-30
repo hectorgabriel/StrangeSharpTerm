@@ -12,5 +12,12 @@ public sealed partial class DiscussionRow(string question) : ObservableObject
 
     /// <summary>What the planner said. Empty until the first of it arrives.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsWaiting))]
     public partial string Answer { get; set; } = "";
+
+    /// <summary>
+    /// Nothing said yet. A reasoning model can think for a minute before its
+    /// first word, and a heading with nothing under it reads as stalled.
+    /// </summary>
+    public bool IsWaiting => Answer.Length == 0;
 }

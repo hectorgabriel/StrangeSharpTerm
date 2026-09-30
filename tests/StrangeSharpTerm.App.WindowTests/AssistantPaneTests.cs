@@ -436,6 +436,109 @@ public class AssistantPaneTests
         });
     }
 
+    /// <summary>
+    /// A revision is the next version, not a replacement: each phase says
+    /// whether it is new or changed, what was dropped is named, and the
+    /// earlier version is a click away.
+    /// </summary>
+    [Fact]
+    public void ARevisionIsMarkedAgainstThePlanItRevised()
+    {
+        Headless.Run(() =>
+        {
+            const string first = """
+            {"phases":[
+              {"name":"Update","hosts":["web-01"],"commands":["apt-get update"]},
+              {"name":"Install","hosts":["web-01"],"commands":["apt-get install -y docker.io"]},
+              {"name":"Reboot","hosts":["web-01"],"commands":["sudo reboot"]}]}
+            """;
+            const string second = """
+            {"phases":[
+              {"name":"Update","hosts":["web-01"],"commands":["apt-get update"]},
+              {"name":"Install","hosts":["web-01"],"commands":["apt-get install -y containerd"]},
+              {"name":"Check","hosts":["web-01"],"commands":["systemctl is-active containerd"]}]}
+            """;
+            const string third = """
+            {"phases":[{"name":"Update","hosts":["web-01"],"commands":["apt-get update"]}]}
+            """;
+            var backend = new Canned(Canned.Says(first), Canned.Says(second), Canned.Says(third));
+            var model = new OrchestratorViewModel(
+                backend,
+                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+                _ => null);
+            var window = Show(new OrchestratorView(model));
+
+            model.Mode = OrchestratorMode.Plan;
+            model.Instruction = "prepare the node";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            model.Instruction = "containerd, and no reboot";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+
+            model.VersionNote.ShouldBe("version 2 of 2");
+            model.Phases.Select(phase => phase.Change).ShouldBe(["", "changed", "new"]);
+            model.Dropped.ShouldBe("dropped: Reboot");
+            Shown(window).ShouldContain("changed");
+
+            // Back to the first, which is marked against nothing.
+            model.ShowEarlierCommand.Execute(null);
+            Settle(window);
+            model.VersionNote.ShouldBe("version 1 of 2");
+            model.Phases.Select(phase => phase.Name).ShouldBe(["Update", "Install", "Reboot"]);
+            model.Phases.ShouldAllBe(phase => phase.Change == "");
+            model.HasDropped.ShouldBeFalse();
+
+            // Revised from there, the planner is told which plan it is revising,
+            // and the new version is marked against that one.
+            model.Instruction = "just the update";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+
+            backend.Requests[^1].Messages[^1].Text.ShouldNotBeNull().ShouldContain("went back to this earlier version");
+            model.VersionNote.ShouldBe("version 3 of 3");
+            model.Dropped.ShouldBe("dropped: Install, Reboot");
+        });
+    }
+
+    /// <summary>
+    /// Critique puts the planner's own objections under the plan, where the
+    /// revision can be asked for from them.
+    /// </summary>
+    [Fact]
+    public void CritiqueAsksThePlannerToFindFaultWithItsPlan()
+    {
+        Headless.Run(() =>
+        {
+            const string plan = """
+            {"phases":[{"name":"Reboot","hosts":["web-01"],"commands":["sudo reboot"]}]}
+            """;
+            var backend = new Canned(
+                Canned.Says(plan),
+                Canned.Says("- Reboot: nothing drains the host first. Cordon it before rebooting."));
+            var model = new OrchestratorViewModel(
+                backend,
+                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+                _ => null);
+            var window = Show(new OrchestratorView(model));
+
+            model.Mode = OrchestratorMode.Plan;
+            model.Instruction = "reboot it";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+            Shown(window).ShouldContain("Critique");
+
+            Headless.Finish(model.CritiqueCommand.ExecuteAsync(null));
+            Settle(window);
+
+            backend.Requests[^1].Messages[^1].Text.ShouldBe(AssistPrompts.PlannerCritique);
+            var critique = model.Discussion.Single();
+            critique.Question.ShouldBe("Critique this plan");
+            critique.Answer.ShouldContain("Cordon it before rebooting");
+            model.Phases.Single().Name.ShouldBe("Reboot");
+            model.ReviseFromDiscussionCommand.CanExecute(null).ShouldBeTrue();
+        });
+    }
+
     [Fact]
     public void APlanIsShownInFullAndNothingRunsUntilItIsRun()
     {
