@@ -80,6 +80,19 @@ public sealed class Planner(
         _reported = _reported.Length == 0 ? whatHappened : $"{_reported}\n\n{whatHappened}";
     }
 
+    /// <summary>
+    /// The question, with whatever the last run reported folded in ahead of it.
+    /// The report is let go only once an answer has come back, so a request
+    /// that fails carries it into the next one.
+    /// </summary>
+    private AssistMessage Asking(string text) => new()
+    {
+        Role = AssistRole.User,
+        Text = _reported.Length == 0
+            ? text
+            : $"What happened when the last plan ran:\n\n{_reported}\n\n{text}",
+    };
+
     public async Task<PlanReading> Draft(
         string goal,
         IReadOnlyList<string> hosts,
@@ -88,21 +101,15 @@ public sealed class Planner(
         if (hosts.Count == 0)
             return new PlanReading.Refused("No hosts are selected.");
 
-        var asked = new AssistMessage
-        {
-            Role = AssistRole.User,
-            Text = _reported.Length == 0
-                ? goal
-                : $"What happened when the last plan ran:\n\n{_reported}\n\n{goal}",
-        };
+        var asked = Asking(goal);
 
-        var thought = new StringBuilder();
+        var thought = new Thinking(this);
         for (var attempt = 0; ; attempt++)
         {
             string answer;
             try
             {
-                answer = await Answer(asked, hosts, thought, cancellationToken);
+                answer = await Answer(asked, hosts, thought, discussing: false, cancellationToken);
             }
             catch (AssistException e)
             {
@@ -138,13 +145,97 @@ public sealed class Planner(
     private const int RetriesOnRefusal = 1;
 
     /// <summary>
+    /// Asks about the plan, or the approach, and gets prose back rather than a
+    /// plan.
+    ///
+    /// The other half of reviewing one. A plan could only ever be taken, thrown
+    /// away, or replaced by another, because everything said to the planner
+    /// was read as a request for a plan -- "why web-01?" came back as a plan, or
+    /// as a refusal. This keeps the plan on screen and answers the question,
+    /// and the exchange stays in the conversation, so the revision that follows
+    /// is written by something that remembers being argued with.
+    /// </summary>
+    public async Task<Discussed> Discuss(
+        string question,
+        IReadOnlyList<string> hosts,
+        CancellationToken cancellationToken = default)
+    {
+        var asked = Asking(question);
+        string answer;
+        try
+        {
+            answer = await Answer(asked, hosts, new Thinking(this), discussing: true, cancellationToken);
+        }
+        catch (AssistException e)
+        {
+            return new Discussed(question, "", e.Message);
+        }
+
+        _conversation.Add(asked);
+        _conversation.Add(new AssistMessage { Role = AssistRole.Assistant, Text = answer });
+        _reported = "";
+        return new Discussed(question, answer.Trim(), null);
+    }
+
+    /// <summary>
+    /// The prose of a discussion as it arrives, so an answer that takes half a
+    /// minute is not half a minute of nothing. Everything so far, like
+    /// <see cref="Thought"/>, and spaced the same way.
+    /// </summary>
+    public event EventHandler<string>? Spoke;
+
+    /// <summary>
+    /// Reasoning as it streams, handed on at a reader's pace.
+    ///
+    /// Every piece used to be copied into a new string the length of everything
+    /// so far and raised, so a think of a few thousand tokens was a few thousand
+    /// copies of a growing paragraph before the screen had drawn any of them.
+    /// Now it is copied when a frame could use it, and once more at the end so
+    /// nothing is left behind.
+    /// </summary>
+    private sealed class Thinking(Planner planner)
+    {
+        private static readonly TimeSpan Gap = TimeSpan.FromMilliseconds(50);
+
+        private readonly StringBuilder _text = new();
+
+        private long _raised;
+
+        private bool _behind;
+
+        public void Add(string piece)
+        {
+            _text.Append(piece);
+            _behind = true;
+            if (System.Diagnostics.Stopwatch.GetElapsedTime(_raised) < Gap)
+                return;
+            Raise();
+        }
+
+        /// <summary>Whatever arrived since the last raise, raised now.</summary>
+        public void Flush()
+        {
+            if (_behind)
+                Raise();
+        }
+
+        private void Raise()
+        {
+            _raised = System.Diagnostics.Stopwatch.GetTimestamp();
+            _behind = false;
+            planner.Thought?.Invoke(planner, _text.ToString());
+        }
+    }
+
+    /// <summary>
     /// One answer to one message, reading this machine's folder on the way when
     /// it asks to.
     /// </summary>
     private async Task<string> Answer(
         AssistMessage asked,
         IReadOnlyList<string> hosts,
-        StringBuilder thought,
+        Thinking thought,
+        bool discussing,
         CancellationToken cancellationToken)
     {
         var said = new StringBuilder();
@@ -161,12 +252,7 @@ public sealed class Planner(
             await foreach (var streamed in backend.Stream(
                 new AssistRequest
                 {
-                    // The hosts are named in the system prompt, which is written
-                    // fresh each time: what is ticked changes between turns, and
-                    // an earlier turn's list must not outlive it.
-                    System = Here is { } here
-                        ? string.Join("\n\n", AssistPrompts.Planner(hosts), AssistPrompts.PlannerWorkspace(here.RootLabel, MaySave))
-                        : string.Join("\n\n", AssistPrompts.Planner(hosts), AssistPrompts.PlannerCannotSave(folderOpen: false)),
+                    System = Told(hosts, discussing),
                     Messages = [.. working],
                     // None on the last turn, so it has to answer with a plan.
                     Tools = Here is not null && turn < AssistLimits.RunBudget ? WorkspaceTools.ReadingLocal : [],
@@ -177,10 +263,13 @@ public sealed class Planner(
                 {
                     case AssistEvent.Say say:
                         said.Append(say.Text);
+                        // Only a discussion is worth watching arrive: a plan is
+                        // JSON, and half of one is not something to read.
+                        if (discussing)
+                            Spoke?.Invoke(this, said.ToString());
                         break;
                     case AssistEvent.Reasoning reasoning:
-                        thought.Append(reasoning.Text);
-                        Thought?.Invoke(this, thought.ToString());
+                        thought.Add(reasoning.Text);
                         break;
                     case AssistEvent.Call call:
                         calls.Add(call.Tool);
@@ -188,6 +277,7 @@ public sealed class Planner(
                 }
             }
 
+            thought.Flush();
             if (calls.Count == 0 || turn >= AssistLimits.RunBudget)
                 return said.ToString();
 
@@ -203,6 +293,18 @@ public sealed class Planner(
                 results.Add(await Look(call, budget, cancellationToken));
             working.Add(new AssistMessage { Role = AssistRole.User, ToolResults = results });
         }
+    }
+
+    /// <summary>
+    /// What the planner is told, written fresh each time: what is ticked changes
+    /// between turns, and an earlier turn's list must not outlive it.
+    /// </summary>
+    private string Told(IReadOnlyList<string> hosts, bool discussing)
+    {
+        var told = Here is { } here
+            ? string.Join("\n\n", AssistPrompts.Planner(hosts), AssistPrompts.PlannerWorkspace(here.RootLabel, MaySave))
+            : string.Join("\n\n", AssistPrompts.Planner(hosts), AssistPrompts.PlannerCannotSave(folderOpen: false));
+        return discussing ? string.Join("\n\n", told, AssistPrompts.PlannerDiscussion) : told;
     }
 
     /// <inheritdoc cref="FleetAgent"/>
@@ -251,6 +353,10 @@ public sealed class Planner(
         return (await calls.Carry(call, budget, cancellationToken)).Result;
     }
 }
+
+/// <summary>One question put to the planner about its plan, and what it said.</summary>
+/// <param name="Failed">Why there is no answer, when the provider failed. Null otherwise.</param>
+public sealed record Discussed(string Question, string Answer, string? Failed);
 
 /// <summary>
 /// How settings become a backend.

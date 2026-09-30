@@ -33,7 +33,7 @@
 
                                 <TextBlock Classes="muted" FontSize="10" FontStyle="Italic"
                                            TextWrapping="Wrap" IsVisible="{Binding HasReasoning}"
-                                           Text="{Binding Reasoning}" />
+                                           Text="{Binding ReasoningShown}" />
 
                                 <!-- A command is a row in the same list as the answer,
                                      deliberately: what it actually ran should never
@@ -123,6 +123,10 @@
                      last of them said twice. -->
                 <TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,4,0,4"
                            IsVisible="{Binding ShowsGoal}" Text="{Binding Asked}" />
+                <!-- The last change asked of it, under the goal it is still for. -->
+                <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Margin="0,-4,0,4"
+                           IsVisible="{Binding HasRevision}"
+                           Text="{Binding Revised, StringFormat='revised: {0}'}" />
 
                 <!-- Says the next instruction will be read against the last plan
                      rather than cold, which the screen cannot otherwise show:
@@ -144,7 +148,7 @@
                             </StackPanel>
                         </Button>
                         <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                                   IsVisible="{Binding IsThinkingOpen}" Text="{Binding Thinking}" />
+                                   IsVisible="{Binding IsThinkingOpen}" Text="{Binding ThinkingShown}" />
                     </StackPanel>
                 </Border>
 
@@ -298,6 +302,27 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <!-- What has been said about the plan above. Under it, because
+                         it is about it, and the plan does not move while it is
+                         argued with. -->
+                    <ItemsControl ItemsSource="{Binding Discussion}" IsVisible="{Binding HasDiscussion}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DiscussionRow">
+                                <StackPanel Margin="0,4,0,8" Spacing="4">
+                                    <TextBlock Classes="section" Text="YOU" />
+                                    <SelectableTextBlock Text="{Binding Question}" TextWrapping="Wrap" />
+                                    <TextBlock Classes="section" Text="PLANNER" Margin="0,4,0,0" />
+                                    <views:MarkdownView Text="{Binding Answer}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Classes="row" Padding="10,3" HorizontalAlignment="Left"
+                            IsVisible="{Binding HasDiscussion}"
+                            Command="{Binding ReviseFromDiscussionCommand}">
+                        <TextBlock Text="Revise the plan with this" FontSize="12" />
+                    </Button>
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>
@@ -423,7 +448,9 @@
             </ItemsControl>
         </Expander>
 
-        <StackPanel Grid.Row="5" Orientation="Horizontal" Spacing="8" Margin="12,0,12,6">
+        <!-- Wraps, because docked this pane is a third of the window: in one
+             line the note ran off the edge and took the switches after it. -->
+        <WrapPanel Grid.Row="5" ItemSpacing="8" LineSpacing="4" Margin="12,0,12,6">
             <!-- Which mode is in use is said by the button, not only by the note
                  beside it: the two do very different things to a fleet. -->
             <Button Classes="row" Classes.selected="{Binding IsAsking}" Padding="10,3"
@@ -436,7 +463,8 @@
                     CommandParameter="{x:Static vm:OrchestratorMode.Plan}">
                 <TextBlock Text="Plan" FontSize="12" />
             </Button>
-            <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" Text="{Binding ModeNote}" />
+            <TextBlock Classes="muted" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Text="{Binding ModeNote}" />
             <!-- Asking only. A plan is a list of commands somebody read and then
                  pressed Run on, and that press is the consent: showing this
                  switch beside it would suggest it could stop a plan, and it
@@ -444,6 +472,13 @@
             <CheckBox VerticalAlignment="Center" IsChecked="{Binding MayRunCommands}"
                       IsVisible="{Binding IsAsking}">
                 <TextBlock Text="Run commands" FontSize="12" />
+            </CheckBox>
+            <!-- Plan only. What is typed becomes a question about the plan,
+                 answered in prose, rather than a request for another one. -->
+            <CheckBox VerticalAlignment="Center" IsChecked="{Binding IsDiscussing}"
+                      IsVisible="{Binding IsPlanning}"
+                      ToolTip.Tip="Question the plan, or the approach, without replacing it">
+                <TextBlock Text="Discuss" FontSize="12" />
             </CheckBox>
             <!-- This machine's folder, and only where one is open. A run reads
                  the hosts and writes its findings here; changing a file on a
@@ -454,30 +489,45 @@
                       IsChecked="{Binding MayEditFiles}">
                 <TextBlock Text="Write files here" FontSize="12" />
             </CheckBox>
-        </StackPanel>
+        </WrapPanel>
 
-        <Grid Grid.Row="6" ColumnDefinitions="*,Auto,Auto,Auto" Margin="12,0,12,12">
+        <Grid Grid.Row="6" ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto" Margin="12,0,12,12">
+            <!-- What to do with the plan on screen, on a line of its own: it
+                 has nothing to do with what is typed below, and beside the
+                 field it left a docked pane a field a few words wide. -->
+            <StackPanel Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="8"
+                        HorizontalAlignment="Right" Margin="0,0,0,8" IsVisible="{Binding HasPlan}">
+                <Button Padding="12,6" Command="{Binding DiscardCommand}">
+                    <TextBlock Text="Discard" />
+                </Button>
+                <!-- Deliberately not the primary button: the one Return presses
+                     is the one next to the field, and running on a fleet should
+                     be a click somebody meant. -->
+                <Button Padding="12,6" IsVisible="{Binding ShowsCarryPlan}" Command="{Binding CarryPlanCommand}">
+                    <TextBlock Text="Run the plan" />
+                </Button>
+            </StackPanel>
+
             <!-- Return runs it here too. It did not before: the pane that
                  reaches every host at once was the one you had to click. -->
-            <TextBox Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap"
+            <TextBox Grid.Row="1" Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap"
                      MinHeight="32" MaxHeight="160" VerticalContentAlignment="Center"
                      Text="{Binding Instruction}" KeyDown="Typed"
                      Watermark="Ask every selected host…" IsVisible="{Binding IsAsking}" />
-            <TextBox Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap"
+            <TextBox Grid.Row="1" Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap"
                      MinHeight="32" MaxHeight="160" VerticalContentAlignment="Center"
                      Text="{Binding Instruction}" KeyDown="Typed"
-                     Watermark="What should be done across these hosts?" IsVisible="{Binding IsPlanning}" />
+                     Watermark="{Binding PlanWatermark}" IsVisible="{Binding IsPlanning}" />
 
-            <Button Grid.Column="1" Margin="8,0,0,0" Padding="12,6" Command="{Binding DiscardCommand}"
-                    IsVisible="{Binding HasPlan}">
-                <TextBlock Text="Discard" />
-            </Button>
-            <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,6"
+            <!-- Does what the field says: plans, revises or asks. Never runs
+                 the plan, which is Run the plan's job and reads nothing from
+                 the field. -->
+            <Button Grid.Row="1" Grid.Column="1" Margin="8,0,0,0" Padding="12,6"
                     Theme="{StaticResource PrimaryButton}"
                     IsVisible="{Binding !IsRunning}" Command="{Binding RunCommand}">
                 <TextBlock Text="{Binding RunLabel}" />
             </Button>
-            <Button Grid.Column="3" Margin="8,0,0,0" Padding="12,6"
+            <Button Grid.Row="1" Grid.Column="2" Margin="8,0,0,0" Padding="12,6"
                     IsVisible="{Binding IsRunning}" Command="{Binding StopCommand}">
                 <TextBlock Text="Stop" />
             </Button>

@@ -417,6 +417,14 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 
     partial void OnAskedChanged(string value) => OnPropertyChanged(nameof(ShowsGoal));
 
+    /// <summary>The last change asked of the plan on screen, under its goal. Empty for a first draft.</summary>
+    [ObservableProperty]
+    public partial string Revised { get; private set; } = "";
+
+    public bool HasRevision => IsPlanning && Revised.Length > 0;
+
+    partial void OnRevisedChanged(string value) => OnPropertyChanged(nameof(HasRevision));
+
     /// <summary>Why a plan was refused, naming the phase. Refused rather than shown.</summary>
     [ObservableProperty]
     public partial string? Refusal { get; private set; }
@@ -457,6 +465,12 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     public bool HasThinking => Thinking.Length > 0;
 
     /// <summary>
+    /// The thinking as drawn: its last lines while the model is still at it,
+    /// all of it once it has stopped. See <see cref="LiveTail"/>.
+    /// </summary>
+    public string ThinkingShown => IsRunning ? LiveTail.Of(Thinking) : Thinking;
+
+    /// <summary>
     /// What the orchestrator already remembers, said where the next instruction
     /// is typed.
     ///
@@ -477,7 +491,11 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     [ObservableProperty]
     public partial bool IsThinkingOpen { get; set; } = true;
 
-    partial void OnThinkingChanged(string value) => OnPropertyChanged(nameof(HasThinking));
+    partial void OnThinkingChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasThinking));
+        OnPropertyChanged(nameof(ThinkingShown));
+    }
 
     partial void OnIsThinkingOpenChanged(bool value) => OnPropertyChanged(nameof(ThinkingToggle));
 
@@ -516,16 +534,97 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         && Instruction.Trim().Length > 0
         && (Chosen.Count > 0 || ChatCommands.Looks(Instruction));
 
-    /// <summary>What the button says: writing a plan is not running one.</summary>
-    public string RunLabel => IsPlanning ? (HasPlan ? "Run the plan" : "Plan it") : "Run";
+    /// <summary>
+    /// What the button beside the field says: what it will do with what is
+    /// typed. With a plan on screen that is never running it -- running it
+    /// has a button of its own, which reads nothing from the field.
+    /// </summary>
+    public string RunLabel => (IsPlanning, IsDiscussing, HasPlan) switch
+    {
+        (false, _, _) => "Run",
+        (true, true, _) => "Ask",
+        (true, false, true) => "Revise",
+        _ => "Plan it",
+    };
+
+    /// <summary>What the field invites, which changes with what Return will do.</summary>
+    public string PlanWatermark => (IsDiscussing, HasPlan) switch
+    {
+        (true, true) => "Question the plan — why this host, what could go wrong…",
+        (true, false) => "Talk the approach through before any plan is written…",
+        (false, true) => "What should change? Return writes a revised plan.",
+        _ => "What should be done across these hosts?",
+    };
+
+    /// <summary>
+    /// Whether what is typed is a question about the plan rather than a request
+    /// for one. Answered in prose, and the plan on screen stays.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsDiscussing { get; set; }
+
+    partial void OnIsDiscussingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(RunLabel));
+        OnPropertyChanged(nameof(PlanWatermark));
+    }
+
+    /// <summary>
+    /// What has been said about the plan on screen, oldest first.
+    ///
+    /// Emptied when a new plan arrives: the planner still remembers all of it,
+    /// and the plan that replaced it is what the discussion turned into.
+    /// </summary>
+    public ObservableCollection<DiscussionRow> Discussion { get; } = [];
+
+    public bool HasDiscussion => Discussion.Count > 0;
+
+    /// <summary>
+    /// Runs the plan on screen.
+    ///
+    /// Its own button now. Return used to run the plan whenever one was showing
+    /// -- and whatever had been typed was thrown away -- so "put it on web-02
+    /// instead" ran the plan that put it on web-01.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanCarryPlan))]
+    public Task CarryPlan() => Carry();
+
+    public bool CanCarryPlan => IsPlanning && HasPlan && !IsRunning;
+
+    public bool ShowsCarryPlan => CanCarryPlan;
+
+    /// <summary>
+    /// Writes the plan again from what was just discussed, without having to
+    /// put the discussion into words a second time.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanReviseFromDiscussion))]
+    public Task ReviseFromDiscussion() =>
+        Draft("Revise the plan in the light of what we just discussed. Change only what the discussion calls for.");
+
+    public bool CanReviseFromDiscussion => IsPlanning && HasDiscussion && !IsRunning && Chosen.Count > 0;
+
+    /// <summary>Everything that reads whether a plan is on screen.</summary>
+    private void PlanChanged()
+    {
+        OnPropertyChanged(nameof(HasPlan));
+        OnPropertyChanged(nameof(RunLabel));
+        OnPropertyChanged(nameof(PlanWatermark));
+        CarryPlanCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ShowsCarryPlan));
+    }
 
     partial void OnModeChanged(OrchestratorMode value)
     {
+        CarryPlanCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ShowsCarryPlan));
+        ReviseFromDiscussionCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsAsking));
         OnPropertyChanged(nameof(IsPlanning));
         OnPropertyChanged(nameof(ModeNote));
         OnPropertyChanged(nameof(RunLabel));
         OnPropertyChanged(nameof(ShowsGoal));
+        OnPropertyChanged(nameof(HasRevision));
+        OnPropertyChanged(nameof(PlanWatermark));
     }
 
     partial void OnInstructionChanged(string value) => RunCommand.NotifyCanExecuteChanged();
@@ -536,9 +635,17 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         OnPropertyChanged(nameof(Chosen));
         OnPropertyChanged(nameof(ChosenNote));
         RunCommand.NotifyCanExecuteChanged();
+        ReviseFromDiscussionCommand.NotifyCanExecuteChanged();
     }
 
-    partial void OnIsRunningChanged(bool value) => RunCommand.NotifyCanExecuteChanged();
+    partial void OnIsRunningChanged(bool value)
+    {
+        RunCommand.NotifyCanExecuteChanged();
+        CarryPlanCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ShowsCarryPlan));
+        ReviseFromDiscussionCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ThinkingShown));
+    }
 
     [RelayCommand]
     public void Choose(OrchestratorMode mode) => Mode = mode;
@@ -586,15 +693,22 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
             return;
         }
 
-        if (IsPlanning && !HasPlan)
+        // What is typed is never a reason to run a plan: that is CarryPlan,
+        // which reads nothing from the field.
+        if (IsPlanning && IsDiscussing)
         {
-            await Draft();
+            await Discuss();
             return;
         }
 
         if (IsPlanning)
         {
-            await Carry();
+            var goal = Instruction.Trim();
+            // Emptied, as asking does: the goal is shown above the plan now,
+            // and leaving it in the field made pressing Return again look like
+            // the way to run it.
+            Instruction = "";
+            await Draft(goal);
             return;
         }
 
@@ -740,17 +854,22 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         rows.Clear();
     }
 
-    /// <summary>Asks for a plan and runs none of it.</summary>
-    private async Task Draft()
+    /// <summary>
+    /// Asks for a plan and runs none of it. With one on screen, this is the
+    /// revision: the planner has the last plan and everything said about it.
+    /// </summary>
+    private async Task Draft(string goal)
     {
-        Phases.Clear();
-        Forget(Findings);
         Refusal = null;
-        var goal = Instruction.Trim();
         // The goal stands above the plan for the same reason the question stands
         // above the findings: review is the only thing between a model and a
         // fleet, and reviewing a plan means reading it against what was asked.
-        Asked = goal;
+        // A revision keeps the goal and says what it changed, because the plan
+        // is still for the goal.
+        if (HasPlan)
+            Revised = goal;
+        else
+            (Asked, Revised) = (goal, "");
 
         Thinking = "";
         IsThinkingOpen = true;
@@ -763,6 +882,13 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
                 switch (reading)
                 {
                     case PlanReading.Ok(var plan):
+                        // Replaced only now, so a revision that is refused, or
+                        // stopped, leaves the plan it was revising to read.
+                        Phases.Clear();
+                        Forget(Findings);
+                        Discussion.Clear();
+                        OnPropertyChanged(nameof(HasDiscussion));
+                        ReviseFromDiscussionCommand.NotifyCanExecuteChanged();
                         foreach (var (phase, number) in plan.Phases.Select((phase, index) => (phase, index + 1)))
                             Phases.Add(new PhaseRow(phase, number));
                         Progress = $"{plan.Summary} · not run yet";
@@ -775,15 +901,66 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
                     // than shown, and the refusal says which phase and why.
                     case PlanReading.Refused(var reason):
                         Refusal = reason;
-                        Progress = "";
+                        Progress = HasPlan ? "the plan below is unchanged" : "";
                         break;
                 }
-                OnPropertyChanged(nameof(HasPlan));
-                OnPropertyChanged(nameof(RunLabel));
+                PlanChanged();
                 OnPropertyChanged(nameof(Continuing));
                 OnPropertyChanged(nameof(IsContinuing));
             });
         });
+    }
+
+    /// <summary>
+    /// Puts a question to the planner and shows its answer under the plan,
+    /// which stays as it was.
+    /// </summary>
+    private async Task Discuss()
+    {
+        var question = Instruction.Trim();
+        Instruction = "";
+        Refusal = null;
+
+        var row = new DiscussionRow(question);
+        Discussion.Add(row);
+        OnPropertyChanged(nameof(HasDiscussion));
+
+        Thinking = "";
+        IsThinkingOpen = true;
+
+        // The answer as it arrives, keyed to this row so a frame carries only
+        // the newest of it.
+        void Spoke(object? sender, string said) => _screen.Soon(row, () => row.Answer = said);
+        _planner.Spoke += Spoke;
+        try
+        {
+            await Working(async token =>
+            {
+                var discussed = await _planner.Discuss(question, Chosen, token);
+                _screen.Now(() =>
+                {
+                    if (discussed.Failed is { } failed)
+                    {
+                        Refusal = failed;
+                        Discussion.Remove(row);
+                    }
+                    else
+                    {
+                        row.Answer = discussed.Answer;
+                        IsThinkingOpen = false;
+                    }
+
+                    OnPropertyChanged(nameof(HasDiscussion));
+                    OnPropertyChanged(nameof(Continuing));
+                    OnPropertyChanged(nameof(IsContinuing));
+                    ReviseFromDiscussionCommand.NotifyCanExecuteChanged();
+                });
+            });
+        }
+        finally
+        {
+            _planner.Spoke -= Spoke;
+        }
     }
 
     /// <summary>Carries out the plan on screen: phases in order, hosts three at a time.</summary>
@@ -875,10 +1052,12 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     public void Discard()
     {
         Phases.Clear();
+        Discussion.Clear();
+        OnPropertyChanged(nameof(HasDiscussion));
+        ReviseFromDiscussionCommand.NotifyCanExecuteChanged();
         Refusal = null;
         Progress = "";
-        OnPropertyChanged(nameof(HasPlan));
-        OnPropertyChanged(nameof(RunLabel));
+        PlanChanged();
     }
 
     [RelayCommand]

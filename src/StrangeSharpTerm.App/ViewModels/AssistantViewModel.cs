@@ -53,7 +53,20 @@ public sealed partial class AssistRow : ObservableObject
     [ObservableProperty]
     public partial bool IsReasoningOpen { get; set; }
 
-    public string ReasoningToggle => ShowsReasoning ? "hide" : "show";
+    /// <summary>
+    /// The reasoning as drawn: only its last lines while it is all there is,
+    /// the whole of it once the answer has started or someone opens it.
+    ///
+    /// While it streams, the whole of it would be re-wrapped on every frame,
+    /// and the cost of a frame would grow with the think. See <see cref="LiveTail"/>.
+    /// </summary>
+    public string ReasoningShown => IsReasoningTrimmed ? LiveTail.Of(Reasoning) : Reasoning;
+
+    /// <summary>Whether what is drawn is only the end of it.</summary>
+    private bool IsReasoningTrimmed =>
+        !IsReasoningOpen && Text.Length == 0 && Reasoning.Length > LiveTail.Length;
+
+    public string ReasoningToggle => !ShowsReasoning ? "show" : IsReasoningTrimmed ? "show all" : "hide";
 
     [RelayCommand]
     public void ToggleReasoning() => IsReasoningOpen = !IsReasoningOpen;
@@ -61,6 +74,7 @@ public sealed partial class AssistRow : ObservableObject
     partial void OnIsReasoningOpenChanged(bool value)
     {
         OnPropertyChanged(nameof(ShowsReasoning));
+        OnPropertyChanged(nameof(ReasoningShown));
         OnPropertyChanged(nameof(ReasoningToggle));
     }
 
@@ -142,8 +156,53 @@ public sealed partial class AssistRow : ObservableObject
 
     public bool IsDestructive => Step?.IsDestructive ?? false;
 
-    /// <summary>Redraws the row. The agent mutates the entry; this says when.</summary>
-    public void Refresh() => OnPropertyChanged(string.Empty);
+    /// <summary>
+    /// Redraws the row. The agent mutates the entry; this says when.
+    ///
+    /// An answer says only what changed. It used to announce everything, so a
+    /// token of reasoning re-parsed the answer's markdown and rebuilt its view
+    /// -- dozens of times a second, for an answer that had not started yet.
+    /// </summary>
+    public void Refresh()
+    {
+        if (Entry is not TranscriptEntry.Answer answer)
+        {
+            OnPropertyChanged(string.Empty);
+            return;
+        }
+
+        var said = answer.Markdown != _drawnMarkdown;
+        var thought = answer.Reasoning != _drawnReasoning;
+        _drawnMarkdown = answer.Markdown;
+        _drawnReasoning = answer.Reasoning;
+
+        if (said)
+        {
+            OnPropertyChanged(nameof(Text));
+            OnPropertyChanged(nameof(Blocks));
+            OnPropertyChanged(nameof(Staged));
+        }
+
+        if (thought)
+        {
+            OnPropertyChanged(nameof(Reasoning));
+            OnPropertyChanged(nameof(HasReasoning));
+        }
+
+        // These turn on either: the answer arriving folds the reasoning, and
+        // stops trimming it.
+        if (said || thought)
+        {
+            OnPropertyChanged(nameof(ReasoningShown));
+            OnPropertyChanged(nameof(ShowsReasoning));
+            OnPropertyChanged(nameof(ReasoningToggle));
+        }
+    }
+
+    /// <summary>What was last announced, so a refresh can tell what moved.</summary>
+    private string? _drawnMarkdown;
+
+    private string? _drawnReasoning;
 }
 
 /// <summary>

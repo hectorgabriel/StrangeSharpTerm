@@ -317,14 +317,11 @@ public class AssistantPaneTests
             Settle(window);
             model.Phases.ShouldHaveSingleItem();
 
-            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Headless.Finish(model.CarryPlanCommand.ExecuteAsync(null));
             Settle(window);
 
-            // With a plan on screen the button runs it, so planning again starts
-            // by throwing the old one away -- which drops the phases, not the
-            // memory.
-            model.DiscardCommand.Execute(null);
-            Settle(window);
+            // Typing with a plan on screen revises it, and the revision is
+            // written by a planner that heard what the run reported.
             model.Instruction = "try something else";
             Headless.Finish(model.RunCommand.ExecuteAsync(null));
             Settle(window);
@@ -337,6 +334,107 @@ public class AssistantPaneTests
     }
 
 
+
+    /// <summary>
+    /// Typing with a plan on screen revises it, and runs nothing.
+    ///
+    /// Return used to run the plan whenever one was showing, and threw away
+    /// whatever had been typed: "put it on web-02 instead" ran the plan that
+    /// put it on web-01.
+    /// </summary>
+    [Fact]
+    public void TypingWithAPlanOnScreenRevisesItRatherThanRunningIt()
+    {
+        Headless.Run(() =>
+        {
+            const string first = """
+            {"phases":[{"name":"Install on web-01","hosts":["web-01"],"commands":["apt-get install -y openclaw"]}]}
+            """;
+            const string second = """
+            {"phases":[{"name":"Install on web-02","hosts":["web-02"],"commands":["apt-get install -y openclaw"]}]}
+            """;
+            var asked = new List<string>();
+            var model = new OrchestratorViewModel(
+                new Canned(Canned.Says(first), Canned.Says(second)),
+                [
+                    new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true },
+                    new TargetRow { Alias = "web-02", IsConnected = true, IsChosen = true },
+                ],
+                alias =>
+                {
+                    asked.Add(alias);
+                    return null;
+                });
+            var window = Show(new OrchestratorView(model));
+
+            model.Mode = OrchestratorMode.Plan;
+            model.Instruction = "install OpenClaw";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+            model.RunLabel.ShouldBe("Revise");
+            model.CarryPlanCommand.CanExecute(null).ShouldBeTrue();
+
+            model.Instruction = "put it on web-02 instead";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+
+            asked.ShouldBeEmpty();
+            model.Phases.Single().Name.ShouldBe("Install on web-02");
+            model.Asked.ShouldBe("install OpenClaw");
+            model.Revised.ShouldBe("put it on web-02 instead");
+        });
+    }
+
+    /// <summary>
+    /// A question about the plan is answered under it, and the plan stays; the
+    /// revision that follows is asked for with one click.
+    /// </summary>
+    [Fact]
+    public void APlanCanBeArguedWithBeforeItIsRevised()
+    {
+        Headless.Run(() =>
+        {
+            const string first = """
+            {"phases":[{"name":"Install with docker","hosts":["web-01"],"commands":["apt-get install -y docker.io"]}]}
+            """;
+            const string second = """
+            {"phases":[{"name":"Install with containerd","hosts":["web-01"],"commands":["apt-get install -y containerd"]}]}
+            """;
+            var backend = new Canned(
+                Canned.Says(first),
+                Canned.Says("Fair point: containerd is lighter, and kubeadm prefers it."),
+                Canned.Says(second));
+            var model = new OrchestratorViewModel(
+                backend,
+                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+                _ => null);
+            var window = Show(new OrchestratorView(model));
+
+            model.Mode = OrchestratorMode.Plan;
+            model.Instruction = "prepare a kubernetes node";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+
+            model.IsDiscussing = true;
+            model.RunLabel.ShouldBe("Ask");
+            model.Instruction = "why docker and not containerd?";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+
+            // Answered in prose, under a plan that has not moved.
+            model.Phases.Single().Name.ShouldBe("Install with docker");
+            model.Discussion.Single().Answer.ShouldBe("Fair point: containerd is lighter, and kubeadm prefers it.");
+            Shown(window).ShouldContain("Revise the plan with this");
+
+            Headless.Finish(model.ReviseFromDiscussionCommand.ExecuteAsync(null));
+            Settle(window);
+
+            model.Phases.Single().Name.ShouldBe("Install with containerd");
+            model.Discussion.ShouldBeEmpty();
+            backend.Requests[^1].Messages.Select(message => message.Text)
+                .ShouldContain("Fair point: containerd is lighter, and kubeadm prefers it.");
+        });
+    }
 
     [Fact]
     public void APlanIsShownInFullAndNothingRunsUntilItIsRun()
@@ -663,7 +761,7 @@ public class AssistantPaneTests
             model.Mode = OrchestratorMode.Plan;
             model.Instruction = "look at this host twice";
             Headless.Finish(model.RunCommand.ExecuteAsync(null));
-            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Headless.Finish(model.CarryPlanCommand.ExecuteAsync(null));
 
             // Two phases on one host, and one agent between them: the second
             // phase reached the conversation the first one left.
