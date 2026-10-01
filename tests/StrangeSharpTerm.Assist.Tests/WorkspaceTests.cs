@@ -363,9 +363,9 @@ public class WorkspaceAgentTests
             .SelectMany(message => message.ToolResults)
             .Single().Output;
         sent.ShouldNotContain("hunter2");
-        sent.ShouldContain(Redaction.Marker);
-        // And told why, so it does not write the marker back into the file.
-        sent.ShouldContain("secret(s) were removed");
+        sent.ShouldContain("DB_PASSWORD=[redacted:");
+        // And told what the marker is for, so it copies it rather than the word.
+        sent.ShouldContain("Copy a marker exactly");
     }
 
     [Fact]

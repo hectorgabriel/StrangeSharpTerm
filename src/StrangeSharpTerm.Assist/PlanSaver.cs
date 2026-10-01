@@ -11,7 +11,12 @@ public sealed record PlanSave(bool Saved, string Note);
 public interface IPlanSaver
 {
     /// <param name="reported">What the earlier phases found, as the planner is told it.</param>
-    Task<PlanSave> Save(PlanPhase phase, string reported, CancellationToken cancellationToken = default);
+    /// <param name="secrets">
+    /// What the hosts had taken out of what they reported, for the markers in
+    /// <paramref name="reported"/>: the file is written on this machine and
+    /// its diff shows the real value before it lands.
+    /// </param>
+    Task<PlanSave> Save(PlanPhase phase, string reported, Secrets? secrets = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -53,7 +58,11 @@ public sealed class PlanSaver(
     /// <summary>A read or a write, as it happens, so the pane can say what it is doing.</summary>
     public event EventHandler<TranscriptEntry.Step>? Looked;
 
-    public async Task<PlanSave> Save(PlanPhase phase, string reported, CancellationToken cancellationToken = default)
+    public async Task<PlanSave> Save(
+        PlanPhase phase,
+        string reported,
+        Secrets? secrets = null,
+        CancellationToken cancellationToken = default)
     {
         if (phase.Save is not { Length: > 0 } path)
             return new PlanSave(false, "This phase names no file.");
@@ -70,7 +79,8 @@ public sealed class PlanSaver(
             watched,
             "this machine",
             entry => Looked?.Invoke(this, (TranscriptEntry.Step)entry),
-            entry => Looked?.Invoke(this, (TranscriptEntry.Step)entry));
+            entry => Looked?.Invoke(this, (TranscriptEntry.Step)entry),
+            secrets: secrets);
         calls.Wrote += (_, change) => Wrote?.Invoke(this, change);
 
         List<AssistMessage> conversation =

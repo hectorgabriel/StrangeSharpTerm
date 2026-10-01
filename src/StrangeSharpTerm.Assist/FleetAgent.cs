@@ -65,6 +65,12 @@ public sealed class FleetAgent(
     private readonly List<AssistMessage> _conversation = [];
     private readonly List<TranscriptEntry> _entries = [];
 
+    /// <summary>
+    /// What this conversation has had taken out of what the hosts said, so a
+    /// file it writes here can carry the real value. See <see cref="Secrets"/>.
+    /// </summary>
+    private readonly Secrets _secrets = new();
+
     /// <summary>Opened once each, and kept: a run asks most hosts more than one thing.</summary>
     private readonly Dictionary<string, IHostAccess?> _opened = new(StringComparer.Ordinal);
 
@@ -320,7 +326,8 @@ public sealed class FleetAgent(
             gate,
             "this machine",
             Append,
-            entry => Updated?.Invoke(this, entry));
+            entry => Updated?.Invoke(this, entry),
+            secrets: _secrets);
 
         calls.Wrote += (_, change) => WroteHere?.Invoke(this, change);
 
@@ -430,7 +437,7 @@ public sealed class FleetAgent(
             return (false, new AssistToolResult(call.Id, $"The command could not be run: {e.Message}", Failed: true));
         }
 
-        var output = HostAgent.Truncate(Redaction.Scrub(outcome.Output).Text);
+        var output = HostAgent.Truncate(Redaction.Scrub(outcome.Output, _secrets).Text);
         step.State = outcome.TimedOut ? StepState.TimedOut : StepState.Ran;
         step.ExitStatus = outcome.TimedOut ? null : outcome.ExitStatus;
         step.Output = output;

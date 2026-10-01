@@ -38,7 +38,14 @@ public static partial class Redaction
     /// secret, and running the provider-key rule first would take it out a
     /// second time as a bare string and report two.
     /// </summary>
-    public static Redacted Scrub(string? text)
+    /// <param name="keep">
+    /// Where a conversation keeps what was taken out, so a write or a planned
+    /// command a person approved can put it back. Each secret then becomes a
+    /// marker of its own rather than <see cref="Marker"/>. Null is the one-way
+    /// scrub. A private key is never kept either way: nothing this app writes
+    /// should need one, and it is the worst thing to have lying about.
+    /// </param>
+    public static Redacted Scrub(string? text, Secrets? keep = null)
     {
         if (string.IsNullOrEmpty(text))
             return Redacted.Nothing;
@@ -48,15 +55,20 @@ public static partial class Redaction
 
         scrubbed = PrivateKeyBlock().Replace(scrubbed, _ => Take("[redacted private key]"));
         scrubbed = Assignment().Replace(scrubbed, match =>
-            IsSecretish(match.Groups["name"].Value)
-                ? Take(match.Groups["name"].Value + match.Groups["op"].Value + match.Groups["scheme"].Value + Marker)
-                : match.Value);
-        scrubbed = PasswordFlag().Replace(scrubbed, match => Take(match.Groups["flag"].Value + Marker));
-        scrubbed = BearerHeader().Replace(scrubbed, match => Take(match.Groups["scheme"].Value + " " + Marker));
+        {
+            if (!IsSecretish(match.Groups["name"].Value))
+                return match.Value;
+            var kept = match.Groups["name"].Value + match.Groups["op"].Value + match.Groups["scheme"].Value;
+            return Take(kept + Hide(match.Value[kept.Length..]));
+        });
+        scrubbed = PasswordFlag().Replace(scrubbed, match =>
+            Take(match.Groups["flag"].Value + Hide(match.Value[match.Groups["flag"].Length..])));
+        scrubbed = BearerHeader().Replace(scrubbed, match =>
+            Take(match.Groups["scheme"].Value + " " + Hide(match.Value[match.Groups["scheme"].Length..].TrimStart())));
         scrubbed = ConnectionString().Replace(scrubbed, match =>
-            Take(match.Groups["prefix"].Value + Marker + "@"));
-        scrubbed = Jwt().Replace(scrubbed, _ => Take(Marker));
-        scrubbed = ProviderKey().Replace(scrubbed, _ => Take(Marker));
+            Take(match.Groups["prefix"].Value + Hide(match.Value[match.Groups["prefix"].Length..^1]) + "@"));
+        scrubbed = Jwt().Replace(scrubbed, match => Take(Hide(match.Value)));
+        scrubbed = ProviderKey().Replace(scrubbed, match => Take(Hide(match.Value)));
 
         return new Redacted(scrubbed, count);
 
@@ -65,6 +77,8 @@ public static partial class Redaction
             count++;
             return replacement;
         }
+
+        string Hide(string secret) => keep?.Keep(secret) ?? Marker;
     }
 
     /// <summary>
@@ -103,10 +117,15 @@ public static partial class Redaction
         RegexOptions.IgnoreCase)]
     private static partial Regex SecretishName();
 
-    // docker login -p, mysql -p, curl -u: the value is the next word, or is
-    // stuck to the flag as -pSECRET.
+    // docker login -p, mysql -p, curl -u, kubeadm join --token: the value is the
+    // next word, or is stuck to the flag as -pSECRET. --certificate-key is the
+    // key that decrypts the certificates kubeadm uploads for a control-plane
+    // join, which is a cluster's CA by another name.
+    //
+    // Not a value the assignment rule already took: --token=abc is one secret,
+    // and without the lookahead it was counted twice.
     [GeneratedRegex(
-        """(?<flag>(?:^|\s)(?:-p|-u|--password|--token|--passphrase|--api-key)[=\s]?)(?!\s)[^\s]+""",
+        """(?<flag>(?:^|\s)(?:-p|-u|--password|--token|--passphrase|--api-key|--certificate-key)[=\s]?)(?!\s)(?!=?\[redacted)[^\s]+""",
         RegexOptions.IgnoreCase)]
     private static partial Regex PasswordFlag();
 

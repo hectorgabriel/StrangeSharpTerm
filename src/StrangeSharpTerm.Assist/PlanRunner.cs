@@ -150,6 +150,10 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor, IPlanS
         CancellationToken cancellationToken = default)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        // The secrets behind the markers the hosts have reported, run-wide. A
+        // captured join command is a marker to every model in the run and a
+        // token only here; see Secrets.
+        var carried = new Secrets();
         List<PhaseResult> results = [];
         string? stopped = null;
 
@@ -174,7 +178,7 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor, IPlanS
                 Starting?.Invoke(this, phase);
                 var saved = saver is null
                     ? new PlanSave(false, $"Nothing here can write files, so {phase.Save} was not saved.")
-                    : await Save(saver, phase, results, cancellationToken);
+                    : await Save(saver, phase, results, carried, cancellationToken);
                 results.Add(Record(new PhaseResult(
                     phase, saved.Saved ? PhaseOutcome.Saved : PhaseOutcome.NotSaved, [], Note: saved.Note)));
                 if (cancellationToken.IsCancellationRequested)
@@ -207,11 +211,12 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor, IPlanS
             ]);
             var instruction = phase.Capture is { Length: > 0 } capture
                 ? $"{task}\n\nWhen you are done, end your answer with a line reading "
-                    + $"{CaptureMarker} followed by the {capture} and nothing else."
+                    + $"{CaptureMarker} followed by the {capture} and nothing else. Where it holds a "
+                    + "[redacted:…] marker, copy the marker exactly: the next phase gets the real value."
                 : task;
 
             Starting?.Invoke(this, phase);
-            var findings = await Carry(phase, instruction, cancellationToken);
+            var findings = await Carry(phase, instruction, commands, carried, cancellationToken);
             var completed = findings.Where(finding => finding.Outcome == HostOutcome.Reported).ToArray();
 
             if (completed.Length == 0)
@@ -250,11 +255,13 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor, IPlanS
         IPlanSaver saver,
         PlanPhase phase,
         IReadOnlyList<PhaseResult> before,
+        Secrets carried,
         CancellationToken cancellationToken)
     {
         try
         {
-            return await saver.Save(phase, PlanRunResult.Report(before), cancellationToken);
+            var report = PlanRunResult.Report(before);
+            return await saver.Save(phase, report, carried.For(report), cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -266,11 +273,16 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor, IPlanS
         }
     }
 
+    /// <param name="commands">The phase's commands, filled in: the only ones a granted secret may go into.</param>
+    /// <param name="carried">The run's secrets. Read for this phase's commands, and added to from what each host says.</param>
     private async Task<IReadOnlyList<HostFinding>> Carry(
         PlanPhase phase,
         string instruction,
+        IReadOnlyList<string> commands,
+        Secrets carried,
         CancellationToken cancellationToken)
     {
+        var granted = carried.For(string.Join("\n", commands));
         var findings = new HostFinding?[phase.Hosts.Count];
         using var atOnce = new SemaphoreSlim(AssistLimits.Concurrency);
 
@@ -312,8 +324,14 @@ public sealed partial class PlanRunner(Func<string, HostAgent?> agentFor, IPlanS
                         // findings go in the report, and the user decides once,
                         // with the whole picture.
                         ToolNote = AssistPrompts.ConnectedToolsInARun,
+                        Granted = granted.Count > 0 ? granted : null,
+                        Approved = [.. commands.Select(command => command.Trim())],
                     },
                     cancellationToken);
+
+                // Whatever this host reported that was a secret, the run can now
+                // put back where a later phase, or the saved file, asks for it.
+                carried.Admit(agent.Secrets, answer.Text);
 
                 // A host that answered without running a single command has
                 // not done the phase, however confidently it says it has. It
