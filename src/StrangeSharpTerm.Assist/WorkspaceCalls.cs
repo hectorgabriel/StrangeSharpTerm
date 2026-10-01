@@ -31,7 +31,8 @@ internal sealed class WorkspaceCalls(
     string machine,
     Action<TranscriptEntry> append,
     Action<TranscriptEntry> updated,
-    Action<AssistStep>? narrate = null)
+    Action<AssistStep>? narrate = null,
+    Secrets? secrets = null)
 {
     /// <summary>A file was written. Whoever is showing that folder wants to know.</summary>
     internal event EventHandler<FileChange>? Wrote;
@@ -106,25 +107,29 @@ internal sealed class WorkspaceCalls(
             if (!writing)
                 return await Read(call, step, path, cancellationToken);
 
-            var change = await access.Plan(path, content, cancellationToken);
+            // The secrets this conversation hid go back in before the diff is
+            // worked out, so what the gate shows is what lands: the person
+            // approves the real value, on their side of the wire, and the model
+            // is only ever told that the file was written.
+            var change = await access.Plan(path, secrets?.Restore(content) ?? content, cancellationToken);
 
-            // A model that read a scrubbed file and sent it back would write the
-            // marker into the real one, turning a password into the word
-            // [redacted].
+            // Whatever is still a marker has nothing to restore it. A model that
+            // read a scrubbed file and sent it back would write the word into the
+            // real one, turning a password into [redacted].
             //
             // A new file too, which is not the same failure and is just as bad:
             // a .env.production copied from a scrubbed .env is a deploy whose
             // password is the word that hid the password.
-            if (change.Text.Contains(Redaction.Marker, StringComparison.Ordinal))
+            if (Secrets.Marked(change.Text))
             {
                 step.State = StepState.Refused;
                 step.Output = $"It would write {Redaction.Marker} into the file.";
                 updated(step);
                 return (false, new AssistToolResult(
                     call.Id,
-                    $"This write contains {Redaction.Marker}, which is what this app puts in place of a "
-                        + "secret before you see it -- it is not the real value and must not be written "
-                        + "anywhere. Leave those lines out of your change, or ask the user to fill them in.",
+                    $"This write contains a {Redaction.Marker} marker that is not one this conversation "
+                        + "can fill in, so it would write the marker instead of the secret. Copy markers "
+                        + "exactly as you saw them, leave those lines out, or ask the user to fill them in.",
                     Failed: true));
             }
 
@@ -246,11 +251,14 @@ internal sealed class WorkspaceCalls(
                     Failed: true));
             }
 
-            var scrubbed = Redaction.Scrub(file.Text);
+            var scrubbed = Redaction.Scrub(file.Text, secrets);
             text = scrubbed.Text;
             if (scrubbed.Count > 0)
-                note = $"\n\n{scrubbed.Count} secret(s) were removed from this file before you saw it. "
-                    + $"Do not write {Redaction.Marker} back into it.";
+                note = secrets is null
+                    ? $"\n\n{scrubbed.Count} secret(s) were removed from this file before you saw it. "
+                        + $"Do not write {Redaction.Marker} back into it."
+                    : $"\n\n{scrubbed.Count} secret(s) were replaced with [redacted:…] markers before you saw "
+                        + "it. Copy a marker exactly where its value belongs and the app writes the real value.";
             if (file.Truncated)
                 note += $"\n\nThis is the first {Transport.RemoteWorkspace.MaxFileBytes / 1000} kB of a "
                     + $"{file.Length}-byte file.";

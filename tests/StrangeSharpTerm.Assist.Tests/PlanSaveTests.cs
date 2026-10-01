@@ -52,7 +52,7 @@ public class PlanSaveTests
         var plan = RunPlan.Read(SavingPlan, Hosts, maySave: true).ShouldBeOfType<PlanReading.Ok>().Plan;
         plan.Phases[0].IsEnabled = false;
 
-        var result = await runner.Run(plan, TestContext.Current.CancellationToken);
+        var result = await runner.Run(plan, cancellationToken: TestContext.Current.CancellationToken);
 
         result.Phases[1].Outcome.ShouldBe(PhaseOutcome.Saved);
         result.Phases[1].Note.ShouldBe("Created findings.md on this machine.");
@@ -64,7 +64,7 @@ public class PlanSaveTests
     {
         var plan = new RunPlan([new PlanPhase { Name = "Save", Hosts = [], Commands = [], Save = "out.md" }]);
 
-        var result = await new PlanRunner(_ => null).Run(plan, TestContext.Current.CancellationToken);
+        var result = await new PlanRunner(_ => null).Run(plan, cancellationToken: TestContext.Current.CancellationToken);
 
         result.Stopped.ShouldBeFalse();
         result.Phases.Single().Outcome.ShouldBe(PhaseOutcome.NotSaved);
@@ -79,7 +79,7 @@ public class PlanSaveTests
             ScriptedBackend.Calls(PlanSaver.SaveFile, new { content = "# Disk\n\n- web-01: 91%\n", why = "findings" }));
         var saver = new PlanSaver(backend, here, gate, () => true);
 
-        var saved = await saver.Save(Saving("findings.md"), "# Look (done)\n## web-01\n91%", TestContext.Current.CancellationToken);
+        var saved = await saver.Save(Saving("findings.md"), "# Look (done)\n## web-01\n91%", cancellationToken: TestContext.Current.CancellationToken);
 
         saved.Saved.ShouldBeTrue();
         here.Written["findings.md"].ShouldContain("web-01: 91%");
@@ -97,7 +97,7 @@ public class PlanSaveTests
             ScriptedBackend.Calls(PlanSaver.SaveFile, new { content = "y\n", why = "findings" }));
         var saver = new PlanSaver(backend, here, new RecordingGate(answer: false), () => true);
 
-        var saved = await saver.Save(Saving("findings.md"), "", TestContext.Current.CancellationToken);
+        var saved = await saver.Save(Saving("findings.md"), "", cancellationToken: TestContext.Current.CancellationToken);
 
         saved.Saved.ShouldBeFalse();
         saved.Note.ShouldContain("refused");
@@ -111,7 +111,7 @@ public class PlanSaveTests
         var backend = new ScriptedBackend(ScriptedBackend.Says("unused"));
         var saver = new PlanSaver(backend, new FakeWorkspace("/Users/you/runbooks"), new StandingAnswer(true), () => false);
 
-        var saved = await saver.Save(Saving("findings.md"), "", TestContext.Current.CancellationToken);
+        var saved = await saver.Save(Saving("findings.md"), "", cancellationToken: TestContext.Current.CancellationToken);
 
         saved.Saved.ShouldBeFalse();
         saved.Note.ShouldContain("Write files here");
@@ -125,12 +125,12 @@ public class PlanSaveTests
         var backend = new ScriptedBackend(ScriptedBackend.Says(SavingPlan), ScriptedBackend.Says(SavingPlan), ScriptedBackend.Says(SavingPlan));
         var planner = new Planner(backend, new FakeWorkspace("/Users/you/runbooks"), () => on);
 
-        var first = await planner.Draft("check disks and save it here", ["web-01"], TestContext.Current.CancellationToken);
+        var first = await planner.Draft("check disks and save it here", ["web-01"], cancellationToken: TestContext.Current.CancellationToken);
         first.ShouldBeOfType<PlanReading.Ok>();
         backend.Requests[0].System.ShouldContain("\"save\"");
 
         on = false;
-        await planner.Draft("again", ["web-01"], TestContext.Current.CancellationToken);
+        await planner.Draft("again", ["web-01"], cancellationToken: TestContext.Current.CancellationToken);
         backend.Requests[1].System.ShouldNotContain("\"save\"");
         backend.Requests[1].System.ShouldContain("\"Write files here\" is switched off");
     }
@@ -140,7 +140,7 @@ public class PlanSaveTests
     {
         var backend = new ScriptedBackend(ScriptedBackend.Says("""{"phases":[{"name":"a","hosts":["web-01"],"commands":["df -h"]}]}"""));
 
-        await new Planner(backend).Draft("save it here", ["web-01"], TestContext.Current.CancellationToken);
+        await new Planner(backend).Draft("save it here", ["web-01"], cancellationToken: TestContext.Current.CancellationToken);
 
         var system = backend.Requests.Single().System;
         system.ShouldContain("never on the user's own machine");
@@ -154,9 +154,16 @@ public class PlanSaveTests
     {
         public string? Reported { get; private set; }
 
-        public Task<PlanSave> Save(PlanPhase phase, string reported, CancellationToken cancellationToken = default)
+        public Secrets? Secrets { get; private set; }
+
+        public Task<PlanSave> Save(
+            PlanPhase phase,
+            string reported,
+            Secrets? secrets = null,
+            CancellationToken cancellationToken = default)
         {
             Reported = reported;
+            Secrets = secrets;
             return Task.FromResult(answer);
         }
     }

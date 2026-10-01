@@ -29,9 +29,12 @@ to trust. Nothing here is open until you choose a folder: defaulting to `~` woul
 be handing over a home directory nobody offered.
 Every write stops at the same gate a command does, showing **the lines that
 change**, because "it would like to write nginx.conf" is not a question anybody
-can answer. Files are redacted like everything else before they are sent, and a
-write that would put `[redacted]` back into a real file is refused before anyone
-is asked. See `docs/adr/0009`.
+can answer. Files are redacted like everything else before they are sent. Each
+secret becomes a marker such as `[redacted:9f3a1c2b7d4e]`, and a write you approve,
+or a plan command you approved, gets the real value back on this side of the wire:
+a captured `kubeadm join` reaches the worker, and a saved one lands in the file,
+with its token, without the token ever reaching the provider. A marker nothing can
+fill in is refused before anyone is asked. See `docs/adr/0009` and `docs/adr/0011`.
 
 ```sh
 # the same folder, without a window: read inside it, write inside it, and be

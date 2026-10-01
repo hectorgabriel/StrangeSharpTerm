@@ -43,6 +43,17 @@ public sealed record AskOptions
     /// not its job.
     /// </summary>
     public string? ToolNote { get; init; }
+
+    /// <summary>
+    /// Secrets another host in a run produced, which this question's
+    /// <see cref="Approved"/> commands may carry: the bootstrap token in a
+    /// captured join command, say. Only those commands, exactly as written, get
+    /// them back -- see <see cref="Secrets"/>.
+    /// </summary>
+    public Secrets? Granted { get; init; }
+
+    /// <summary>The commands a person approved in a plan, filled in, as the phase lists them.</summary>
+    public IReadOnlyList<string> Approved { get; init; } = [];
 }
 
 /// <summary>What a question produced.</summary>
@@ -110,6 +121,12 @@ public sealed class HostAgent(
 
     public string Model => backend.Model;
 
+    /// <summary>
+    /// What this conversation has had taken out of what it saw. Kept for the
+    /// life of the conversation, as the conversation that refers to them is.
+    /// </summary>
+    internal Secrets Secrets { get; } = new();
+
     /// <summary>The conversation as the pane draws it.</summary>
     public IReadOnlyList<TranscriptEntry> Entries => _entries;
 
@@ -147,7 +164,7 @@ public sealed class HostAgent(
     public async Task<HostContext> Context(CancellationToken cancellationToken = default)
     {
         var snapshot = await Look(cancellationToken);
-        var tail = Redaction.Scrub(snapshot.TerminalTail);
+        var tail = Redaction.Scrub(snapshot.TerminalTail, Secrets);
         return LastContext = new HostContext
         {
             Alias = host.Alias,
@@ -416,7 +433,7 @@ public sealed class HostAgent(
                     continue;
                 }
 
-                var (outcome, result) = await Carry(call, budget, timeout, cancellationToken);
+                var (outcome, result) = await Carry(call, how, budget, timeout, cancellationToken);
                 if (outcome)
                     ran++;
                 results.Add(result);
@@ -496,6 +513,7 @@ public sealed class HostAgent(
 
     private async Task<(bool Ran, AssistToolResult Result)> Carry(
         AssistToolCall call,
+        AskOptions how,
         ICommandBudget budget,
         TimeSpan timeout,
         CancellationToken cancellationToken)
@@ -512,7 +530,43 @@ public sealed class HostAgent(
         }
 
         var (command, why) = AssistTools.ReadRun(call.Arguments);
-        var judgement = CommandPolicy.Judge(command);
+
+        // A secret goes back into a command only where a person approved that
+        // command, with the placeholder in it, as part of a plan. Anything else
+        // carrying the marker -- the same token in a curl, say -- is refused
+        // rather than run with it or run without it.
+        var run = command;
+        if (how.Granted is { } granted)
+        {
+            var restored = granted.Restore(command);
+            var carries = restored != command;
+            if ((carries && !how.Approved.Contains(command.Trim(), StringComparer.Ordinal)) || granted.Mangles(command))
+            {
+                // Nothing ran, and the model is told the exact text to try again
+                // with. The try is still spent: a model that cannot copy the
+                // line must run out of tries rather than loop on it.
+                if (!budget.Take())
+                {
+                    return (false, new AssistToolResult(
+                        call.Id,
+                        "The command budget for this question is spent. Do not ask for anything else; "
+                            + "summarise what you have found so far.",
+                        Failed: true));
+                }
+                return (false, new AssistToolResult(
+                    call.Id,
+                    "Not run. That command carries a value captured earlier in this run, and it can only be "
+                        + "run exactly as the plan wrote it, markers and all, character for character:\n"
+                        + string.Join("\n", how.Approved.Select(approved => $"  {approved}")),
+                    Failed: true));
+            }
+            if (carries)
+                run = restored;
+        }
+
+        // Judged as it will run. Shown as the model wrote it: the row and the
+        // gate are on screen, and the marker is the plan's own placeholder.
+        var judgement = CommandPolicy.Judge(run);
         var step = new TranscriptEntry.Step
         {
             Host = host.Alias,
@@ -561,7 +615,7 @@ public sealed class HostAgent(
         CommandOutcome outcome;
         try
         {
-            outcome = await host.Run(command, timeout, cancellationToken);
+            outcome = await host.Run(run, timeout, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -582,7 +636,7 @@ public sealed class HostAgent(
 
         // Redacted and truncated like everything else before it goes to a
         // provider. What the user sees in the row is the same text.
-        var scrubbed = Redaction.Scrub(outcome.Output);
+        var scrubbed = Redaction.Scrub(outcome.Output, Secrets);
         var output = Truncate(scrubbed.Text);
 
         step.State = outcome.TimedOut ? StepState.TimedOut : StepState.Ran;
@@ -665,7 +719,7 @@ public sealed class HostAgent(
         Updated?.Invoke(this, step);
 
         var reply = await connected.Call(call.Name, call.Arguments, cancellationToken);
-        var output = Truncate(Redaction.Scrub(reply.Output).Text);
+        var output = Truncate(Redaction.Scrub(reply.Output, Secrets).Text);
 
         step.State = reply.Failed ? StepState.Failed : StepState.Ran;
         step.Output = output;
@@ -711,7 +765,8 @@ public sealed class HostAgent(
             Append,
             entry => Updated?.Invoke(this, entry),
             // Only the host's own files are narrated into its pane.
-            local ? null : step => Working?.Invoke(this, step));
+            local ? null : step => Working?.Invoke(this, step),
+            Secrets);
 
         calls.Wrote += (_, change) =>
         {
