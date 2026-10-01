@@ -131,6 +131,38 @@ public class SecretsTests
         backend.Sent().ShouldNotContain("hunter2");
     }
 
+    /// <summary>
+    /// The model is told what its marker became. Without that it told the
+    /// person to fill the token in by hand, in a file that already held it.
+    /// </summary>
+    [Fact]
+    public async Task TheModelIsToldItsMarkersWereWrittenAsTheRealValues()
+    {
+        var workspace = new FakeWorkspace().With(".env", "DB_PASSWORD=hunter2\n");
+        var backend = new Acting(request => request.Messages.Count switch
+        {
+            1 => ScriptedBackend.Calls(WorkspaceTools.ReadFile, new { path = ".env" }),
+            3 => ScriptedBackend.Calls(
+                WorkspaceTools.WriteFile,
+                new { path = "copy.env", content = Output(request).Split('\n').First(line => line.StartsWith("DB_PASSWORD=")) + "\n", why = "copy" },
+                "call_2"),
+            _ => ScriptedBackend.Says("Copied."),
+        });
+        var agent = new HostAgent(backend, new FakeHost("web-01"), Fixtures.Settings, new StandingAnswer(true), null, workspace);
+
+        await agent.Ask("copy it", new AskOptions { MayEditFiles = true }, TestContext.Current.CancellationToken);
+
+        backend.Sent().ShouldContain("were written as the real value(s), so the file is complete");
+    }
+
+    [Fact]
+    public void EveryConversationThatSeesOutputIsToldWhatAMarkerIsFor()
+    {
+        AssistPrompts.Host.ShouldContain("never tell the user to replace a marker by hand");
+        AssistPrompts.HostWithCommands.ShouldContain("never tell the user to replace a marker by hand");
+        AssistPrompts.Fleet.ShouldContain("never tell the user to replace a marker by hand");
+    }
+
     [Fact]
     public async Task AMarkerThisConversationNeverMadeIsRefused()
     {

@@ -193,11 +193,19 @@ internal sealed class WorkspaceCalls(
                 machine, step.Command, why, Running: false, 0, change.Diff.Summary));
             Wrote?.Invoke(this, change);
 
+            // Said, because a model that wrote a marker believes it wrote the
+            // marker, and tells the person to go and fill the token in by hand
+            // in a file that already holds it.
+            var filled = secrets?.Known(content) ?? 0;
+            var restored = filled == 0
+                ? ""
+                : $" The {filled} [redacted:…] marker(s) in it were written as the real value(s), so the file "
+                    + "is complete: do not tell the user to fill anything in.";
             return (true, new AssistToolResult(
                 call.Id,
-                change.Creates
+                (change.Creates
                     ? $"Created {change.Relative} on {machine}."
-                    : $"Wrote {change.Relative} on {machine}: {change.Diff.Summary}."));
+                    : $"Wrote {change.Relative} on {machine}: {change.Diff.Summary}.") + restored));
         }
         catch (OperationCanceledException)
         {
