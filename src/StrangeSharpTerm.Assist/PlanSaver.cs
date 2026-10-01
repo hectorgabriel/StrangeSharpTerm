@@ -81,7 +81,12 @@ public sealed class PlanSaver(
             entry => Looked?.Invoke(this, (TranscriptEntry.Step)entry),
             entry => Looked?.Invoke(this, (TranscriptEntry.Step)entry),
             secrets: secrets);
-        calls.Wrote += (_, change) => Wrote?.Invoke(this, change);
+        FileChange? written = null;
+        calls.Wrote += (_, change) =>
+        {
+            written = change;
+            Wrote?.Invoke(this, change);
+        };
 
         List<AssistMessage> conversation =
         [
@@ -157,8 +162,17 @@ public sealed class PlanSaver(
                     budget,
                     cancellationToken);
 
+                // Said from the change rather than the tool result, which is
+                // written for the model and tells it things the person needs
+                // no telling of.
                 if (call.Name == SaveFile && ran)
-                    return new PlanSave(true, result.Output);
+                {
+                    return new PlanSave(true, written is { } change
+                        ? change.Creates
+                            ? $"Created {change.Relative} on this machine."
+                            : $"Wrote {change.Relative} on this machine: {change.Diff.Summary}."
+                        : result.Output);
+                }
 
                 // A person saying no ends it. The model is not asked again,
                 // which would only produce the same file with different words.
