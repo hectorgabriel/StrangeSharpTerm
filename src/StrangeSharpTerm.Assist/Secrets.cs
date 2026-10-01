@@ -67,6 +67,13 @@ public sealed partial class Secrets
             ? Numbered().Replace(text, match => Value(match.Value) ?? match.Value)
             : text;
 
+    /// <summary>How many different markers in this text this store can fill in.</summary>
+    public int Known(string text)
+    {
+        lock (_lock)
+            return Numbered().Matches(text).Select(match => match.Value).Distinct().Count(_byMarker.ContainsKey);
+    }
+
     /// <summary>
     /// Takes on the secrets another store holds for the markers in this text,
     /// and nothing else. How a run carries a captured value from the host that

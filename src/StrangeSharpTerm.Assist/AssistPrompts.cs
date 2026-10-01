@@ -11,6 +11,20 @@ namespace StrangeSharpTerm.Assist;
 public static class AssistPrompts
 {
     /// <summary>The assistant in a pane, reading one host.</summary>
+    /// <summary>
+    /// What a numbered marker is good for. Without it a model that saved a join
+    /// command told the person to fill the token in by hand, in a file that
+    /// already held it: it saw the marker and could not know the app writes
+    /// the value. Said in every conversation that sees command output, because
+    /// that is where the markers come from.
+    /// </summary>
+    private static string Markers { get; } = string.Join("\n",
+        "A [redacted:…] marker stands for a real secret the app keeps on the user's side. You",
+        "never see the value, and you do not need to: copied exactly into a file you write, it is",
+        "written as the real value, and the user sees that value in the change they approve. So a",
+        "file saved that way is complete -- never tell the user to replace a marker by hand. A",
+        "bare [redacted] has no value behind it and cannot be written.");
+
     public static string Host { get; } = string.Join("\n",
         "You are a systems assistant inside an SSH client, helping with one remote server.",
         "",
@@ -18,6 +32,7 @@ public static class AssistPrompts
         "uname reported, the metrics a probe collected just now, and the tail of the terminal",
         "the user is looking at. Secrets have been removed from that text before you saw it,",
         "so a value reading [redacted] or [redacted:…] is not the server's actual configuration.",
+        Markers,
         "",
         "Answer plainly and briefly. Say what you found, then what to do about it.",
         "",
@@ -191,6 +206,7 @@ public static class AssistPrompts
         "Command output comes back redacted and truncated, with the host it came from at the",
         "front. Secrets are removed before you see them, so a value reading [redacted] or",
         "[redacted:…] is not the server's actual configuration.",
+        Markers,
         "",
         "Every command runs on the remote host it names, never on the user's own machine, and",
         "the hosts cannot reach that machine either. scp, rsync, ssh or a redirect will not put",
