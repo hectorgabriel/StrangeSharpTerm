@@ -1,0 +1,2 @@
+data: {"candidates": [{"content": {"parts": [{"text": "I cannot help with that."}],"role": "model"},"finishReason": "SAFETY","index": 0}],"modelVersion": "gemini-3.8-flash","responseId": "gem_refusal_1"}
+

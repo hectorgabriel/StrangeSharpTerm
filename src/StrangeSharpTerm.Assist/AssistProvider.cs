@@ -10,6 +10,7 @@ public enum AssistProviderId
 {
     Claude,
     DeepSeek,
+    Gemini,
 }
 
 /// <summary>
@@ -70,9 +71,24 @@ public sealed record AssistProvider
         KeyVariable = "DEEPSEEK_API_KEY",
     };
 
-    public static IReadOnlyList<AssistProvider> All { get; } = [Claude, DeepSeek];
+    public static AssistProvider Gemini { get; } = new()
+    {
+        Id = AssistProviderId.Gemini,
+        Name = "Gemini",
+        DefaultModel = "gemini-3.8-flash",
+        KnownModels = ["gemini-3.8-flash", "gemini-3.1-pro-preview", "gemini-3.5-flash-lite"],
+        DataGoesTo = "Google (United States)",
+        KeyVariable = "GEMINI_API_KEY",
+    };
 
-    public static AssistProvider For(AssistProviderId id) => id == AssistProviderId.DeepSeek ? DeepSeek : Claude;
+    public static IReadOnlyList<AssistProvider> All { get; } = [Claude, DeepSeek, Gemini];
+
+    public static AssistProvider For(AssistProviderId id) => id switch
+    {
+        AssistProviderId.DeepSeek => DeepSeek,
+        AssistProviderId.Gemini => Gemini,
+        _ => Claude,
+    };
 }
 
 /// <summary>

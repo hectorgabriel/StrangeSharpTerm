@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <PackageReference Include="Anthropic" />
+    <PackageReference Include="Google.GenAI" />
   </ItemGroup>
   <ItemGroup>
     <!-- The shell scanner and the policy's rule table are pinned by tests without being public API. -->

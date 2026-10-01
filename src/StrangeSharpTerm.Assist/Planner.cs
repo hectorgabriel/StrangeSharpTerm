@@ -414,6 +414,7 @@ public static class AssistBackends
         return provider.Id switch
         {
             AssistProviderId.DeepSeek => DeepSeekBackend.Create(key, settings.ModelName, settings.Endpoint),
+            AssistProviderId.Gemini => GeminiBackend.Create(key, settings.ModelName, settings.Endpoint),
             _ => ClaudeBackend.Create(key, settings.ModelName, settings.Endpoint),
         };
     }
