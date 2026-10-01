@@ -1,0 +1,4 @@
+data: {"candidates": [{"content": {"parts": [{"text": "Usage is high, so the device and the largest directories are worth seeing.","thought": true}],"role": "model"},"index": 0}],"modelVersion": "gemini-3.8-flash","responseId": "gem_tool_1"}
+
+data: {"candidates": [{"content": {"parts": [{"functionCall": {"id": "fc_df","name": "run_command","args": {"command": "df -h /","why": "how full, and which device"}},"thoughtSignature": "c2lnbmF0dXJlLW9uZQ=="},{"functionCall": {"id": "fc_du","name": "run_command","args": {"command": "du -xsh /var/* | sort -h | tail","why": "what is largest"}}}],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 420,"candidatesTokenCount": 40,"totalTokenCount": 460},"modelVersion": "gemini-3.8-flash","responseId": "gem_tool_1"}
+

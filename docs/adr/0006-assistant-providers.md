@@ -88,3 +88,39 @@ unreachable, and both are load-bearing:
 - If the SDK ever becomes the wrong dependency — a licence change, an
   unmaintained package — `DeepSeekBackend` is the worked example of replacing it,
   and the recorded streams already say what the replacement has to produce.
+
+## Gemini, added later
+
+**Gemini goes through Google's official `Google.GenAI` package**, by the rule
+above: a vendor SDK where there is one. It was weighed against Gemini's
+OpenAI-compatible endpoint, which `DeepSeekBackend` could almost have spoken
+as it is, and lost on the one detail that matters for tool use.
+
+A Gemini 3 tool call carries a **thought signature**, an opaque value that has
+to go back on the same part, exactly as it came, or the next request is a 400.
+That is state about a call the seam had no room for, so `AssistToolCall` gained
+an optional `Signature`. Claude and DeepSeek never set it; everything above the
+seam carries it without knowing what it is, because a call is passed whole from
+the event that announced it to the transcript that replays it.
+
+Three further details live in `GeminiBackend` alone:
+
+- Of parallel calls only the first is signed, and that is the one checked. A
+  turn with no signature at all, such as one from a 2.5 model, gets Google's
+  documented placeholder (`skip_thought_signature_validator`) on its first call.
+- Tool schemas go under `parametersJsonSchema`, which takes JSON Schema whole.
+  The older `parameters` takes an OpenAPI subset and rejects
+  `additionalProperties`, which a connected tool's schema is free to use.
+- Gemini ends a turn of calls with a plain `STOP`, so the backend reports
+  `ToolUse` whenever a call arrived. A bad key is a 400 here, not a 401, and is
+  recognised by its message.
+
+The client is built with `vertexAI: false` said out loud. Left unset, the SDK
+reads it from the environment, and a variable meant for another tool would send
+this key and this terminal's output somewhere other than where Settings says.
+
+**Tested the same way, with one difference.** The stub is handed to the SDK
+through `ClientOptions.HttpClientFactory`. The `gemini.*` fixtures, unlike the
+others, were written from Google's documented wire format rather than recorded,
+because there was no account to record one with. Replacing them with a real
+recording is worth doing the first time one is to hand.

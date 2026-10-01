@@ -36,6 +36,17 @@ public class SettingsAndKeysTests
     }
 
     [Fact]
+    public void GeminisDefaultsAndWhereItsDataGoes()
+    {
+        var settings = new AssistSettings { Provider = AssistProviderId.Gemini };
+
+        settings.ModelName.ShouldBe("gemini-3.8-flash");
+        settings.Backend.DataGoesTo.ShouldBe("Google (United States)");
+        settings.Backend.KeyVariable.ShouldBe("GEMINI_API_KEY");
+        settings.Backend.KeyAccount.ShouldBe("gemini");
+    }
+
+    [Fact]
     public void NothingIsSentByDefaultThatWasNotAskedFor()
     {
         var settings = new AssistSettings();
@@ -121,10 +132,13 @@ public class SettingsAndKeysTests
         var store = new InMemorySecretStore();
         store.SetSecret(AssistProvider.Claude.KeyAccount, "k");
         store.SetSecret(AssistProvider.DeepSeek.KeyAccount, "k");
+        store.SetSecret(AssistProvider.Gemini.KeyAccount, "k");
 
         AssistBackends.For(new AssistSettings(), store).ShouldNotBeNull().ProviderName.ShouldBe("Claude");
         AssistBackends.For(new AssistSettings { Provider = AssistProviderId.DeepSeek }, store)
             .ShouldNotBeNull().ProviderName.ShouldBe("DeepSeek");
+        AssistBackends.For(new AssistSettings { Provider = AssistProviderId.Gemini }, store)
+            .ShouldNotBeNull().ProviderName.ShouldBe("Gemini");
     }
 
     /// <summary>

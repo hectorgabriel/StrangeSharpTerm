@@ -9,13 +9,18 @@ public enum AssistRole
 
 /// <summary>A command the model asked for, as the wire carries it.</summary>
 /// <param name="Arguments">Raw JSON, because a provider streams it as text and only the caller knows the schema.</param>
-public sealed record AssistToolCall(string Id, string Name, string Arguments);
+/// <param name="Signature">
+/// Opaque state the provider attached to the call and wants back verbatim with
+/// it. Only Gemini sends one, and Gemini 3 refuses a conversation that drops it,
+/// so it rides on the call itself rather than in a side table a pane could lose.
+/// </param>
+public sealed record AssistToolCall(string Id, string Name, string Arguments, string? Signature = null);
 
 /// <summary>What a tool call produced, on its way back to the model.</summary>
 public sealed record AssistToolResult(string CallId, string Output, bool Failed = false);
 
 /// <summary>
-/// One turn, in the shape both providers can carry.
+/// One turn, in the shape every provider can carry.
 ///
 /// Not either provider's own message type: Claude puts tool results in content
 /// blocks on a user message and DeepSeek puts them in messages of their own, and
@@ -109,7 +114,7 @@ public abstract record AssistEvent
 /// </summary>
 public interface IAssistBackend
 {
-    /// <summary>As the pane header says it: "Claude", "DeepSeek".</summary>
+    /// <summary>As the pane header says it: "Claude", "DeepSeek", "Gemini".</summary>
     string ProviderName { get; }
 
     /// <summary>The model answering, which the header names beside the provider.</summary>

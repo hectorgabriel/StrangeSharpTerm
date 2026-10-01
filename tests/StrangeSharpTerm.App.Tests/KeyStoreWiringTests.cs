@@ -40,6 +40,7 @@ public class KeyStoreWiringTests
     [Theory]
     [InlineData(AssistProviderId.DeepSeek)]
     [InlineData(AssistProviderId.Claude)]
+    [InlineData(AssistProviderId.Gemini)]
     public void AKeySavedInSettingsIsTheKeyAPaneFinds(AssistProviderId provider)
     {
         var (shell, assistKeys) = Window(provider);
