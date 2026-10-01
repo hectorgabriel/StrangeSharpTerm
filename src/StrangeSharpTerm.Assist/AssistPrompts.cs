@@ -317,9 +317,10 @@ public static class AssistPrompts
                 "When the run reaches it, a file is written from what the earlier phases reported, and the",
                 "user sees the change before it lands. why says what the file should contain. Use it",
                 "whenever the request asks for something to be written, saved or copied onto the user's",
-                "machine, after the phases that find it out. Secrets are removed from what the hosts",
-                "report, so it suits findings, summaries and configuration without credentials; it cannot",
-                "copy a key, a password or a kubeconfig's certificates.")
+                "machine, after the phases that find it out. That includes a join command or a token: the",
+                "hosts' secrets reach the file's writer as [redacted:…] markers and are written as the real",
+                "values on the user's machine, never sent anywhere, so plan the save when it is asked for.",
+                "The one thing it cannot copy is a private key, which is never kept.")
             : string.Join("\n", reading, "", PlannerCannotSave(folderOpen: true));
     }
 

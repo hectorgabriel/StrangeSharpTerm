@@ -155,6 +155,20 @@ public class SecretsTests
         backend.Sent().ShouldContain("were written as the real value(s), so the file is complete");
     }
 
+    /// <summary>
+    /// The planner was told a save could not copy a password or a key, which
+    /// was true before markers. DeepSeek took it at its word and left the save
+    /// out of a plan asked to keep the join command.
+    /// </summary>
+    [Fact]
+    public void ThePlannerIsToldASaveCanCarryAToken()
+    {
+        var told = AssistPrompts.PlannerWorkspace("~/cluster", maySave: true);
+
+        told.ShouldContain("That includes a join command or a token");
+        told.ShouldNotContain("cannot\ncopy a key, a password");
+    }
+
     [Fact]
     public void EveryConversationThatSeesOutputIsToldWhatAMarkerIsFor()
     {
@@ -283,6 +297,8 @@ public class SecretsTests
 
         result.Phases[1].Outcome.ShouldBe(PhaseOutcome.Saved);
         here.Written["join.sh"].ShouldBe(Join + "\n");
+        // What the person reads is what happened, not what the model was told.
+        result.Phases[1].Note.ShouldBe("Created join.sh on this machine.");
         writer.Sent().ShouldNotContain(Token);
         backend.Sent().ShouldNotContain(Token);
     }
