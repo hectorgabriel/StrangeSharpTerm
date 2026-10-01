@@ -54,6 +54,8 @@ public static partial class Redaction
         var scrubbed = text;
 
         scrubbed = PrivateKeyBlock().Replace(scrubbed, _ => Take("[redacted private key]"));
+        scrubbed = EncodedPem().Replace(scrubbed, match =>
+            IsPrivateKey(match.Value) ? Take("[redacted private key]") : match.Value);
         scrubbed = Assignment().Replace(scrubbed, match =>
         {
             if (!IsSecretish(match.Groups["name"].Value))
@@ -94,6 +96,34 @@ public static partial class Redaction
         return SecretishName().IsMatch(bare);
     }
 
+    /// <summary>
+    /// Whether a base64 blob is a PEM private key, read from its first line.
+    /// Certificates are encoded exactly the same way and are not secret, so the
+    /// shape alone is not enough to take one out.
+    /// </summary>
+    private static bool IsPrivateKey(string encoded)
+    {
+        // Whole base64 quads only, enough for the BEGIN line.
+        var length = Math.Min(encoded.Length, 64) / 4 * 4;
+        var head = encoded[..length];
+        try
+        {
+            return System.Text.Encoding.ASCII.GetString(Convert.FromBase64String(head))
+                .Contains("PRIVATE KEY", StringComparison.Ordinal);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    // A PEM block base64-encoded whole -- LS0tLS1CRUdJTi is "-----BEGIN" -- as a
+    // kubeconfig carries its client key in client-key-data. Plain text has the
+    // rule below; this one went straight past it, and `cat admin.conf` sent the
+    // cluster admin's key to the provider.
+    [GeneratedRegex("""LS0tLS1CRUdJTi[A-Za-z0-9+/]+={0,2}""", RegexOptions.None)]
+    private static partial Regex EncodedPem();
+
     // A whole PEM block, however it is labelled: RSA, EC, OPENSSH, or none.
     [GeneratedRegex(
         """-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----""",
@@ -108,7 +138,7 @@ public static partial class Redaction
     // than part of the secret. Without that, "Authorization: Bearer eyJ…" loses
     // the word Bearer and keeps the token, which is exactly backwards.
     [GeneratedRegex(
-        """(?<name>["']?[A-Za-z_][A-Za-z0-9_.\-]*["']?)(?<op>\s*[:=]\s*)(?<scheme>(?:Bearer|Basic|Token)\s+)?(?:"[^"\n]*"|'[^'\n]*'|[^\s;,&|)\]}]+)""",
+        """(?<name>["']?[A-Za-z_][A-Za-z0-9_.\-]*["']?)(?<op>\s*[:=]\s*)(?<scheme>(?:Bearer|Basic|Token)\s+)?(?!\[redacted)(?:"[^"\n]*"|'[^'\n]*'|[^\s;,&|)\]}]+)""",
         RegexOptions.None)]
     private static partial Regex Assignment();
 

@@ -61,6 +61,35 @@ public class SecretsTests
         scrubbed.Text.ShouldNotContain(Token);
     }
 
+    /// <summary>
+    /// A kubeconfig's client key is a PEM private key base64-encoded, and went
+    /// to the provider whole: the plain-text rule never saw it. Certificates are
+    /// encoded the same way and are not secret, so they stay.
+    /// </summary>
+    [Fact]
+    public void AKubeconfigsClientKeyIsTakenOutAndItsCertificatesAreNot()
+    {
+        static string Encoded(string pem) => Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes(pem));
+        var key = Encoded("-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAtesttesttest\n-----END RSA PRIVATE KEY-----\n");
+        var pkcs8 = Encoded("-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\n-----END PRIVATE KEY-----\n");
+        var certificate = Encoded("-----BEGIN CERTIFICATE-----\nMIIDITCCAgmgAwIBAgIIabcdef\n-----END CERTIFICATE-----\n");
+        var secrets = new Secrets();
+
+        var scrubbed = Redaction.Scrub(string.Join("\n",
+            $"    client-certificate-data: {certificate}",
+            $"    client-key-data: {key}",
+            $"    private_key: {pkcs8}"), secrets);
+
+        scrubbed.Text.ShouldNotContain(key);
+        scrubbed.Text.ShouldNotContain(pkcs8);
+        scrubbed.Text.ShouldContain($"client-certificate-data: {certificate}");
+        scrubbed.Text.ShouldContain("client-key-data: [redacted private key]");
+        // One each, and the name in front of the second does not count it twice.
+        scrubbed.Count.ShouldBe(2);
+        // Never kept, like any private key.
+        secrets.Count.ShouldBe(0);
+    }
+
     [Fact]
     public void WithoutAStoreRedactionIsOneWayAsItWas() =>
         Redaction.Scrub(Join).Text.ShouldContain($"--token {Redaction.Marker} ");
