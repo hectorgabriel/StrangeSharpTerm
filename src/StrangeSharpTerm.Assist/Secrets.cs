@@ -116,11 +116,16 @@ public sealed partial class Secrets
 
     /// <summary>
     /// Whether text still carries a marker of any kind: one nothing restored,
-    /// or the plain <see cref="Redaction.Marker"/>. Writing either into a file
-    /// or a command would put the word in place of the secret.
+    /// the plain <see cref="Redaction.Marker"/>, or a private key's
+    /// <see cref="Redaction.KeyMarker"/>. Writing any of them into a file or a
+    /// command would put the word in place of the secret. The key's was missed
+    /// once, and a kubeconfig written from a scrubbed one landed with the
+    /// words "[redacted private key]" as its client key.
     /// </summary>
     public static bool Marked(string text) =>
-        text.Contains(Redaction.Marker, StringComparison.Ordinal) || Numbered().IsMatch(text);
+        text.Contains(Redaction.Marker, StringComparison.Ordinal)
+        || text.Contains(Redaction.KeyMarker, StringComparison.Ordinal)
+        || Numbered().IsMatch(text);
 
     private string? Value(string marker)
     {

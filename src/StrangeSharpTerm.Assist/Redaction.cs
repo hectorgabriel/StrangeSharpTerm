@@ -30,6 +30,9 @@ public static partial class Redaction
 {
     public const string Marker = "[redacted]";
 
+    /// <summary>What a private key becomes. Never kept, so nothing can fill it back in.</summary>
+    public const string KeyMarker = "[redacted private key]";
+
     /// <summary>
     /// Scrubs text, in order: whole key blocks first, then assignments, then the
     /// shapes that stand alone.
@@ -53,9 +56,9 @@ public static partial class Redaction
         var count = 0;
         var scrubbed = text;
 
-        scrubbed = PrivateKeyBlock().Replace(scrubbed, _ => Take("[redacted private key]"));
+        scrubbed = PrivateKeyBlock().Replace(scrubbed, _ => Take(KeyMarker));
         scrubbed = EncodedPem().Replace(scrubbed, match =>
-            IsPrivateKey(match.Value) ? Take("[redacted private key]") : match.Value);
+            IsPrivateKey(match.Value) ? Take(KeyMarker) : match.Value);
         scrubbed = Assignment().Replace(scrubbed, match =>
         {
             if (!IsSecretish(match.Groups["name"].Value))

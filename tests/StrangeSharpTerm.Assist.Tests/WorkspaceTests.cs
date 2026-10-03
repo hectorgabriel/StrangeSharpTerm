@@ -328,6 +328,33 @@ public class WorkspaceAgentTests
     }
 
     [Fact]
+    public async Task NorAPrivateKeyThatWasNeverKept()
+    {
+        // A private key is taken out whole and never kept, so its marker has no
+        // value behind it. A kubeconfig written back from a scrubbed one would
+        // land with the marker as its client key and fail to authenticate.
+        var workspace = new FakeWorkspace();
+        var gate = new RecordingGate();
+        var agent = Agent(
+            workspace,
+            gate,
+            ScriptedBackend.Calls(
+                WorkspaceTools.WriteFile,
+                new
+                {
+                    path = "kubeconfig",
+                    content = $"users:\n- name: admin\n  user:\n    client-key-data: {Redaction.KeyMarker}\n",
+                    why = "save the kubeconfig",
+                }),
+            ScriptedBackend.Says("I cannot write the key."));
+
+        await agent.Ask("save the kubeconfig", Editing, TestContext.Current.CancellationToken);
+
+        gate.Asked.ShouldBeEmpty();
+        workspace.Written.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task AFileThatAlreadySaysExactlyThatIsNotAQuestionForAnybody()
     {
         var workspace = new FakeWorkspace().With("app.py", "print()");
