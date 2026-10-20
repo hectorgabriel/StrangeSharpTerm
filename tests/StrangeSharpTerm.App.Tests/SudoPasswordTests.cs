@@ -15,16 +15,24 @@ internal sealed class RecordingCommands : IRemoteCommands
     /// <summary>What <c>sudo -n true</c> answers: 0 where sudo needs no password.</summary>
     public int ProbeStatus { get; set; } = 1;
 
-    public CommandResult Run(string command, TimeSpan timeout)
+    /// <summary>What every command but the probe answers.</summary>
+    public CommandResult Answer { get; set; } = new(0, "ok", "");
+
+    /// <summary>The cancellation each command was given, so that it can be seen to reach the command.</summary>
+    public List<CancellationToken> Tokens { get; } = [];
+
+    public CommandResult Run(string command, TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         Ran.Add((command, null));
-        return command == Sudo.Probe ? new CommandResult(ProbeStatus, "", "") : new CommandResult(0, "ok", "");
+        Tokens.Add(cancellationToken);
+        return command == Sudo.Probe ? new CommandResult(ProbeStatus, "", "") : Answer;
     }
 
-    public CommandResult RunFeeding(string command, TimeSpan timeout, string input)
+    public CommandResult RunFeeding(string command, TimeSpan timeout, string input, CancellationToken cancellationToken = default)
     {
         Ran.Add((command, input));
-        return new CommandResult(0, "ok", "");
+        Tokens.Add(cancellationToken);
+        return Answer;
     }
 }
 

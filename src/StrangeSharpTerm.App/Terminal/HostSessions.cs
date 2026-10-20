@@ -126,9 +126,10 @@ public sealed class HostSessions : IHostSessions, IDisposable
     {
         private IRemoteCommands? _opened;
 
-        public CommandResult Run(string command, TimeSpan timeout) => (_opened ??= open()).Run(command, timeout);
+        public CommandResult Run(string command, TimeSpan timeout, CancellationToken cancellationToken = default) =>
+            (_opened ??= open()).Run(command, timeout, cancellationToken);
 
-        public CommandResult RunFeeding(string command, TimeSpan timeout, string input) =>
-            (_opened ??= open()).RunFeeding(command, timeout, input);
+        public CommandResult RunFeeding(string command, TimeSpan timeout, string input, CancellationToken cancellationToken = default) =>
+            (_opened ??= open()).RunFeeding(command, timeout, input, cancellationToken);
     }
 }

@@ -206,9 +206,9 @@ public class TiledLayoutTests
 
     private sealed class Silent : IRemoteCommands, IServerHealth
     {
-        public CommandResult Run(string command, TimeSpan timeout) => new(0, "", "");
+        public CommandResult Run(string command, TimeSpan timeout, CancellationToken cancellationToken = default) => new(0, "", "");
 
-        public CommandResult RunFeeding(string command, TimeSpan timeout, string input) => Run(command, timeout);
+        public CommandResult RunFeeding(string command, TimeSpan timeout, string input, CancellationToken cancellationToken = default) => Run(command, timeout);
 
         public ServerMetrics Collect() => new() { Uptime = "3 days" };
     }

@@ -80,6 +80,18 @@ check "three execs on one connection cost one authentication" "$(( $(auths) - BE
 check "input reaches the command, and is closed after it" \
     "$(run exec --input 'fed-through-stdin' "$TARGET" -- cat)" "fed-through-stdin"
 
+# A command that outlives its timeout is stopped on the server rather than left
+# running there: the assistant's sixty seconds, a plan's ten minutes, and Stop.
+# The sleep is inside a second shell, because what has to end is the command's
+# whole process group, not only the shell at the top of it.
+STOPPED="$(run exec --command-timeout 2 "$TARGET" -- 'echo started; sh -c "sleep 31; echo inner"; echo finished' 2>&1 || true)"
+check "a command past its timeout comes back with what it said first" \
+    "$(printf '%s\n' "$STOPPED" | head -n 1)" "started"
+check "and says the server stopped it" \
+    "$(printf '%s\n' "$STOPPED" | grep -c 'stopped after the timeout (TERM)')" "1"
+check "and nothing of it is left running there" \
+    "$(run exec "$TARGET" -- "ps -eo args= | grep -c '^sleep 31\$'" || true)" "0"
+
 echo
 echo "tunnels:"
 FORWARD_OUT="$(run forward --check "$TARGET" -L "$FORWARD_PORT:127.0.0.1:$PORT" || true)"

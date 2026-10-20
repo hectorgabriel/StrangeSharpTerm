@@ -313,7 +313,7 @@ internal static class Rehearsal
         {
             public ServerMetrics Collect() => Metrics;
 
-            public CommandResult Run(string command, TimeSpan timeout)
+            public CommandResult Run(string command, TimeSpan timeout, CancellationToken cancellationToken = default)
             {
                 // Slow enough that the pane being driven is visibly being
                 // driven: the mark on a tile is worth nothing if it comes and
@@ -327,7 +327,8 @@ internal static class Rehearsal
                 "Filesystem      Size  Used Avail Use% Mounted on\n/dev/sda1        49G   46G  1.2G  98% /";
 
             /// <summary>The same invented answer: nothing here reads what it is given.</summary>
-            public CommandResult RunFeeding(string command, TimeSpan timeout, string input) => Run(command, timeout);
+            public CommandResult RunFeeding(string command, TimeSpan timeout, string input, CancellationToken cancellationToken = default) =>
+                Run(command, timeout, cancellationToken);
         }
 
         /// <summary>

@@ -112,8 +112,9 @@ public static class AssistLimits
     public const int Concurrency = 3;
 
     /// <summary>
-    /// How long the pane waits for one command. The command is not killed -- the
-    /// runner cannot be interrupted -- so what this bounds is the waiting.
+    /// How long one command may run. Past it the command is told to stop -- a
+    /// TERM to its process group, where the server implements signals -- and
+    /// the model is told whether the server confirmed that it did.
     /// </summary>
     public static TimeSpan CommandTimeout { get; } = TimeSpan.FromSeconds(60);
 

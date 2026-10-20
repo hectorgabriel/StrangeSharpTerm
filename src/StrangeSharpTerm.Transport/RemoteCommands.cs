@@ -9,8 +9,12 @@ namespace StrangeSharpTerm.Transport;
 /// </summary>
 public interface IRemoteCommands
 {
-    /// <summary>One exec on the host's existing session. Throws if it cannot be run at all.</summary>
-    CommandResult Run(string command, TimeSpan timeout);
+    /// <summary>
+    /// One exec on the host's existing session. Throws if it cannot be run at
+    /// all. One that runs past <paramref name="timeout"/> is stopped and comes
+    /// back <see cref="CommandResult.Stopped"/>; cancelling stops it and throws.
+    /// </summary>
+    CommandResult Run(string command, TimeSpan timeout, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// The same, with <paramref name="input"/> written to the command's
@@ -21,14 +25,15 @@ public interface IRemoteCommands
     /// never came -- and this project has been bitten by exactly that shape of
     /// default before.
     /// </summary>
-    CommandResult RunFeeding(string command, TimeSpan timeout, string input);
+    CommandResult RunFeeding(string command, TimeSpan timeout, string input, CancellationToken cancellationToken = default);
 }
 
 /// <summary><see cref="IRemoteCommands"/> over a session: one channel on the connection already made.</summary>
 public sealed class SshCommands(SshNetSession session) : IRemoteCommands
 {
-    public CommandResult Run(string command, TimeSpan timeout) => session.Run(command, timeout);
+    public CommandResult Run(string command, TimeSpan timeout, CancellationToken cancellationToken = default) =>
+        session.Run(command, timeout, cancellationToken);
 
-    public CommandResult RunFeeding(string command, TimeSpan timeout, string input) =>
-        session.RunFeeding(command, timeout, input);
+    public CommandResult RunFeeding(string command, TimeSpan timeout, string input, CancellationToken cancellationToken = default) =>
+        session.RunFeeding(command, timeout, input, cancellationToken);
 }

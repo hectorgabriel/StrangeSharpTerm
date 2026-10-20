@@ -65,23 +65,24 @@ public sealed class SshHostAccess(
         await Task.Run(
             () =>
             {
-                try
-                {
-                    var (result, explain) = Execute(command, timeout);
-                    var output = Both(result);
-                    // Said after the output rather than instead of it: what sudo
-                    // said is still the truth about what happened, and this is
-                    // the part the model could not have worked out.
-                    return new CommandOutcome(
-                        result.ExitStatus,
-                        explain ? string.Join("\n\n", new[] { output, Sudo.NotGiven }.Where(part => part.Length > 0)) : output);
-                }
-                catch (Exception e) when (e is TimeoutException or OperationCanceledException)
-                {
-                    // The command is not killed -- nothing here can kill it --
-                    // so what ended is the waiting.
-                    return new CommandOutcome(-1, "", TimedOut: true);
-                }
+                // Cancelling reaches the command itself, not only this wait:
+                // Stop means stop, and a command left behind on the server
+                // would go on doing whatever the person just decided against.
+                var (result, explain) = Execute(command, timeout, cancellationToken);
+                var output = Both(result);
+
+                // What it said before it was stopped is kept: the start of a
+                // long log is still the start of it, and an empty "partial
+                // output" told the model nothing at all.
+                if (result.Stopped)
+                    return new CommandOutcome(-1, output, TimedOut: true, StoppedBy: result.ExitSignal);
+
+                // Said after the output rather than instead of it: what sudo
+                // said is still the truth about what happened, and this is
+                // the part the model could not have worked out.
+                return new CommandOutcome(
+                    result.ExitStatus,
+                    explain ? string.Join("\n\n", new[] { output, Sudo.NotGiven }.Where(part => part.Length > 0)) : output);
             },
             cancellationToken);
 
@@ -100,21 +101,21 @@ public sealed class SshHostAccess(
     /// password: true only where a password was there to give and the command
     /// used sudo in a shape that does not qualify.
     /// </returns>
-    private (CommandResult Result, bool Explain) Execute(string command, TimeSpan timeout)
+    private (CommandResult Result, bool Explain) Execute(string command, TimeSpan timeout, CancellationToken cancellationToken)
     {
         if (sudoPassword?.Invoke() is not { Length: > 0 } password)
-            return (commands.Run(command, timeout), false);
+            return (commands.Run(command, timeout, cancellationToken), false);
 
         if (Sudo.Prepared(command) is not { } prepared)
-            return (commands.Run(command, timeout), Sudo.Mentions(command));
+            return (commands.Run(command, timeout, cancellationToken), Sudo.Mentions(command));
 
         // Asked first, with nothing on its input. Where sudo needs no password
         // here, none is sent: it would not be read by sudo, and the command
         // after it would read it instead.
-        if (commands.Run(Sudo.Probe, ProbeTimeout).ExitStatus == 0)
-            return (commands.Run(command, timeout), false);
+        if (commands.Run(Sudo.Probe, ProbeTimeout, cancellationToken).ExitStatus == 0)
+            return (commands.Run(command, timeout, cancellationToken), false);
 
-        return (commands.RunFeeding(prepared, timeout, password + "\n"), false);
+        return (commands.RunFeeding(prepared, timeout, password + "\n", cancellationToken), false);
     }
 
     /// <summary>How long the question "does sudo want a password" may take. It is sudo and true.</summary>
