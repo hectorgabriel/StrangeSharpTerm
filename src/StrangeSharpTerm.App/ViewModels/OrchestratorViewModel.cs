@@ -795,6 +795,42 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// <summary>What <c>/mcp</c> answers with. Supplied by the window, which owns the servers.</summary>
     private Func<string>? _connectedTools;
 
+    /// <inheritdoc cref="AssistantViewModel.Copied"/>
+    public event EventHandler<string>? Copied;
+
+    /// <summary>
+    /// The fleet conversation, onto the clipboard, as Markdown.
+    ///
+    /// Ask mode's conversation, which is the one with a transcript. A plan's
+    /// record is the plan and what each phase reported, on screen as phases
+    /// rather than as a conversation.
+    /// </summary>
+    private void Export(FleetAgent fleet)
+    {
+        var entries = fleet.Entries;
+        if (!entries.Any(entry => entry is TranscriptEntry.Question))
+        {
+            fleet.Say(ChatCommands.NothingToExport);
+            return;
+        }
+
+        var hosts = entries.OfType<TranscriptEntry.Step>()
+            .Select(step => step.Host)
+            .Where(host => host.Length > 0 && host != "this machine")
+            .Distinct()
+            .ToArray();
+        Copied?.Invoke(this, TranscriptExport.Markdown(
+            entries,
+            "Orchestrator conversation",
+            DateTimeOffset.Now,
+            [
+                hosts.Length > 0 ? $"Hosts: {string.Join(", ", hosts)}." : "",
+                $"Answered by {Answering}.",
+                Spending.Length > 0 ? $"Used {Spending}." : "",
+            ]));
+        fleet.Say(ChatCommands.Exported(entries));
+    }
+
     /// <inheritdoc cref="AssistantViewModel.Handle"/>
     public bool Handle(string text)
     {
@@ -814,6 +850,10 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
 
             case ChatCommands.Help:
                 fleet.Say(ChatCommands.Listing);
+                break;
+
+            case ChatCommands.Export:
+                Export(fleet);
                 break;
 
             default:

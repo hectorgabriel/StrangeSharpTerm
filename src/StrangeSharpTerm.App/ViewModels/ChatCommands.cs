@@ -1,3 +1,5 @@
+using StrangeSharpTerm.Assist;
+
 namespace StrangeSharpTerm.App.ViewModels;
 
 /// <summary>
@@ -20,6 +22,8 @@ public static class ChatCommands
     public const string Mcp = "mcp";
 
     public const string Help = "help";
+
+    public const string Export = "export";
 
     /// <summary>
     /// Whether this line is a command rather than a question.
@@ -53,9 +57,25 @@ public static class ChatCommands
         "",
         "  /clear   forget this conversation — what is on screen, and what the provider has been told",
         "  /mcp     the connected tool servers, and what each one offers",
+        "  /export  copy this conversation to the clipboard as Markdown, secrets still taken out",
         "  /help    this",
         "",
         "Anything else is a question.");
+
+    /// <summary>
+    /// What <c>/export</c> says once the conversation is on the clipboard, or
+    /// that there was nothing to put there.
+    /// </summary>
+    public static string Exported(IReadOnlyList<TranscriptEntry> entries)
+    {
+        var questions = entries.Count(entry => entry is TranscriptEntry.Question);
+        var steps = entries.Count(entry => entry is TranscriptEntry.Step);
+        return $"Copied this conversation to the clipboard as Markdown: {Count(questions, "question")}, {Count(steps, "command")}.";
+
+        static string Count(int count, string what) => count == 1 ? $"1 {what}" : $"{count} {what}s";
+    }
+
+    public const string NothingToExport = "There is nothing to export yet: ask something first.";
 
     /// <summary>What an unknown one is answered with, rather than being sent as a question.</summary>
     public static string Unknown(string name) =>

@@ -21,6 +21,17 @@ public partial class OrchestratorView : UserControl, IDisposable
     {
         _model = model;
         DataContext = model;
+
+        // As the assistant pane does it: the view model asks, the view has the window.
+        model.Copied += (_, text) =>
+        {
+            if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+                return;
+
+            var transfer = new DataTransfer();
+            transfer.Add(DataTransferItem.CreateText(text));
+            _ = clipboard.SetDataAsync(transfer);
+        };
     }
 
     /// <summary>

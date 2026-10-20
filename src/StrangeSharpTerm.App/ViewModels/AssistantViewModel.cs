@@ -520,6 +520,10 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
                 _agent.Say(ChatCommands.Listing);
                 break;
 
+            case ChatCommands.Export:
+                Export();
+                break;
+
             default:
                 _agent.Say(ChatCommands.Unknown(ChatCommands.Name(text)));
                 break;
@@ -570,6 +574,27 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
     }
 
     public bool CanRetry => !IsAsking && _agent.CanRewind && _asked.Count > 0;
+
+    /// <summary>
+    /// The conversation, onto the clipboard, as Markdown -- and a note saying
+    /// so, because a clipboard gives no sign of having been written to.
+    /// </summary>
+    private void Export()
+    {
+        var entries = _agent.Entries;
+        if (!entries.Any(entry => entry is TranscriptEntry.Question))
+        {
+            _agent.Say(ChatCommands.NothingToExport);
+            return;
+        }
+
+        Copied?.Invoke(this, TranscriptExport.Markdown(
+            entries,
+            $"{Alias}: assistant conversation",
+            DateTimeOffset.Now,
+            [$"Answered by {Answering}.", Spending.Length > 0 ? $"Used {Spending}." : ""]));
+        _agent.Say(ChatCommands.Exported(entries));
+    }
 
     private async Task Put(string question)
     {
