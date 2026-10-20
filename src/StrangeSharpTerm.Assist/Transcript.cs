@@ -8,6 +8,13 @@ public enum StepState
     /// <summary>The gate is open and a person has not answered yet.</summary>
     Waiting,
 
+    /// <summary>
+    /// Nobody needs asking; it is waiting for one of the reads running beside
+    /// it to finish. Its own state rather than <see cref="Waiting"/>, which a
+    /// pane reads as a question for the person.
+    /// </summary>
+    Queued,
+
     Running,
 
     /// <summary>It ran and returned, whatever its exit status.</summary>

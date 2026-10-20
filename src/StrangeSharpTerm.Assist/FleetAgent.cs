@@ -267,25 +267,46 @@ public sealed class FleetAgent(
             if (calls.Count == 0)
                 return new AgentAnswer(found, ran);
 
-            var results = new List<AssistToolResult>();
-            foreach (var call in calls)
+            var results = new AssistToolResult[calls.Count];
+            foreach (var batch in Batches(calls, offered))
             {
                 // Only what was offered this turn -- see HostAgent.Unoffered.
                 // With eight hosts in reach this matters more, not less: an
                 // uninvited run_command here lands on whichever host the model
                 // names.
-                if (!offered.Any(tool => tool.Name == call.Name))
+                if (batch is [var lone] && !offered.Any(tool => tool.Name == calls[lone].Name))
                 {
-                    results.Add(Unoffered(call));
+                    results[lone] = Unoffered(calls[lone]);
                     continue;
                 }
 
-                var (carried, result) = await Carry(call, budget, cancellationToken);
-                if (carried)
-                    ran++;
-                results.Add(result);
+                if (batch is [var single])
+                {
+                    var (carried, result) = await Carry(calls[single], budget, cancellationToken);
+                    if (carried)
+                        ran++;
+                    results[single] = result;
+                    continue;
+                }
+
+                // Reads, side by side, and never more at once than a run puts in
+                // flight anywhere else. Each is started here, one after another,
+                // and gets as far as its row before the next begins -- so the
+                // rows appear in the order they were asked for, which handing
+                // them to a pool of workers did not promise.
+                using (var throttle = new SemaphoreSlim(AssistLimits.Concurrency))
+                {
+                    await Task.WhenAll([.. batch.Select(async index =>
+                    {
+                        var (carried, result) = await Carry(calls[index], budget, cancellationToken, throttle);
+                        if (carried)
+                            Interlocked.Increment(ref ran);
+                        results[index] = result;
+                    })]);
+                }
             }
 
+            // In the order they were asked for, whatever order they finished in.
             _conversation.Add(new AssistMessage { Role = AssistRole.User, ToolResults = results });
 
             void Show()
@@ -303,6 +324,44 @@ public sealed class FleetAgent(
         Append(new TranscriptEntry.Note("This run went on long enough that the assistant stopped."));
         return new AgentAnswer(found, ran);
     }
+
+    /// <summary>
+    /// A turn's calls, in order, as the groups they can run in.
+    ///
+    /// A command the policy lets through without asking only reads, so
+    /// several of them -- the same question put to eight hosts, say -- can run
+    /// at once instead of one after another, each waiting for the slowest
+    /// server before it. Everything else runs alone, in its place: a call that
+    /// stops for a person must not have reads racing past it, and the reads
+    /// after it must not start before it is answered, because the person may
+    /// be refusing the thing they would have looked at.
+    /// </summary>
+    private static IEnumerable<int[]> Batches(IReadOnlyList<AssistToolCall> calls, IReadOnlyList<AssistTool> offered)
+    {
+        List<int> reads = [];
+        for (var index = 0; index < calls.Count; index++)
+        {
+            if (Reads(calls[index], offered))
+            {
+                reads.Add(index);
+                continue;
+            }
+
+            if (reads.Count > 0)
+                yield return [.. reads];
+            reads.Clear();
+            yield return [index];
+        }
+
+        if (reads.Count > 0)
+            yield return [.. reads];
+    }
+
+    /// <summary>Whether a call is a command that would run without anybody being asked.</summary>
+    private static bool Reads(AssistToolCall call, IReadOnlyList<AssistTool> offered) =>
+        call.Name == AssistTools.RunCommand
+        && offered.Any(tool => tool.Name == call.Name)
+        && CommandPolicy.Judge(AssistTools.ReadRun(call.Arguments).Command).MayRunUnattended;
 
     /// <summary>
     /// What the hosts are called, which is all it is told before it asks.
@@ -405,10 +464,12 @@ public sealed class FleetAgent(
     }
 
     /// <summary>One call: on which host, judged, maybe asked about, maybe run.</summary>
+    /// <param name="throttle">Shared by reads running side by side, or null for a call that runs alone.</param>
     private async Task<(bool Ran, AssistToolResult Result)> Carry(
         AssistToolCall call,
         ICommandBudget budget,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SemaphoreSlim? throttle = null)
     {
         if (tools is { } connected && connected.Owns(call.Name))
             return (false, new AssistToolResult(call.Id, "Connected tools are not available in a fleet run.", Failed: true));
@@ -484,6 +545,13 @@ public sealed class FleetAgent(
             return (false, new AssistToolResult(call.Id, $"{alias} could not be reached.", Failed: true));
         }
 
+        if (throttle is not null && !throttle.Wait(0))
+        {
+            step.State = StepState.Queued;
+            Updated?.Invoke(this, step);
+            await throttle.WaitAsync(cancellationToken);
+        }
+
         step.State = StepState.Running;
         Updated?.Invoke(this, step);
         Working?.Invoke(this, new AssistStep(alias, command, why, Running: true));
@@ -506,6 +574,11 @@ public sealed class FleetAgent(
             Working?.Invoke(this, new AssistStep(alias, command, why, Running: false));
             return (false, new AssistToolResult(call.Id, $"The command could not be run: {e.Message}", Failed: true));
         }
+        finally
+        {
+            // Its place goes to the next read as soon as the host has answered.
+            throttle?.Release();
+        }
 
         var output = HostAgent.Truncate(Redaction.Scrub(outcome.Output, _secrets).Text);
         step.State = outcome.TimedOut ? StepState.TimedOut : StepState.Ran;
@@ -527,10 +600,18 @@ public sealed class FleetAgent(
 
     private IHostAccess? Open(string alias)
     {
-        if (_opened.TryGetValue(alias, out var held))
-            return held;
-        return _opened[alias] = _hosts.FirstOrDefault(host => host.Alias == alias)?.Access();
+        // Under the lock, because reads run side by side, and two of them for
+        // the same host must find one connection rather than open two.
+        lock (_lock)
+        {
+            if (_opened.TryGetValue(alias, out var held))
+                return held;
+            return _opened[alias] = _hosts.FirstOrDefault(host => host.Alias == alias)?.Access();
+        }
     }
+
+    /// <summary>For what reads running side by side share: the transcript and the opened hosts.</summary>
+    private readonly Lock _lock = new();
 
     private static string Latest(StringBuilder said, StringBuilder thought, string found) =>
         said.Length > 0 ? said.ToString()
@@ -539,7 +620,8 @@ public sealed class FleetAgent(
 
     private void Append(TranscriptEntry entry)
     {
-        _entries.Add(entry);
+        lock (_lock)
+            _entries.Add(entry);
         Added?.Invoke(this, entry);
     }
 }
