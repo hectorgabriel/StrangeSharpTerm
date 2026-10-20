@@ -25,8 +25,11 @@ public class HostContextTests
             .Select(property => property.Name)
             .ToArray();
 
-        // Alias is the name the user chose, which is theirs to send.
-        properties.ShouldBe(["Alias", "Kernel", "Metrics", "TerminalTail", "Redactions"], ignoreOrder: true);
+        // Alias is the name the user chose, which is theirs to send. Since is
+        // another of these -- what the conversation was told last time -- so it
+        // has nowhere to put anything either.
+        properties.ShouldBe(["Alias", "Kernel", "Metrics", "TerminalTail", "Redactions", "Since"], ignoreOrder: true);
+        typeof(HostContext).GetProperty("Since")!.PropertyType.ShouldBe(typeof(HostContext));
 
         foreach (var property in properties)
         {

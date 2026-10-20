@@ -50,8 +50,19 @@ public class ChatCommandPaneTests
             Headless.Finish(pane.AskCommand.ExecuteAsync(null));
             pane.Rows.ShouldNotBeEmpty();
 
+            // After a question, the disclosure shows the update the next one
+            // carries -- here, that nothing changed.
+            pane.Preview.ShouldContain("Nothing about the host has changed");
+
             pane.Question = "/clear";
             Headless.Finish(pane.AskCommand.ExecuteAsync(null));
+
+            // And after a clear, the whole account again, because that is
+            // what the next question will carry.
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (pane.Preview.Contains("Nothing about the host has changed") && DateTime.UtcNow < deadline)
+                Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+            pane.Preview.ShouldBe("Host: web-01");
 
             pane.Rows.ShouldBeEmpty();
             pane.IsEmpty.ShouldBeTrue();

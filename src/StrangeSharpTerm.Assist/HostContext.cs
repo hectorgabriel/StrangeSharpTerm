@@ -40,6 +40,23 @@ public sealed record HostContext
     public int Redactions { get; init; }
 
     /// <summary>
+    /// What this conversation was last told about the host, or null when it has
+    /// been told nothing yet. <see cref="Render"/> leaves out what that already
+    /// said.
+    /// </summary>
+    /// <remarks>
+    /// Every question used to carry the whole block again: the same kernel, the
+    /// same hundred and twenty lines of terminal with a few new ones at the
+    /// bottom. In a long conversation that is most of what grows besides command
+    /// output, and all of it was already in the conversation above.
+    ///
+    /// The same type, so the boundary is the same: nothing can be in here that
+    /// could not be in the block itself. Held one deep -- the conversation's
+    /// knowledge is the last full account, not a history of them.
+    /// </remarks>
+    public HostContext? Since { get; init; }
+
+    /// <summary>
     /// The block as it is sent, and as the pane's disclosure shows it.
     ///
     /// One rendering, used for both. The preview being the request itself rather
@@ -47,6 +64,9 @@ public sealed record HostContext
     /// </summary>
     public string Render()
     {
+        if (Since is { } told)
+            return Update(told);
+
         List<string> lines = [$"Host: {Alias}"];
 
         if (Kernel is { Length: > 0 } kernel)
@@ -78,6 +98,98 @@ public sealed record HostContext
         // preview and the request have to be one string.
         return string.Join('\n', lines).TrimEnd();
     }
+
+    /// <summary>
+    /// Only what changed since the conversation was last told, and a sentence
+    /// saying so when nothing did -- an empty block would look like a probe
+    /// that failed.
+    /// </summary>
+    private string Update(HostContext told)
+    {
+        List<string> lines = [$"Host: {Alias}"];
+        var said = false;
+
+        if (Kernel is { Length: > 0 } kernel && kernel.Trim() != told.Kernel?.Trim())
+        {
+            lines.Add($"System: {kernel.Trim()}");
+            said = true;
+        }
+
+        // By line, because that is how the model read them: the load average
+        // moving is news, the memory total being what it was is not.
+        if (Metrics is { IsEmpty: false } metrics)
+        {
+            var before = told.Metrics is { } earlier ? Describe(earlier).ToHashSet() : [];
+            var changed = Describe(metrics).Where(line => !before.Contains(line)).ToArray();
+            if (changed.Length > 0)
+            {
+                lines.Add("");
+                lines.Add("Changed since the last question:");
+                lines.AddRange(changed.Select(line => $"- {line}"));
+                said = true;
+            }
+        }
+
+        if (TerminalTail is { Length: > 0 } tail)
+        {
+            var (fresh, continues) = Fresh(told.TerminalTail, tail);
+            if (fresh.Count > 0)
+            {
+                lines.Add("");
+                lines.Add(continues
+                    ? "New in the terminal since the last question, following on from what it showed then:"
+                    : "What the terminal is showing:");
+                lines.Add("```");
+                lines.AddRange(fresh);
+                lines.Add("```");
+                said = true;
+            }
+        }
+
+        if (!said)
+            lines.Add("Nothing about the host has changed since the last question.");
+
+        return string.Join('\n', lines).TrimEnd();
+    }
+
+    /// <summary>
+    /// The lines of the terminal the conversation has not seen.
+    ///
+    /// The tail is a window that scrolls, so what was sent last time is still
+    /// there, moved up by however much has been printed since. Found by
+    /// sliding it up until it lines up with the top of what is there now --
+    /// all but its last line, which is usually the prompt, and a prompt with a
+    /// command typed into it is the same line changed rather than a new one.
+    /// So that line goes again, with whatever follows it.
+    ///
+    /// When nothing lines up -- the screen was cleared, or the pane follows a
+    /// different shell now -- the whole tail goes, because a piece of it would
+    /// read as following on from something it does not.
+    /// </summary>
+    /// <returns>The lines to send, and whether they follow on from the last ones.</returns>
+    internal static (IReadOnlyList<string> Lines, bool Continues) Fresh(string? before, string now)
+    {
+        var current = Lines(now);
+        if (before is not { Length: > 0 })
+            return (current, false);
+
+        var earlier = Lines(before);
+        var kept = earlier.Length - 1;
+        for (var shift = 0; shift < kept; shift++)
+        {
+            var overlap = kept - shift;
+            if (overlap > current.Length || !earlier.AsSpan(shift, overlap).SequenceEqual(current.AsSpan(0, overlap)))
+                continue;
+
+            var fresh = current[overlap..];
+            // The prompt it was sitting at, unchanged, is nothing new.
+            return fresh is [var only] && only == earlier[^1] ? ([], true) : (fresh, true);
+        }
+
+        return current.SequenceEqual(earlier) ? ([], true) : (current, false);
+    }
+
+    private static string[] Lines(string tail) => tail.Replace("\r\n", "\n").Split('\n');
 
     /// <summary>Metrics as sentences, leaving out whatever the server did not report.</summary>
     internal static IEnumerable<string> Describe(ServerMetrics metrics)

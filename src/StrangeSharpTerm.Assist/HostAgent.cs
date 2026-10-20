@@ -172,11 +172,26 @@ public sealed class HostAgent(
             Metrics = settings.SendMetrics ? snapshot.Metrics : null,
             TerminalTail = settings.SendTerminalTail && tail.Text.Length > 0 ? tail.Text : null,
             Redactions = settings.SendTerminalTail ? tail.Count : 0,
+            // So what it shows, and what goes, is only what is new.
+            Since = _told,
         };
     }
 
     /// <summary>
-    /// Where each question began, in both the conversation and the transcript.
+    /// The last full account of the host this conversation was given, or null
+    /// when it has been given none: what the next question's context is
+    /// measured against. See <see cref="HostContext.Since"/>.
+    /// </summary>
+    private HostContext? _told;
+
+    /// <summary>A question as it is sent: the context, anything extra for this question alone, and the question.</summary>
+    private static string Put(HostContext context, AskOptions how, string question) =>
+        string.Join("\n\n", new[] { context.Render(), how.Instruction, question }
+            .Where(part => !string.IsNullOrWhiteSpace(part)));
+
+    /// <summary>
+    /// Where each question began, in both the conversation and the transcript,
+    /// and what the conversation had been told about the host before it.
     ///
     /// Two things need these. <see cref="Rewind"/> goes back to the last of
     /// them, and <see cref="Compact"/> drops from the first: an exchange is the
@@ -184,7 +199,7 @@ public sealed class HostAgent(
     /// commands is followed by their results and a provider will not accept one
     /// without the other.
     /// </summary>
-    private readonly List<(int Messages, int Entries)> _questions = [];
+    private readonly List<(int Messages, int Entries, HostContext? Told)> _questions = [];
 
     /// <summary>What is still known about the exchanges <see cref="Compact"/> dropped.</summary>
     private readonly Recap _recap = new();
@@ -210,6 +225,9 @@ public sealed class HostAgent(
 
         var start = _questions[^1];
         _questions.RemoveAt(_questions.Count - 1);
+        // What it knew before the question, because the question that told it
+        // more is gone.
+        _told = start.Told;
         _conversation.RemoveRange(start.Messages, _conversation.Count - start.Messages);
         for (var index = _entries.Count - 1; index >= start.Entries; index--)
         {
@@ -254,7 +272,7 @@ public sealed class HostAgent(
 
             // Everything after it moved up by what was taken out.
             for (var index = 0; index < _questions.Count; index++)
-                _questions[index] = (_questions[index].Messages - count, _questions[index].Entries);
+                _questions[index] = (_questions[index].Messages - count, _questions[index].Entries, _questions[index].Told);
 
             dropped++;
         }
@@ -282,6 +300,7 @@ public sealed class HostAgent(
         _entries.Clear();
         _questions.Clear();
         _recap.Clear();
+        _told = null;
         LastContext = null;
         Cleared?.Invoke(this, EventArgs.Empty);
     }
@@ -306,17 +325,14 @@ public sealed class HostAgent(
         var ran = 0;
 
         // Noted before anything is added, so a retry goes back to exactly here.
-        _questions.Add((_conversation.Count, _entries.Count));
+        _questions.Add((_conversation.Count, _entries.Count, _told));
 
         Append(new TranscriptEntry.Question(question));
 
         var context = await Context(cancellationToken);
-        _conversation.Add(new AssistMessage
-        {
-            Role = AssistRole.User,
-            Text = string.Join("\n\n", new[] { context.Render(), how.Instruction, question }
-                .Where(part => !string.IsNullOrWhiteSpace(part))),
-        });
+        _conversation.Add(new AssistMessage { Role = AssistRole.User, Text = Put(context, how, question) });
+        var full = context with { Since = null };
+        _told = full;
 
         // One turn per round trip, and a ceiling above whatever this question's
         // budget is: each command is a turn, and the model gets a few more to
@@ -352,6 +368,18 @@ public sealed class HostAgent(
                 // conversation grows during a turn, by a command's output at a
                 // time, and it is this turn's request that has to fit.
                 var dropped = Compact();
+
+                // What this question's context left out was in an exchange that
+                // may just have gone, so it says everything again. Only this
+                // question's own message changes, and only on a turn whose
+                // request has already changed at the front.
+                if (dropped > 0 && context.Since is not null)
+                {
+                    var at = _questions[^1].Messages;
+                    _conversation[at] = _conversation[at] with { Text = Put(full, how, question) };
+                    context = full;
+                }
+
                 if (dropped > 0 && !noted)
                 {
                     noted = true;

@@ -297,6 +297,9 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
             _asked.Clear();
             OnPropertyChanged(nameof(IsEmpty));
             RetryCommand.NotifyCanExecuteChanged();
+            // The next question tells it everything again, and the disclosure
+            // has to say so rather than go on showing the last update.
+            _ = Look();
         });
     }
 
