@@ -81,7 +81,9 @@ public class ConversationSizeTests
         // The newest question is in there. Not last: by the final turn the
         // conversation ends with the results of what it asked to run.
         sent.ShouldContain(message => message.Text != null && message.Text.Contains("question 19?"));
-        sent.ShouldNotContain(message => message.Text != null && message.Text.Contains("question 0?"));
+        // As a message of its own -- which ends with the question. The recap
+        // at the front still mentions it, and is meant to.
+        sent.ShouldNotContain(message => message.Text != null && message.Text.EndsWith("question 0?"));
     }
 
     /// <summary>
@@ -213,7 +215,9 @@ public class ConversationSizeTests
         var sent = backend.Requests[^1].Messages;
         sent.Sum(message => message.Size).ShouldBeLessThanOrEqualTo(AssistLimits.MaxConversationCharacters);
         sent.ShouldContain(message => message.Text != null && message.Text.Contains("instruction 19?"));
-        sent.ShouldNotContain(message => message.Text != null && message.Text.Contains("instruction 0?"));
+        // As a message of its own -- which ends with the question. The recap
+        // at the front still mentions it, and is meant to.
+        sent.ShouldNotContain(message => message.Text != null && message.Text.EndsWith("instruction 0?"));
 
         agent.Entries.Count(entry => entry is TranscriptEntry.Question).ShouldBe(20);
     }
@@ -276,6 +280,7 @@ public class ConversationSizeTests
 
         var sent = backend.Requests[^1].Messages;
         sent.Sum(message => message.Size).ShouldBeLessThanOrEqualTo(AssistLimits.MaxConversationCharacters);
+        // Not even in the recap: /clear forgets that too.
         sent.ShouldNotContain(message => message.Text != null && message.Text.Contains("instruction 19?"));
         sent.ShouldContain(message => message.Text != null && message.Text.Contains("instruction 39?"));
     }
@@ -312,5 +317,120 @@ public class ConversationSizeTests
 
         backend.Requests[^1].Messages.Count.ShouldBe(5);
         agent.Entries.ShouldNotContain(entry => entry is TranscriptEntry.Note);
+    }
+
+    private static async Task Ask(HostAgent agent, int count)
+    {
+        for (var index = 0; index < count; index++)
+        {
+            await agent.Ask(
+                $"question {index}?",
+                new AskOptions { MayRunCommands = true },
+                TestContext.Current.CancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// What was dropped leaves an account behind, at the front of what is sent:
+    /// what was asked, what ran where and how it ended, and what it concluded.
+    /// </summary>
+    [Fact]
+    public async Task WhatWasLeftOutIsRecapped()
+    {
+        var (agent, backend) = Talking(20);
+
+        await Ask(agent, 20);
+
+        var first = backend.Requests[^1].Messages[0].Text.ShouldNotBeNull();
+        first.ShouldStartWith("Earlier in this conversation");
+        first.ShouldContain("Asked: question 0?");
+        first.ShouldContain("- on web-01: cat /var/log/syslog — exit 0");
+        first.ShouldContain("Answered: Answer 0.");
+
+        // And none of the output that made it large.
+        first.ShouldNotContain(new string('x', 100));
+    }
+
+    /// <summary>
+    /// Put on as the request is built, not stored: compacted again, the recap
+    /// moves to the new first question rather than piling up in front of it.
+    /// </summary>
+    [Fact]
+    public async Task TheRecapIsSaidOnceHoweverOftenItCompacts()
+    {
+        var (agent, backend) = Talking(20);
+
+        await Ask(agent, 20);
+
+        var sent = backend.Requests[^1].Messages;
+        sent.Count(message => message.Text?.Contains("Earlier in this conversation") == true).ShouldBe(1);
+
+        // Still a question first and an answer after it, which every provider
+        // needs: the recap rides in the question rather than before it.
+        sent[0].Role.ShouldBe(AssistRole.User);
+        sent[1].Role.ShouldBe(AssistRole.Assistant);
+    }
+
+    /// <summary>
+    /// Bounded, oldest first: twenty dropped exchanges at a few hundred
+    /// characters each is fine, a thousand would be the problem again.
+    /// </summary>
+    [Fact]
+    public void TheRecapLetsGoOfItsOldestOnceItIsLarge()
+    {
+        var recap = new Recap();
+        for (var index = 0; index < 200; index++)
+        {
+            recap.Add([
+                new TranscriptEntry.Question($"question {index}? " + new string('q', 250)),
+                new TranscriptEntry.Answer { Markdown = $"answer {index}. " + new string('a', 500) },
+            ]);
+        }
+
+        recap.Size.ShouldBeLessThanOrEqualTo(AssistLimits.MaxRecapCharacters + 120);
+        var told = recap.Lead([new AssistMessage { Role = AssistRole.User, Text = "now?" }])[0].Text.ShouldNotBeNull();
+        told.ShouldContain("question 199?");
+        told.ShouldNotContain("question 0?");
+    }
+
+    /// <summary>How each command ended, in words, because "refused" matters as much as "exit 1".</summary>
+    [Fact]
+    public void EachCommandSaysHowItEnded()
+    {
+        var told = Recap.Of([
+            new TranscriptEntry.Question("restart it?"),
+            new TranscriptEntry.Step { Host = "web-01", Command = "systemctl status nginx", Why = "", State = StepState.Ran, ExitStatus = 3 },
+            new TranscriptEntry.Step { Host = "web-01", Command = "systemctl restart nginx", Why = "", State = StepState.Refused },
+            new TranscriptEntry.Step { Host = "web-02", Command = "journalctl -f", Why = "", State = StepState.TimedOut },
+            new TranscriptEntry.Answer { Markdown = "It is stopped, and you would rather I left it.\nSo I have." },
+        ]);
+
+        told.ShouldBe(string.Join('\n',
+            "Asked: restart it?",
+            "- on web-01: systemctl status nginx — exit 3",
+            "- on web-01: systemctl restart nginx — refused by the user",
+            "- on web-02: journalctl -f — timed out, left running",
+            "Answered: It is stopped, and you would rather I left it. So I have."));
+    }
+
+    /// <summary>Nothing has been dropped, so nothing is put in front.</summary>
+    [Fact]
+    public void AnEmptyRecapChangesNothing()
+    {
+        IReadOnlyList<AssistMessage> conversation = [new AssistMessage { Role = AssistRole.User, Text = "first?" }];
+
+        new Recap().Lead(conversation).ShouldBe(conversation);
+    }
+
+    [Fact]
+    public async Task AFleetRecapsWhatItLeftOutToo()
+    {
+        var (agent, hosts, backend) = Fleet(20);
+
+        await Instruct(agent, hosts, 0, 20);
+
+        var first = backend.Requests[^1].Messages[0].Text.ShouldNotBeNull();
+        first.ShouldContain("Asked: instruction 0?");
+        first.ShouldContain("- on web-01: cat /var/log/syslog — exit 0");
     }
 }

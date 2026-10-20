@@ -92,15 +92,19 @@ public sealed class FleetAgent(
         _conversation.Clear();
         _entries.Clear();
         _questions.Clear();
+        _recap.Clear();
         Cleared?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
-    /// Where each question began in the conversation, so <see cref="Compact"/>
+    /// Where each question began in the conversation and the transcript, so <see cref="Compact"/>
     /// can drop whole exchanges -- see <see cref="HostAgent"/>, which keeps the
     /// same list for the same reason.
     /// </summary>
-    private readonly List<int> _questions = [];
+    private readonly List<(int Messages, int Entries)> _questions = [];
+
+    /// <inheritdoc cref="Recap"/>
+    private readonly Recap _recap = new();
 
     /// <summary>
     /// Leaves the oldest exchanges out of what is sent once the conversation is
@@ -124,15 +128,19 @@ public sealed class FleetAgent(
     private int Compact()
     {
         var dropped = 0;
-        while (_questions.Count > 1 && _conversation.Sum(message => message.Size) > AssistLimits.MaxConversationCharacters)
+        while (_questions.Count > 1
+            && _conversation.Sum(message => message.Size) + _recap.Size > AssistLimits.MaxConversationCharacters)
         {
-            var count = _questions[1] - _questions[0];
-            _conversation.RemoveRange(_questions[0], count);
+            _recap.Add(_entries.Skip(_questions[0].Entries).Take(_questions[1].Entries - _questions[0].Entries));
+
+            var from = _questions[0].Messages;
+            var count = _questions[1].Messages - from;
+            _conversation.RemoveRange(from, count);
             _questions.RemoveAt(0);
 
             // Everything after it moved up by what was taken out.
             for (var index = 0; index < _questions.Count; index++)
-                _questions[index] -= count;
+                _questions[index] = (_questions[index].Messages - count, _questions[index].Entries);
 
             dropped++;
         }
@@ -172,7 +180,7 @@ public sealed class FleetAgent(
         var ran = 0;
         var found = "";
 
-        _questions.Add(_conversation.Count);
+        _questions.Add((_conversation.Count, _entries.Count));
 
         Append(new TranscriptEntry.Question(instruction));
         _conversation.Add(new AssistMessage
@@ -203,8 +211,8 @@ public sealed class FleetAgent(
                 {
                     noted = true;
                     Append(new TranscriptEntry.Note(dropped == 1
-                        ? "This conversation is long enough that its earliest instruction was left out of what was sent."
-                        : $"This conversation is long enough that its earliest {dropped} instructions were left out of what was sent."));
+                        ? "This conversation is long enough that its earliest instruction was left out of what was sent. A short account of it goes instead."
+                        : $"This conversation is long enough that its earliest {dropped} instructions were left out of what was sent. A short account of them goes instead."));
                 }
 
                 offered = Offered(mayRunCommands, mayEditFiles);
@@ -212,7 +220,7 @@ public sealed class FleetAgent(
                     new AssistRequest
                     {
                         System = System(mayEditFiles),
-                        Messages = [.. _conversation],
+                        Messages = _recap.Lead(_conversation),
                         Tools = offered,
                     },
                     cancellationToken))

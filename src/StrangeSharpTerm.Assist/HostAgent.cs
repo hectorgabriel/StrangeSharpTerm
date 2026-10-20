@@ -186,6 +186,9 @@ public sealed class HostAgent(
     /// </summary>
     private readonly List<(int Messages, int Entries)> _questions = [];
 
+    /// <summary>What is still known about the exchanges <see cref="Compact"/> dropped.</summary>
+    private readonly Recap _recap = new();
+
     /// <summary>Whether there is a question to take back.</summary>
     public bool CanRewind => _questions.Count > 0;
 
@@ -237,8 +240,13 @@ public sealed class HostAgent(
     private int Compact()
     {
         var dropped = 0;
-        while (_questions.Count > 1 && _conversation.Sum(message => message.Size) > AssistLimits.MaxConversationCharacters)
+        while (_questions.Count > 1
+            && _conversation.Sum(message => message.Size) + _recap.Size > AssistLimits.MaxConversationCharacters)
         {
+            // An account of it stays behind. From the transcript, which keeps
+            // every exchange, so the rows are there to read it from.
+            _recap.Add(_entries.Skip(_questions[0].Entries).Take(_questions[1].Entries - _questions[0].Entries));
+
             var from = _questions[0].Messages;
             var count = _questions[1].Messages - from;
             _conversation.RemoveRange(from, count);
@@ -273,6 +281,7 @@ public sealed class HostAgent(
         _conversation.Clear();
         _entries.Clear();
         _questions.Clear();
+        _recap.Clear();
         LastContext = null;
         Cleared?.Invoke(this, EventArgs.Empty);
     }
@@ -347,8 +356,8 @@ public sealed class HostAgent(
                 {
                     noted = true;
                     Append(new TranscriptEntry.Note(dropped == 1
-                        ? "This conversation is long enough that its earliest question was left out of what was sent."
-                        : $"This conversation is long enough that its earliest {dropped} questions were left out of what was sent."));
+                        ? "This conversation is long enough that its earliest question was left out of what was sent. A short account of it goes instead."
+                        : $"This conversation is long enough that its earliest {dropped} questions were left out of what was sent. A short account of them goes instead."));
                 }
 
                 offered = Offered(how);
@@ -358,7 +367,7 @@ public sealed class HostAgent(
                     // Copied, not handed over: the conversation grows during
                     // this turn, and a request that changed underneath the
                     // backend reading it would be a very quiet bug.
-                    Messages = [.. _conversation],
+                    Messages = _recap.Lead(_conversation),
                     Tools = offered,
                 };
 
