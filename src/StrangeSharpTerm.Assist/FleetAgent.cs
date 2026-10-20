@@ -91,7 +91,53 @@ public sealed class FleetAgent(
     {
         _conversation.Clear();
         _entries.Clear();
+        _questions.Clear();
         Cleared?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Where each question began in the conversation, so <see cref="Compact"/>
+    /// can drop whole exchanges -- see <see cref="HostAgent"/>, which keeps the
+    /// same list for the same reason.
+    /// </summary>
+    private readonly List<int> _questions = [];
+
+    /// <summary>
+    /// Leaves the oldest exchanges out of what is sent once the conversation is
+    /// too large to keep sending whole.
+    /// </summary>
+    /// <remarks>
+    /// The same rule as the conversation about one host: whole exchanges, oldest
+    /// first, never the newest, and the transcript left alone. It was missing
+    /// here, where it matters most -- a run may spend sixty commands of up to
+    /// <see cref="AssistLimits.MaxOutputCharacters"/> apiece, so one question
+    /// could leave nearly half a million characters behind it, every one of
+    /// them resent on each turn of every question after it, until somebody
+    /// typed /clear.
+    ///
+    /// The same bound as well, although one run can outgrow it on its own. That
+    /// run is still sent whole, because cutting into it would separate a call
+    /// from its result; what the bound promises here is that nothing *earlier*
+    /// rides along with it.
+    /// </remarks>
+    /// <returns>How many exchanges were left out.</returns>
+    private int Compact()
+    {
+        var dropped = 0;
+        while (_questions.Count > 1 && _conversation.Sum(message => message.Size) > AssistLimits.MaxConversationCharacters)
+        {
+            var count = _questions[1] - _questions[0];
+            _conversation.RemoveRange(_questions[0], count);
+            _questions.RemoveAt(0);
+
+            // Everything after it moved up by what was taken out.
+            for (var index = 0; index < _questions.Count; index++)
+                _questions[index] -= count;
+
+            dropped++;
+        }
+
+        return dropped;
     }
 
     /// <summary>Everything was forgotten, so a pane can empty itself.</summary>
@@ -126,12 +172,17 @@ public sealed class FleetAgent(
         var ran = 0;
         var found = "";
 
+        _questions.Add(_conversation.Count);
+
         Append(new TranscriptEntry.Question(instruction));
         _conversation.Add(new AssistMessage
         {
             Role = AssistRole.User,
             Text = string.Join("\n\n", Roster(), instruction),
         });
+
+        // Said once per question -- see HostAgent.Ask.
+        var noted = false;
 
         var ceiling = AssistLimits.RunBudget + 4;
         for (var turn = 0; turn < ceiling; turn++)
@@ -145,6 +196,17 @@ public sealed class FleetAgent(
 
             try
             {
+                // Before the request, because it is this turn's request that
+                // has to fit.
+                var dropped = Compact();
+                if (dropped > 0 && !noted)
+                {
+                    noted = true;
+                    Append(new TranscriptEntry.Note(dropped == 1
+                        ? "This conversation is long enough that its earliest instruction was left out of what was sent."
+                        : $"This conversation is long enough that its earliest {dropped} instructions were left out of what was sent."));
+                }
+
                 offered = Offered(mayRunCommands, mayEditFiles);
                 await foreach (var streamed in backend.Stream(
                     new AssistRequest
