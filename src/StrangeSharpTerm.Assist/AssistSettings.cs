@@ -152,4 +152,16 @@ public static class AssistLimits
     /// "cut into the one being answered".
     /// </remarks>
     public const int MaxConversationCharacters = 160_000;
+
+    /// <summary>
+    /// How much a conversation may say about the exchanges it stopped sending.
+    /// See <see cref="Recap"/>.
+    /// </summary>
+    /// <remarks>
+    /// Counted inside <see cref="MaxConversationCharacters"/>, and small beside
+    /// it on purpose: one question's whole allowance is 96,000, so with this on
+    /// top the newest exchange still always fits. At a few hundred characters
+    /// an exchange, it remembers the last twenty or so questions it dropped.
+    /// </remarks>
+    public const int MaxRecapCharacters = 8_000;
 }
