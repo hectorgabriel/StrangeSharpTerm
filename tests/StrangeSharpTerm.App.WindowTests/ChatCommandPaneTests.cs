@@ -134,4 +134,85 @@ public class ChatCommandPaneTests
             pane.Question.ShouldBe("how full is the disk?");
         });
     }
+
+    /// <summary>
+    /// /export puts the conversation on the clipboard as Markdown and says so
+    /// in the pane -- a clipboard gives no sign of having been written to.
+    /// </summary>
+    [Fact]
+    public void ExportCopiesTheConversationAndSaysSo()
+    {
+        Headless.Run(() =>
+        {
+            var pane = Pane(turns: [Canned.Runs("df -h /", "how full"), Canned.Says("It is 98% full.")]);
+            pane.MayRunCommands = true;
+            var copied = new List<string>();
+            pane.Copied += (_, text) => copied.Add(text);
+
+            pane.Question = "how full is the disk?";
+            Headless.Finish(pane.AskCommand.ExecuteAsync(null));
+            pane.Question = "/export";
+            Headless.Finish(pane.AskCommand.ExecuteAsync(null));
+
+            var markdown = copied.ShouldHaveSingleItem();
+            markdown.ShouldStartWith("# web-01: assistant conversation");
+            markdown.ShouldContain("## how full is the disk?");
+            markdown.ShouldContain("```sh\ndf -h /\n```");
+            markdown.ShouldContain("It is 98% full.");
+            markdown.ShouldContain("Answered by Canned · canned-1.");
+
+            pane.Rows.ShouldContain(row => row.IsNote
+                && row.Text == "Copied this conversation to the clipboard as Markdown: 1 question, 1 command.");
+            // Not a question: nothing was sent for it.
+            pane.Rows.Count(row => row.IsQuestion).ShouldBe(1);
+        });
+    }
+
+    [Fact]
+    public void ExportWithNothingAskedSaysSoAndCopiesNothing()
+    {
+        Headless.Run(() =>
+        {
+            var pane = Pane();
+            var copied = 0;
+            pane.Copied += (_, _) => copied++;
+
+            pane.Question = "/export";
+            Headless.Finish(pane.AskCommand.ExecuteAsync(null));
+
+            copied.ShouldBe(0);
+            pane.Rows.ShouldContain(row => row.IsNote && row.Text == ChatCommands.NothingToExport);
+        });
+    }
+
+    [Fact]
+    public void HelpListsExport()
+    {
+        ChatCommands.Listing.ShouldContain("/export");
+    }
+
+    /// <summary>The orchestrator exports its conversation too, naming the hosts it reached.</summary>
+    [Fact]
+    public void TheOrchestratorExportsItsConversation()
+    {
+        Headless.Run(() =>
+        {
+            var model = new OrchestratorViewModel(
+                new Canned(Canned.Says("All three are fine.")),
+                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+                _ => null);
+            var copied = new List<string>();
+            model.Copied += (_, text) => copied.Add(text);
+
+            model.Instruction = "how are they?";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            model.Instruction = "/export";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+
+            var markdown = copied.ShouldHaveSingleItem();
+            markdown.ShouldStartWith("# Orchestrator conversation");
+            markdown.ShouldContain("## how are they?");
+            markdown.ShouldContain("All three are fine.");
+        });
+    }
 }

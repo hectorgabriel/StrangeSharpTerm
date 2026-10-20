@@ -45,8 +45,10 @@ dotnet run --project src/stctl -- workspace user@host \
 
 Both panes take a few commands that are not questions: **`/clear`** forgets the
 conversation — what is on screen *and* what the provider has been told —
-**`/mcp`** reports the attached tool servers and what each one offers, and
-**`/help`** lists them. They are answered in the app and never sent, because a
+**`/mcp`** reports the attached tool servers and what each one offers,
+**`/export`** copies the conversation to the clipboard as Markdown — the
+questions, every command with how it ended and what it printed, and the answers,
+with secrets still taken out — and **`/help`** lists them. They are answered in the app and never sent, because a
 model asked about the app it is running inside answers plausibly and checks
 nothing. The fan-out gets this machine's folder too, so a run can read a runbook
 here and write down what it found across eight servers; it deliberately gets no
