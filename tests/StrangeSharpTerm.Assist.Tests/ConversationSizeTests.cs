@@ -1,3 +1,4 @@
+using System.Text.Json;
 using StrangeSharpTerm.Assist;
 
 namespace StrangeSharpTerm.Assist.Tests;
@@ -158,5 +159,158 @@ public class ConversationSizeTests
         notes.ShouldNotBeEmpty();
         // Once per question that had to drop something, never once per turn.
         notes.Length.ShouldBeLessThan(20);
+    }
+
+    /// <summary>
+    /// The fan-out, which had no bound at all: one run may spend sixty commands,
+    /// so a few instructions in the same pane were resending well over a million
+    /// characters on every turn.
+    /// </summary>
+    private static (FleetAgent Agent, IReadOnlyList<FleetHost> Hosts, ScriptedBackend Backend) Fleet(
+        int instructions, int commandsEach = 1)
+    {
+        var turns = new List<IReadOnlyList<AssistEvent>>();
+        for (var index = 0; index < instructions; index++)
+        {
+            for (var command = 0; command < commandsEach; command++)
+                turns.Add(FleetRuns("web-01", "cat /var/log/syslog", $"call_{index}_{command}"));
+            turns.Add(ScriptedBackend.Says($"Answer {index}."));
+        }
+
+        var backend = new ScriptedBackend([.. turns]);
+        var host = new FakeHost("web-01") { Answer = _ => new CommandOutcome(0, Wall()) };
+        return (new FleetAgent(backend, new RecordingGate()), [new FleetHost("web-01", () => host)], backend);
+    }
+
+    private static IReadOnlyList<AssistEvent> FleetRuns(string host, string command, string id) =>
+    [
+        new AssistEvent.Call(new AssistToolCall(
+            id,
+            AssistTools.RunCommand,
+            JsonSerializer.Serialize(new { host, command, why = "reading the log" }))),
+        new AssistEvent.Finished(AssistStop.ToolUse),
+    ];
+
+    private static async Task Instruct(FleetAgent agent, IReadOnlyList<FleetHost> hosts, int from, int count)
+    {
+        for (var index = from; index < from + count; index++)
+        {
+            await agent.Ask(
+                $"instruction {index}?",
+                hosts,
+                mayRunCommands: true,
+                cancellationToken: TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task WhatAFleetSendsStopsGrowingToo()
+    {
+        var (agent, hosts, backend) = Fleet(20);
+
+        await Instruct(agent, hosts, 0, 20);
+
+        var sent = backend.Requests[^1].Messages;
+        sent.Sum(message => message.Size).ShouldBeLessThanOrEqualTo(AssistLimits.MaxConversationCharacters);
+        sent.ShouldContain(message => message.Text != null && message.Text.Contains("instruction 19?"));
+        sent.ShouldNotContain(message => message.Text != null && message.Text.Contains("instruction 0?"));
+
+        agent.Entries.Count(entry => entry is TranscriptEntry.Question).ShouldBe(20);
+    }
+
+    /// <summary>
+    /// What a fleet sends still begins at an instruction, and every call in it
+    /// still has its result.
+    /// </summary>
+    [Fact]
+    public async Task AFleetDropsWholeExchanges()
+    {
+        var (agent, hosts, backend) = Fleet(20);
+
+        await Instruct(agent, hosts, 0, 20);
+
+        var sent = backend.Requests[^1].Messages;
+        sent[0].Role.ShouldBe(AssistRole.User);
+        sent[0].ToolResults.ShouldBeEmpty();
+        sent[0].Text.ShouldNotBeNull().ShouldContain("The hosts you can reach:");
+
+        for (var index = 0; index < sent.Count; index++)
+        {
+            if (sent[index].ToolCalls.Count == 0)
+                continue;
+
+            sent[index + 1].ToolResults.Select(result => result.CallId)
+                .ShouldBe(sent[index].ToolCalls.Select(call => call.Id));
+        }
+    }
+
+    /// <summary>
+    /// A run that outgrows the bound on its own is sent whole -- cutting into it
+    /// would part a call from its result -- but nothing earlier comes with it.
+    /// </summary>
+    [Fact]
+    public async Task ARunLargerThanTheBoundIsSentWholeAndAlone()
+    {
+        // Twenty-five walls is 200,000 characters in one instruction.
+        var (agent, hosts, backend) = Fleet(2, commandsEach: 25);
+
+        await Instruct(agent, hosts, 0, 2);
+
+        var sent = backend.Requests[^1].Messages;
+        sent[0].Text.ShouldNotBeNull().ShouldContain("instruction 1?");
+        sent.Count(message => message.ToolResults.Count > 0).ShouldBe(25);
+    }
+
+    /// <summary>
+    /// /clear forgets where the questions began as well, or the next compaction
+    /// would remove a range that is not there any more.
+    /// </summary>
+    [Fact]
+    public async Task AFleetCompactsAgainAfterAClear()
+    {
+        var (agent, hosts, backend) = Fleet(40);
+
+        await Instruct(agent, hosts, 0, 20);
+        agent.Clear();
+        await Instruct(agent, hosts, 20, 20);
+
+        var sent = backend.Requests[^1].Messages;
+        sent.Sum(message => message.Size).ShouldBeLessThanOrEqualTo(AssistLimits.MaxConversationCharacters);
+        sent.ShouldNotContain(message => message.Text != null && message.Text.Contains("instruction 19?"));
+        sent.ShouldContain(message => message.Text != null && message.Text.Contains("instruction 39?"));
+    }
+
+    [Fact]
+    public async Task AFleetSaysWhenItHasLeftSomethingOut()
+    {
+        var (agent, hosts, _) = Fleet(20);
+
+        await Instruct(agent, hosts, 0, 20);
+
+        var notes = agent.Entries
+            .OfType<TranscriptEntry.Note>()
+            .Where(note => note.Text.Contains("left out of what was sent"))
+            .ToArray();
+
+        notes.ShouldNotBeEmpty();
+        notes.Length.ShouldBeLessThan(20);
+    }
+
+    /// <summary>A short fleet conversation is left exactly as it is.</summary>
+    [Fact]
+    public async Task AFleetConversationThatFitsKeepsEverything()
+    {
+        var backend = new ScriptedBackend(
+            ScriptedBackend.Says("First."),
+            ScriptedBackend.Says("Second."),
+            ScriptedBackend.Says("Third."));
+        var agent = new FleetAgent(backend, new RecordingGate());
+        IReadOnlyList<FleetHost> hosts = [new FleetHost("web-01", () => new FakeHost("web-01"))];
+
+        foreach (var question in new[] { "first?", "second?", "third?" })
+            await agent.Ask(question, hosts, mayRunCommands: false, cancellationToken: TestContext.Current.CancellationToken);
+
+        backend.Requests[^1].Messages.Count.ShouldBe(5);
+        agent.Entries.ShouldNotContain(entry => entry is TranscriptEntry.Note);
     }
 }
