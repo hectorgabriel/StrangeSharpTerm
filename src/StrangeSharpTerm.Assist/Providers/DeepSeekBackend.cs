@@ -163,6 +163,10 @@ public sealed class DeepSeekBackend(HttpClient http, string model, string endpoi
             ["model"] = model,
             ["messages"] = messages,
             ["stream"] = true,
+            // Without this a stream reports no usage at all. With it, a last
+            // chunk with no choices carries the request's counts, the cache's
+            // share included -- this API caches a repeated prefix on its own.
+            ["stream_options"] = new JsonObject { ["include_usage"] = true },
         };
 
         if (Thinks(model))

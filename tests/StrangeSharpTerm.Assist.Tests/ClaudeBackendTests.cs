@@ -147,6 +147,39 @@ public class ClaudeBackendTests
         JsonDocument.Parse(stub.Body!).RootElement.GetProperty("model").GetString().ShouldBe("claude-sonnet-5");
     }
 
+    /// <summary>
+    /// Two cache breakpoints: one on the system prompt, which covers the tools
+    /// in front of it, and the request's own, which moves forward onto the
+    /// newest message. Without them every turn of a twelve-command question
+    /// paid full price for the eleven before it.
+    /// </summary>
+    [Fact]
+    public async Task TheSystemPromptAndTheConversationAreBothCached()
+    {
+        var (_, stub) = await Stream("claude.answer.sse", Question("why is it slow?"));
+
+        var body = JsonDocument.Parse(stub.Body!).RootElement;
+        body.GetProperty("cache_control").GetProperty("type").GetString().ShouldBe("ephemeral");
+
+        var system = body.GetProperty("system").EnumerateArray().Single();
+        system.GetProperty("text").GetString().ShouldNotBeNull().ShouldContain("systems assistant");
+        system.GetProperty("cache_control").GetProperty("type").GetString().ShouldBe("ephemeral");
+    }
+
+    [Fact]
+    public async Task WhatARequestCostIsReportedWithTheCachesShare()
+    {
+        var (events, _) = await Stream("claude.toolcall.sse", Question("why is the disk full?"));
+
+        // From message_start, and the output from the last message_delta,
+        // which is cumulative.
+        events.OfType<AssistEvent.Spent>().Single().Usage
+            .ShouldBe(new AssistUsage(Input: 12, CacheRead: 2400, CacheWrite: 380, Output: 48));
+
+        // Before the finish, so a loop that stops reading there has it.
+        events[^1].ShouldBeOfType<AssistEvent.Finished>();
+    }
+
     private static AssistRequest Question(string text) => new()
     {
         System = AssistPrompts.Host,

@@ -228,6 +228,21 @@ public class GeminiBackendTests
     public void EveryWayOfStoppingIsTranslated(string reason, AssistStop expected) =>
         GeminiBackend.Translate(reason).ShouldBe(expected);
 
+    /// <summary>
+    /// The counts ride on every chunk and the last is the whole of it. The
+    /// prompt's count includes the cached part, and thinking is billed as
+    /// output.
+    /// </summary>
+    [Fact]
+    public async Task WhatARequestCostIsReadFromTheLastChunk()
+    {
+        var (events, _) = await Stream("gemini.answer.sse", Question("what is eating the disk?"));
+
+        events.OfType<AssistEvent.Spent>().Single().Usage
+            .ShouldBe(new AssistUsage(Input: 156, CacheRead: 256, Output: 60));
+        events[^1].ShouldBeOfType<AssistEvent.Finished>();
+    }
+
     private static AssistRequest Question(string text) => new()
     {
         System = AssistPrompts.Host,

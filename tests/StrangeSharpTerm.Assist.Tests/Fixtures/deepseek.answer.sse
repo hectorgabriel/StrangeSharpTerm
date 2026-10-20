@@ -10,5 +10,7 @@ data: {"id":"1","choices":[{"index":0,"delta":{"content":"37G of a 49G filesyste
 
 data: {"id":"1","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
 
+data: {"id":"1","choices":[],"usage":{"prompt_tokens":2412,"completion_tokens":64,"total_tokens":2476,"prompt_cache_hit_tokens":2304,"prompt_cache_miss_tokens":108}}
+
 data: [DONE]
 

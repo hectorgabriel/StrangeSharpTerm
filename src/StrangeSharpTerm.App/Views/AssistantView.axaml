@@ -237,6 +237,9 @@
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBlock Text="What gets sent" FontSize="12" />
                     <TextBlock Classes="muted" FontSize="11" Text="{Binding RedactionNote}" />
+                    <!-- What it has cost so far, and how much the cache took. -->
+                    <TextBlock Classes="muted" FontSize="11" Text="{Binding Spending}"
+                               IsVisible="{Binding Spending, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
             </Expander.Header>
             <ScrollViewer MaxHeight="220">

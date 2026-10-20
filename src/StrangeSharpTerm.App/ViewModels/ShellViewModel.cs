@@ -1276,11 +1276,13 @@ public sealed partial class ShellViewModel : ObservableObject
         if (!_assistants.TryGetValue(connection.Id, out var view))
         {
             AssistantViewModel? model = null;
+            // Kept with the conversation, for as long as the window keeps it.
+            var meter = new UsageMeter();
             model = new AssistantViewModel(
                 // Whichever of this host's shells has the keyboard now, asked
                 // each time rather than captured: the dock outlives the pane it
                 // was opened from.
-                Agent(connection, () => Focused(connection.Id))(() => model!),
+                Agent(connection, () => Focused(connection.Id), meter: meter)(() => model!),
                 AssistantSettings,
                 // Typed into the shell it is about, and not run. Sent rather
                 // than written, so a broadcast group fans it out as it fans out
@@ -1291,7 +1293,8 @@ public sealed partial class ShellViewModel : ObservableObject
                 () => LocalFiles.Workspace?.RootLabel,
                 // What /mcp answers with, read out of the hub rather than asked
                 // of a model that cannot see a server which failed to start.
-                () => ConnectedToolsReport.Of(_tools))
+                () => ConnectedToolsReport.Of(_tools),
+                meter)
             {
                 // The dock's own header names the host, and at this width two
                 // labels for it leave neither any room.
@@ -1376,8 +1379,12 @@ public sealed partial class ShellViewModel : ObservableObject
         }
 
         OrchestratorViewModel? model = null;
+        // One for the pane: the planner and the fleet's assistant are built on
+        // this backend, and every host's conversation in a plan is built on
+        // the same meter.
+        var meter = new UsageMeter();
         model = new OrchestratorViewModel(
-            backend,
+            new MeteredBackend(backend, meter),
             Inventory.Tree.Connections.Values
                 .OrderBy(connection => connection.Name, StringComparer.OrdinalIgnoreCase)
                 .Select(connection => new TargetRow
@@ -1393,7 +1400,7 @@ public sealed partial class ShellViewModel : ObservableObject
                 // the pane you happen to have in front of you: reading one
                 // would make a run across eight hosts depend on which of them
                 // had a window open and what was last printed in it.
-                ? Agent(target, () => null, inARun: true)(() => model!)
+                ? Agent(target, () => null, inARun: true, meter)(() => model!)
                 : null,
             // Ask mode needs the connection and nothing else: one assistant
             // decides what to run and where, so there is no conversation per
@@ -1413,7 +1420,8 @@ public sealed partial class ShellViewModel : ObservableObject
             // one machine.
             new RemoteWorkspaceAccess(() => LocalFiles.Workspace),
             () => LocalFiles.Workspace?.RootLabel,
-            () => ConnectedToolsReport.Of(_tools));
+            () => ConnectedToolsReport.Of(_tools),
+            meter);
 
         model.WroteHere += async (_, change) => await LocalFiles.Changed(change);
 
@@ -1477,7 +1485,9 @@ public sealed partial class ShellViewModel : ObservableObject
     /// than passed in: a docked assistant follows the focus, so the pane it is
     /// about is not known when it is built.
     /// </param>
-    private Func<Func<ICommandGate>, HostAgent> Agent(Connection connection, Func<NodeId?> terminal, bool inARun = false) =>
+    /// <param name="meter">What its requests are counted against: the pane's, so it can say what it has cost.</param>
+    private Func<Func<ICommandGate>, HostAgent> Agent(
+        Connection connection, Func<NodeId?> terminal, bool inARun = false, UsageMeter? meter = null) =>
         gate =>
         {
             var access = new SshHostAccess(
@@ -1487,9 +1497,10 @@ public sealed partial class ShellViewModel : ObservableObject
                 TerminalTail.Of(_terminals, terminal, AssistantSettings.TerminalTailLines),
                 () => SudoPassword(connection));
 
+            var backend = _backends(AssistantSettings)
+                ?? throw new AssistException(AssistBackends.NoKey(AssistantSettings));
             return new HostAgent(
-                _backends(AssistantSettings)
-                    ?? throw new AssistException(AssistBackends.NoKey(AssistantSettings)),
+                meter is null ? backend : new MeteredBackend(backend, meter),
                 access,
                 AssistantSettings,
                 new Deferred(gate),

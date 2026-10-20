@@ -55,7 +55,18 @@ public sealed class ClaudeBackend(AnthropicClient client, string model) : IAssis
         {
             Model = model,
             MaxTokens = MaxTokens,
-            System = request.System,
+            // Two breakpoints, for the two things that change at different
+            // rates. The one on the system prompt covers the tools as well --
+            // they come before it -- and survives a conversation being
+            // compacted from the front. The request's own moves forward onto
+            // the newest message each turn, so a turn reads back everything
+            // the turn before it sent, which in a loop of twelve commands is
+            // nearly all of every request.
+            System = new List<TextBlockParam>
+            {
+                new() { Text = request.System, CacheControl = new CacheControlEphemeral() },
+            },
+            CacheControl = new CacheControlEphemeral(),
             Messages = [.. request.Messages.Select(Translate)],
             // Summarised rather than omitted: a pane that is reasoning should
             // show that it is rather than looking frozen, and the default on
@@ -82,6 +93,7 @@ public sealed class ClaudeBackend(AnthropicClient client, string model) : IAssis
         // gate, which has to judge the command before anything runs.
         var building = new Dictionary<int, (string Id, string Name, StringBuilder Arguments)>();
         var stop = AssistStop.EndTurn;
+        AssistUsage? usage = null;
 
         try
         {
@@ -99,7 +111,7 @@ public sealed class ClaudeBackend(AnthropicClient client, string model) : IAssis
                 if (!more)
                     break;
 
-                foreach (var translated in Interpret(events.Current, building, ref stop))
+                foreach (var translated in Interpret(events.Current, building, ref stop, ref usage))
                     yield return translated;
             }
         }
@@ -108,14 +120,30 @@ public sealed class ClaudeBackend(AnthropicClient client, string model) : IAssis
             await events.DisposeAsync();
         }
 
+        if (usage is not null)
+            yield return new AssistEvent.Spent(usage);
         yield return new AssistEvent.Finished(stop);
     }
 
     private static IEnumerable<AssistEvent> Interpret(
         RawMessageStreamEvent raw,
         Dictionary<int, (string Id, string Name, StringBuilder Arguments)> building,
-        ref AssistStop stop)
+        ref AssistStop stop,
+        ref AssistUsage? usage)
     {
+        // The input is counted when the message starts and the output as it
+        // goes, cumulatively, so the last delta's figure is the whole of it.
+        if (raw.TryPickStart(out var begun))
+        {
+            var counted = begun.Message.Usage;
+            usage = new AssistUsage(
+                Input: counted.InputTokens,
+                CacheRead: counted.CacheReadInputTokens ?? 0,
+                CacheWrite: counted.CacheCreationInputTokens ?? 0,
+                Output: counted.OutputTokens);
+            return [];
+        }
+
         if (raw.TryPickContentBlockStart(out var start))
         {
             if (start.ContentBlock.TryPickToolUse(out var tool))
@@ -146,8 +174,12 @@ public sealed class ClaudeBackend(AnthropicClient client, string model) : IAssis
             return [new AssistEvent.Call(new AssistToolCall(complete.Id, complete.Name, arguments))];
         }
 
-        if (raw.TryPickDelta(out var message) && message.Delta.StopReason is { } reason)
-            stop = Translate(reason);
+        if (raw.TryPickDelta(out var message))
+        {
+            if (message.Delta.StopReason is { } reason)
+                stop = Translate(reason);
+            usage = (usage ?? AssistUsage.None) with { Output = message.Usage.OutputTokens };
+        }
 
         return [];
     }

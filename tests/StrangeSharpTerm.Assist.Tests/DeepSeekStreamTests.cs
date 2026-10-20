@@ -83,6 +83,42 @@ public class DeepSeekStreamTests
     }
 
     /// <summary>
+    /// The last chunk carries no choices, only the counts, and the cache's
+    /// share comes under DeepSeek's own names.
+    /// </summary>
+    [Fact]
+    public async Task WhatARequestCostIsReadFromTheLastChunk()
+    {
+        var events = await Decode("deepseek.answer.sse");
+
+        events.OfType<AssistEvent.Spent>().Single().Usage
+            .ShouldBe(new AssistUsage(Input: 108, CacheRead: 2304, Output: 64));
+        events[^1].ShouldBeOfType<AssistEvent.Finished>();
+    }
+
+    /// <summary>Ollama reports the cache the OpenAI way: hits in the details, misses left implied.</summary>
+    [Fact]
+    public void TheOpenAiShapeOfTheCountsIsReadToo()
+    {
+        var decoder = new DeepSeekStream();
+        decoder.Decode(
+            """{"choices":[],"usage":{"prompt_tokens":900,"completion_tokens":40,"prompt_tokens_details":{"cached_tokens":600}}}""")
+            .ShouldBeEmpty();
+
+        decoder.Decode("[DONE]").OfType<AssistEvent.Spent>().Single().Usage
+            .ShouldBe(new AssistUsage(Input: 300, CacheRead: 600, Output: 40));
+    }
+
+    /// <summary>A server that says nothing about cost is not reported as having cost nothing.</summary>
+    [Fact]
+    public async Task NoCountsMeansNoUsage()
+    {
+        var events = await Decode("deepseek.toolcall.sse");
+
+        events.OfType<AssistEvent.Spent>().ShouldBeEmpty();
+    }
+
+    /// <summary>
     /// Ollama calls the same field <c>reasoning</c>, and it is what this app is
     /// exercised against without an account: a local model, speaking the same
     /// chat-completions format. Knowing only DeepSeek's name for it dropped the

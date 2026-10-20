@@ -22,6 +22,8 @@ internal sealed class DeepSeekStream
 
     private AssistStop _stop = AssistStop.EndTurn;
 
+    private AssistUsage? _usage;
+
     private sealed record Call(string Id, string Name)
     {
         internal StringBuilder Arguments { get; } = new();
@@ -41,9 +43,8 @@ internal sealed class DeepSeekStream
             // The stream is over. Any tool call still being assembled is
             // complete -- this API sends no per-block stop -- so it is emitted
             // here, before the finish.
-            foreach (var call in Flush())
-                yield return call;
-            yield return new AssistEvent.Finished(_stop);
+            foreach (var ending in Finish())
+                yield return ending;
             yield break;
         }
 
@@ -66,6 +67,9 @@ internal sealed class DeepSeekStream
             throw new AssistException(
                 $"{AssistProvider.DeepSeek.Name} could not answer. ({message ?? "no reason given"})");
         }
+
+        if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+            _usage = Usage(usage);
 
         if (!root.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
             yield break;
@@ -115,7 +119,34 @@ internal sealed class DeepSeekStream
     {
         foreach (var call in Flush())
             yield return call;
+        if (_usage is not null)
+            yield return new AssistEvent.Spent(_usage);
         yield return new AssistEvent.Finished(_stop);
+    }
+
+    /// <summary>
+    /// The counts, under whichever names this server uses for the cache.
+    ///
+    /// DeepSeek splits the prompt into hits and misses. A server that speaks
+    /// the OpenAI shape instead -- Ollama, which is how this is run without an
+    /// account -- puts the hits in <c>prompt_tokens_details</c>, and the misses
+    /// are what is left of the prompt.
+    /// </summary>
+    private static AssistUsage Usage(JsonElement usage)
+    {
+        var prompt = Count(usage, "prompt_tokens");
+        var hit = usage.TryGetProperty("prompt_cache_hit_tokens", out _)
+            ? Count(usage, "prompt_cache_hit_tokens")
+            : usage.TryGetProperty("prompt_tokens_details", out var details) && details.ValueKind == JsonValueKind.Object
+                ? Count(details, "cached_tokens")
+                : 0;
+        var missed = usage.TryGetProperty("prompt_cache_miss_tokens", out _)
+            ? Count(usage, "prompt_cache_miss_tokens")
+            : Math.Max(0, prompt - hit);
+        return new AssistUsage(Input: missed, CacheRead: hit, Output: Count(usage, "completion_tokens"));
+
+        static long Count(JsonElement owner, string name) =>
+            owner.TryGetProperty(name, out var value) && value.TryGetInt64(out var count) ? count : 0;
     }
 
     /// <summary>

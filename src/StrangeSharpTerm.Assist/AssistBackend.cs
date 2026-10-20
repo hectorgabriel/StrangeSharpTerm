@@ -103,6 +103,59 @@ public abstract record AssistEvent
     public sealed record Call(AssistToolCall Tool) : AssistEvent;
 
     public sealed record Finished(AssistStop Reason) : AssistEvent;
+
+    /// <summary>
+    /// What this request cost, as the provider counted it. Once per request,
+    /// before <see cref="Finished"/>, and not at all from a provider that did
+    /// not say.
+    /// </summary>
+    public sealed record Spent(AssistUsage Usage) : AssistEvent;
+}
+
+/// <summary>
+/// Tokens, as a provider bills them.
+///
+/// Input in three parts rather than one, because the point of counting at all
+/// is to see what the cache is doing: a conversation resends everything before
+/// the newest message on every turn, and whether that came back as a cache read
+/// or was paid for again is the difference between a cheap pane and an
+/// expensive one.
+/// </summary>
+/// <param name="Input">Input read at full price: neither from the cache nor written to it.</param>
+/// <param name="CacheRead">Input served from the provider's cache.</param>
+/// <param name="CacheWrite">Input written to the cache on this request. Only Claude reports one.</param>
+/// <param name="Output">What the model produced, its thinking included.</param>
+public sealed record AssistUsage(long Input = 0, long CacheRead = 0, long CacheWrite = 0, long Output = 0)
+{
+    public static AssistUsage None { get; } = new();
+
+    /// <summary>All the input the request carried, however it was billed.</summary>
+    public long Sent => Input + CacheRead + CacheWrite;
+
+    /// <summary>
+    /// As a pane says it: "41.2k in · 80% cached · 1.3k out". Empty before
+    /// anything has been sent.
+    ///
+    /// The cache as a share of what was sent rather than a count of its own,
+    /// because the count means nothing without the total beside it, and the
+    /// share is the number that says whether a long conversation is cheap.
+    /// </summary>
+    public string Describe() => Sent == 0 && Output == 0
+        ? ""
+        : $"{Tokens(Sent)} in · {(Sent == 0 ? 0 : CacheRead * 100 / Sent)}% cached · {Tokens(Output)} out";
+
+    private static string Tokens(long count) => count switch
+    {
+        < 1_000 => count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        < 1_000_000 => (count / 1_000.0).ToString("0.#k", System.Globalization.CultureInfo.InvariantCulture),
+        _ => (count / 1_000_000.0).ToString("0.##M", System.Globalization.CultureInfo.InvariantCulture),
+    };
+
+    public static AssistUsage operator +(AssistUsage left, AssistUsage right) => new(
+        left.Input + right.Input,
+        left.CacheRead + right.CacheRead,
+        left.CacheWrite + right.CacheWrite,
+        left.Output + right.Output);
 }
 
 /// <summary>

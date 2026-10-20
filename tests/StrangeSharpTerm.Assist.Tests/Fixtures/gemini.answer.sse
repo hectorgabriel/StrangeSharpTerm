@@ -2,7 +2,7 @@ data: {"candidates": [{"content": {"parts": [{"text": "The disk is at 98%, so th
 
 data: {"candidates": [{"content": {"parts": [{"text": "The journal is 37G "}],"role": "model"},"index": 0}],"usageMetadata": {"promptTokenCount": 412,"candidatesTokenCount": 6,"totalTokenCount": 466,"thoughtsTokenCount": 48},"modelVersion": "gemini-3.8-flash","responseId": "gem_answer_1"}
 
-data: {"candidates": [{"content": {"parts": [{"text": "of a 49G filesystem.","thoughtSignature": "Q2lRQjRQ"}],"role": "model"},"index": 0}],"usageMetadata": {"promptTokenCount": 412,"candidatesTokenCount": 12,"totalTokenCount": 472,"thoughtsTokenCount": 48},"modelVersion": "gemini-3.8-flash","responseId": "gem_answer_1"}
+data: {"candidates": [{"content": {"parts": [{"text": "of a 49G filesystem.","thoughtSignature": "Q2lRQjRQ"}],"role": "model"},"index": 0}],"usageMetadata": {"promptTokenCount": 412,"cachedContentTokenCount": 256,"candidatesTokenCount": 12,"totalTokenCount": 472,"thoughtsTokenCount": 48},"modelVersion": "gemini-3.8-flash","responseId": "gem_answer_1"}
 
-data: {"candidates": [{"content": {"parts": [{"text": ""}],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 412,"candidatesTokenCount": 12,"totalTokenCount": 472,"thoughtsTokenCount": 48},"modelVersion": "gemini-3.8-flash","responseId": "gem_answer_1"}
+data: {"candidates": [{"content": {"parts": [{"text": ""}],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 412,"cachedContentTokenCount": 256,"candidatesTokenCount": 12,"totalTokenCount": 472,"thoughtsTokenCount": 48},"modelVersion": "gemini-3.8-flash","responseId": "gem_answer_1"}
 
