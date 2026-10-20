@@ -23,7 +23,10 @@ public enum StepState
     /// <summary>A person said no.</summary>
     Refused,
 
-    /// <summary>The pane stopped waiting. The command was not killed; nothing can kill it.</summary>
+    /// <summary>
+    /// It ran out of time and was told to stop. See
+    /// <see cref="TranscriptEntry.Step.MayStillBeRunning"/> for whether it did.
+    /// </summary>
     TimedOut,
 
     /// <summary>It could not be run at all: the host went away, or the channel failed.</summary>
@@ -122,6 +125,12 @@ public abstract record TranscriptEntry
         public string Output { get; set; } = "";
 
         public int? ExitStatus { get; set; }
+
+        /// <summary>
+        /// It ran out of time, was told to stop, and the server never said it
+        /// had -- so it may still be running there.
+        /// </summary>
+        public bool MayStillBeRunning { get; set; }
 
         /// <summary>Whether it ran without anybody being asked, which the row labels "auto".</summary>
         public bool RanUnattended => Gate.Length == 0;

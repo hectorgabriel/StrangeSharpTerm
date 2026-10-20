@@ -583,6 +583,7 @@ public sealed class FleetAgent(
         var output = HostAgent.Truncate(Redaction.Scrub(outcome.Output, _secrets).Text);
         step.State = outcome.TimedOut ? StepState.TimedOut : StepState.Ran;
         step.ExitStatus = outcome.TimedOut ? null : outcome.ExitStatus;
+        step.MayStillBeRunning = outcome.MayStillBeRunning;
         step.Output = output;
         Updated?.Invoke(this, step);
         Working?.Invoke(this, new AssistStep(alias, command, why, Running: false, outcome.ExitStatus, output));
@@ -591,8 +592,7 @@ public sealed class FleetAgent(
         // every host's output, and a result that did not say which machine it
         // came from would be one the model has to guess about.
         var reply = outcome.TimedOut
-            ? $"{alias}: the command did not finish within {AssistLimits.CommandTimeout.TotalSeconds:0} seconds "
-                + $"and was left running. Partial output:\n{output}"
+            ? $"{alias}: {outcome.Ending(AssistLimits.CommandTimeout)}\n{output}"
             : $"{alias}: exit status {outcome.ExitStatus}\n{output}";
 
         return (true, new AssistToolResult(call.Id, reply, Failed: outcome.TimedOut));

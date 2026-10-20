@@ -132,6 +132,48 @@ public class HostAgentTests
         backend.Requests[1].Messages.Last().ToolResults.Single().Output.ShouldContain("did not finish");
     }
 
+    /// <summary>
+    /// A command that ran out of time was stopped, and the model is told that
+    /// -- and given what it said first -- rather than that it was left running,
+    /// which is what this used to say whether or not it was true.
+    /// </summary>
+    [Fact]
+    public async Task ACommandThatWasStoppedIsSaidToHaveStopped()
+    {
+        var host = new FakeHost("web-01")
+        {
+            Answer = _ => new CommandOutcome(-1, "/var/log 12G", TimedOut: true, StoppedBy: "TERM"),
+        };
+        var backend = new ScriptedBackend(ScriptedBackend.Runs("du -xh /"), ScriptedBackend.Says("It was slow."));
+        var agent = new HostAgent(backend, host, Fixtures.Settings, new StandingAnswer(true));
+
+        await agent.Ask("what is big?", Running, TestContext.Current.CancellationToken);
+
+        var told = backend.Requests[1].Messages.Last().ToolResults.Single().Output;
+        told.ShouldContain("was stopped (TERM)");
+        told.ShouldEndWith("/var/log 12G");
+        told.ShouldNotContain("left running");
+        agent.Entries.OfType<TranscriptEntry.Step>().Single().MayStillBeRunning.ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// And where the server never said it stopped, nobody is told it did: the
+    /// model is warned off starting it a second time beside itself.
+    /// </summary>
+    [Fact]
+    public async Task ACommandThatMayStillBeRunningIsSaidToBe()
+    {
+        var host = new FakeHost("web-01") { Answer = _ => new CommandOutcome(-1, "", TimedOut: true) };
+        var backend = new ScriptedBackend(ScriptedBackend.Runs("du -xh /"), ScriptedBackend.Says("It was slow."));
+        var agent = new HostAgent(backend, host, Fixtures.Settings, new StandingAnswer(true));
+
+        await agent.Ask("what is big?", Running, TestContext.Current.CancellationToken);
+
+        backend.Requests[1].Messages.Last().ToolResults.Single().Output
+            .ShouldContain("may still be running: check before starting it again");
+        agent.Entries.OfType<TranscriptEntry.Step>().Single().MayStillBeRunning.ShouldBeTrue();
+    }
+
     [Fact]
     public async Task SixtySecondsPerCommand()
     {

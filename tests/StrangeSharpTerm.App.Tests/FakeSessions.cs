@@ -102,10 +102,10 @@ public sealed class FakeSessions : IHostSessions
 
     private sealed class NoCommands : IRemoteCommands
     {
-        public CommandResult Run(string command, TimeSpan timeout) =>
+        public CommandResult Run(string command, TimeSpan timeout, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException("this test has no server to run on");
 
-        public CommandResult RunFeeding(string command, TimeSpan timeout, string input) =>
+        public CommandResult RunFeeding(string command, TimeSpan timeout, string input, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException("this test has no server to run on");
     }
 }

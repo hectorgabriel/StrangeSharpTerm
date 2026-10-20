@@ -678,14 +678,14 @@ public sealed class HostAgent(
 
         step.State = outcome.TimedOut ? StepState.TimedOut : StepState.Ran;
         step.ExitStatus = outcome.TimedOut ? null : outcome.ExitStatus;
+        step.MayStillBeRunning = outcome.MayStillBeRunning;
         step.Output = output;
         Updated?.Invoke(this, step);
         Working?.Invoke(this, new AssistStep(
             host.Alias, command, why, Running: false, step.ExitStatus, output));
 
         var reply = outcome.TimedOut
-            ? $"The command did not finish within {timeout.TotalSeconds:0} seconds and was left running. "
-                + $"Partial output:\n{output}"
+            ? $"{outcome.Ending(timeout)}\n{output}"
             : $"exit status {outcome.ExitStatus}\n{output}";
 
         return (true, new AssistToolResult(call.Id, reply, Failed: outcome.TimedOut));

@@ -6,11 +6,33 @@ namespace StrangeSharpTerm.Assist;
 public sealed record HostSnapshot(string? Kernel = null, ServerMetrics? Metrics = null, string? TerminalTail = null);
 
 /// <summary>What running a command produced.</summary>
-/// <param name="TimedOut">
-/// The wait ended, not the command. Nothing here can interrupt a command once
-/// ssh has it, so this says the pane stopped listening.
+/// <param name="TimedOut">It ran out of time and was told to stop. <see cref="Output"/> is what it had said by then.</param>
+/// <param name="StoppedBy">
+/// After <see cref="TimedOut"/>, the signal the server says ended it. Null when
+/// the server never confirmed that it did -- the command ignored the signal,
+/// or the server does not implement them -- so it may still be running, and
+/// nobody should be told otherwise.
 /// </param>
-public sealed record CommandOutcome(int ExitStatus, string Output, bool TimedOut = false);
+public sealed record CommandOutcome(int ExitStatus, string Output, bool TimedOut = false, string? StoppedBy = null)
+{
+    /// <summary>Whether a command that ran out of time may still be running on the server.</summary>
+    public bool MayStillBeRunning => TimedOut && StoppedBy is null;
+
+    /// <summary>
+    /// What the model is told about a command that ran out of time.
+    ///
+    /// The truth either way, because the two lead somewhere different: a
+    /// command that was stopped can be run again with a narrower question,
+    /// and one that may still be running must not be started a second time
+    /// beside itself.
+    /// </summary>
+    public string Ending(TimeSpan timeout) => MayStillBeRunning
+        ? $"The command did not finish within {timeout.TotalSeconds:0} seconds. It was told to stop, but the "
+            + "server never confirmed that it did, so it may still be running: check before starting it again. "
+            + "Output before then:"
+        : $"The command did not finish within {timeout.TotalSeconds:0} seconds and was stopped ({StoppedBy}). "
+            + "Output before then:";
+}
 
 /// <summary>
 /// The one host a conversation is about.

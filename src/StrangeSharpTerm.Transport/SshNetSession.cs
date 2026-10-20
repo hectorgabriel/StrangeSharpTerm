@@ -4,7 +4,22 @@ namespace StrangeSharpTerm.Transport;
 
 public sealed record CommandResult(int ExitStatus, string StandardOutput, string StandardError)
 {
-    public bool Succeeded => ExitStatus == 0;
+    public bool Succeeded => ExitStatus == 0 && !Stopped;
+
+    /// <summary>
+    /// Whether the wait ran out and the command was told to stop: a TERM to
+    /// its process group, which is what the server does with a signal it
+    /// supports. What arrived before that is still in the output.
+    /// </summary>
+    public bool Stopped { get; init; }
+
+    /// <summary>
+    /// The signal the server says the command ended by, or null. After
+    /// <see cref="Stopped"/>, null means the server never confirmed the
+    /// command ended -- it ignored the signal, or does not support them -- and
+    /// it may still be running.
+    /// </summary>
+    public string? ExitSignal { get; init; }
 }
 
 /// <summary>
@@ -29,14 +44,52 @@ public sealed class SshNetSession(SshClient client, ConnectionInfo connectionInf
 
     public bool IsConnected => Client.IsConnected;
 
-    /// <summary>Runs a command and waits for it. One channel on the existing connection.</summary>
-    public CommandResult Run(string commandText, TimeSpan? timeout = null)
+    /// <summary>
+    /// Runs a command and waits for it. One channel on the existing connection.
+    ///
+    /// A command that outlives <paramref name="timeout"/> is stopped rather
+    /// than waited on, and comes back <see cref="CommandResult.Stopped"/> with
+    /// what it had said by then. Cancelling stops it as well, and then throws:
+    /// a person pressing Stop means the command too, not only the waiting.
+    /// </summary>
+    public CommandResult Run(string commandText, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
         using var command = Client.CreateCommand(commandText);
-        if (timeout is { } limit)
-            command.CommandTimeout = limit;
-        var output = command.Execute();
-        return new CommandResult(command.ExitStatus ?? -1, output, command.Error);
+        return Wait(command, timeout, cancellationToken, _ => { });
+    }
+
+    /// <summary>
+    /// Waits for a command that is started here, stopping it when the time or
+    /// the caller runs out.
+    ///
+    /// Stopping is SSH.NET's: cancelling the execution sends the server a TERM
+    /// for the command, and OpenSSH delivers it to the command's whole process
+    /// group -- a pipeline, a loop and a shell's children all end with it,
+    /// which was checked against a real sshd rather than assumed. A process
+    /// that ignores TERM survives, and a server that does not implement
+    /// signals never answers; either way no exit signal comes back, and
+    /// <see cref="CommandResult.ExitSignal"/> says so by being null.
+    /// </summary>
+    /// <param name="started">What to do once it is running: write its input, for <see cref="RunFeeding"/>.</param>
+    private static CommandResult Wait(SshCommand command, TimeSpan? timeout, CancellationToken cancellationToken, Action<SshCommand> started)
+    {
+        using var limit = timeout is { } span ? new CancellationTokenSource(span) : new CancellationTokenSource();
+        using var either = CancellationTokenSource.CreateLinkedTokenSource(limit.Token, cancellationToken);
+
+        var running = command.ExecuteAsync(either.Token);
+        started(command);
+
+        try
+        {
+            running.GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException) when (either.IsCancellationRequested)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return new CommandResult(-1, command.Result, command.Error) { Stopped = true, ExitSignal = command.ExitSignal };
+        }
+
+        return new CommandResult(command.ExitStatus ?? -1, command.Result, command.Error) { ExitSignal = command.ExitSignal };
     }
 
     /// <summary>
@@ -56,35 +109,22 @@ public sealed class SshNetSession(SshClient client, ConnectionInfo connectionInf
     /// as a string to authenticate with; this is the one copy that is only here.
     /// Nothing in this method logs <paramref name="input"/>, and nothing may.
     /// </remarks>
-    public CommandResult RunFeeding(string commandText, TimeSpan? timeout, string input)
+    public CommandResult RunFeeding(string commandText, TimeSpan? timeout, string input, CancellationToken cancellationToken = default)
     {
         using var command = Client.CreateCommand(commandText);
-        using var waiting = timeout is { } limit ? new CancellationTokenSource(limit) : new CancellationTokenSource();
-
-        var running = command.ExecuteAsync(waiting.Token);
-        var bytes = System.Text.Encoding.UTF8.GetBytes(input);
-        try
+        return Wait(command, timeout, cancellationToken, running =>
         {
-            using var stdin = command.CreateInputStream();
-            stdin.Write(bytes, 0, bytes.Length);
-        }
-        finally
-        {
-            Array.Clear(bytes);
-        }
-
-        try
-        {
-            running.GetAwaiter().GetResult();
-        }
-        catch (OperationCanceledException) when (waiting.IsCancellationRequested)
-        {
-            // The same shape a timed-out Run takes, so the caller has one
-            // thing to catch: the wait ended, not the command.
-            throw new TimeoutException($"The command did not finish within {timeout}.");
-        }
-
-        return new CommandResult(command.ExitStatus ?? -1, command.Result, command.Error);
+            var bytes = System.Text.Encoding.UTF8.GetBytes(input);
+            try
+            {
+                using var stdin = running.CreateInputStream();
+                stdin.Write(bytes, 0, bytes.Length);
+            }
+            finally
+            {
+                Array.Clear(bytes);
+            }
+        });
     }
 
     /// <summary>

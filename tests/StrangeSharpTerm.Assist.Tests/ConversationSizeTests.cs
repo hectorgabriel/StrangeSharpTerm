@@ -402,6 +402,7 @@ public class ConversationSizeTests
             new TranscriptEntry.Step { Host = "web-01", Command = "systemctl status nginx", Why = "", State = StepState.Ran, ExitStatus = 3 },
             new TranscriptEntry.Step { Host = "web-01", Command = "systemctl restart nginx", Why = "", State = StepState.Refused },
             new TranscriptEntry.Step { Host = "web-02", Command = "journalctl -f", Why = "", State = StepState.TimedOut },
+            new TranscriptEntry.Step { Host = "web-02", Command = "tail -f app.log", Why = "", State = StepState.TimedOut, MayStillBeRunning = true },
             new TranscriptEntry.Answer { Markdown = "It is stopped, and you would rather I left it.\nSo I have." },
         ]);
 
@@ -409,7 +410,8 @@ public class ConversationSizeTests
             "Asked: restart it?",
             "- on web-01: systemctl status nginx — exit 3",
             "- on web-01: systemctl restart nginx — refused by the user",
-            "- on web-02: journalctl -f — timed out, left running",
+            "- on web-02: journalctl -f — timed out, stopped",
+            "- on web-02: tail -f app.log — timed out, may still be running",
             "Answered: It is stopped, and you would rather I left it. So I have."));
     }
 

@@ -92,20 +92,33 @@ var commandArgument = new Argument<string[]>("command") { Description = "Command
 // closed after it -- if it were not, the command would wait forever for more.
 var inputOption = new Option<string?>("--input") { Description = "Write this to the command's standard input, then close it." };
 
-var exec = new Command("exec", "Run a command on the host.") { target, repeatOption, inputOption, commandArgument };
+// How long the command may run before it is stopped. Without it a command is
+// waited on for as long as it takes, as it always was here.
+var commandTimeoutOption = new Option<int?>("--command-timeout") { Description = "Stop the command after this many seconds." };
+
+var exec = new Command("exec", "Run a command on the host.") { target, repeatOption, inputOption, commandTimeoutOption, commandArgument };
 exec.SetAction(parsed => WithSession(parsed, session =>
 {
     var text = string.Join(' ', parsed.GetValue(commandArgument)!);
     var input = parsed.GetValue(inputOption);
+    TimeSpan? limit = parsed.GetValue(commandTimeoutOption) is { } seconds ? TimeSpan.FromSeconds(seconds) : null;
     var status = 0;
     for (var i = 0; i < parsed.GetValue(repeatOption); i++)
     {
         var result = input is null
-            ? session.Run(text)
-            : session.RunFeeding(text, TimeSpan.FromSeconds(parsed.GetValue(timeoutOption)), input);
+            ? session.Run(text, limit)
+            : session.RunFeeding(text, limit ?? TimeSpan.FromSeconds(parsed.GetValue(timeoutOption)), input);
         Console.Write(result.StandardOutput);
         Console.Error.Write(result.StandardError);
-        status = result.ExitStatus;
+        // Said, so that a script can tell a stopped command from one that
+        // failed, and whether the server confirmed it ended.
+        if (result.Stopped)
+        {
+            Console.Error.WriteLine(result.ExitSignal is { } signal
+                ? $"stctl: stopped after the timeout ({signal})"
+                : "stctl: told to stop after the timeout; the server did not confirm it did");
+        }
+        status = result.Stopped ? 124 : result.ExitStatus;
     }
     return status;
 }));
