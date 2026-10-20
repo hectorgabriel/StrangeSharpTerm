@@ -104,9 +104,12 @@
             <TextBlock Grid.Row="0" Grid.Column="2" Classes="muted" Margin="8,0,0,0"
                        VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                        Text="{Binding Progress}" />
-            <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Classes="muted" FontSize="11"
-                       Margin="0,2,0,0" TextTrimming="CharacterEllipsis"
-                       Text="{Binding Answering}" />
+            <!-- The provider, and what this pane has spent with it. -->
+            <Grid Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="Auto,*" Margin="0,2,0,0">
+                <TextBlock Classes="muted" FontSize="11" Text="{Binding Answering}" />
+                <TextBlock Grid.Column="1" Classes="muted" FontSize="11" Margin="8,0,0,0"
+                           TextTrimming="CharacterEllipsis" Text="{Binding Spending}" />
+            </Grid>
         </Grid>
 
         <!-- Follows the run as hosts report, and lets go as soon as you scroll

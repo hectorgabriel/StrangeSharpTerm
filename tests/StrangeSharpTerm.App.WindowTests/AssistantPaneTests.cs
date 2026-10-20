@@ -728,6 +728,71 @@ public class AssistantPaneTests
         }
     }
 
+    /// <summary>
+    /// What a pane has cost is on screen, beside what gets sent, and only once
+    /// something has been: an empty pane says nothing rather than "0 in".
+    /// </summary>
+    [Fact]
+    public void ThePaneSaysWhatItHasSpent()
+    {
+        Headless.Run(() =>
+        {
+            var settings = new AssistSettings();
+            var meter = new UsageMeter();
+            var backend = new MeteredBackend(new Canned(
+            [
+                new AssistEvent.Say("It is fine."),
+                new AssistEvent.Spent(new AssistUsage(Input: 2_000, CacheRead: 8_000, Output: 1_250)),
+                new AssistEvent.Finished(AssistStop.EndTurn),
+            ]), meter);
+            AssistantViewModel? model = null;
+            model = new AssistantViewModel(
+                new HostAgent(backend, new Quiet("web-01"), settings, new Late(() => model!)),
+                settings,
+                _ => { },
+                meter: meter);
+            var window = Show(new AssistantView(model));
+
+            Shown(window).ShouldNotContain(text => text != null && text.Contains("cached"));
+
+            model.Question = "is it fine?";
+            Headless.Finish(model.AskCommand.ExecuteAsync(null));
+            Settle(window);
+
+            Shown(window).ShouldContain("10k in · 80% cached · 1.3k out");
+        });
+    }
+
+    /// <summary>The orchestrator says it on the provider line, for the whole pane.</summary>
+    [Fact]
+    public void TheOrchestratorSaysWhatItHasSpent()
+    {
+        Headless.Run(() =>
+        {
+            const string plan = """
+            {"phases":[{"name":"Look","hosts":["web-01"],"commands":["uptime"]}]}
+            """;
+            var meter = new UsageMeter();
+            var model = new OrchestratorViewModel(
+                new MeteredBackend(new Canned([
+                    new AssistEvent.Say(plan),
+                    new AssistEvent.Spent(new AssistUsage(Input: 400, Output: 30)),
+                    new AssistEvent.Finished(AssistStop.EndTurn),
+                ]), meter),
+                [new TargetRow { Alias = "web-01", IsConnected = true, IsChosen = true }],
+                _ => null,
+                meter: meter);
+            var window = Show(new OrchestratorView(model));
+
+            model.Mode = OrchestratorMode.Plan;
+            model.Instruction = "how long has it been up?";
+            Headless.Finish(model.RunCommand.ExecuteAsync(null));
+            Settle(window);
+
+            Shown(window).ShouldContain("400 in · 0% cached · 30 out");
+        });
+    }
+
     private static AssistantViewModel Pane(
         IHostAccess host,
         IReadOnlyList<AssistEvent> first,

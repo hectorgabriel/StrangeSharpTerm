@@ -313,6 +313,10 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     /// The folder open on the machine this app is running on, asked for each
     /// time rather than captured: it is opened and closed while the pane is.
     /// </param>
+    /// <param name="meter">
+    /// What every request made on this pane's behalf is counted against. The
+    /// backend and the agents have to be built on it as well; this only shows it.
+    /// </param>
     public OrchestratorViewModel(
         IAssistBackend backend,
         IEnumerable<TargetRow> targets,
@@ -320,9 +324,12 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         Func<string, IHostAccess?>? accessFor = null,
         IWorkspaceAccess? localWorkspace = null,
         Func<string?>? localRoot = null,
-        Func<string>? connectedTools = null)
+        Func<string>? connectedTools = null,
+        UsageMeter? meter = null)
     {
         _localWorkspace = localWorkspace;
+        if (meter is not null)
+            meter.Changed += (_, total) => _screen.Now(() => Spending = total.Describe());
         _localRoot = localRoot;
         _connectedTools = connectedTools;
         // Falls back to the agent's own host, so a test that only cares about
@@ -370,6 +377,14 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     public ObservableCollection<PhaseRow> Phases { get; } = [];
 
     public string Answering => $"{_backend.ProviderName} · {_backend.Model}";
+
+    /// <summary>
+    /// What this pane has spent: the planner, the fleet's assistant and every
+    /// host's conversation in a plan, counted together, because they are one
+    /// window to the person paying for it.
+    /// </summary>
+    [ObservableProperty]
+    public partial string Spending { get; private set; } = "";
 
     [ObservableProperty]
     public partial OrchestratorMode Mode { get; set; } = OrchestratorMode.Ask;

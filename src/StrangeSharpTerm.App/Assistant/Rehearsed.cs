@@ -69,8 +69,26 @@ internal sealed class RehearsedBackend(params IReadOnlyList<AssistEvent>[] turns
             // Slowly enough to see it arrive, because how a pane looks while it
             // is answering is half of what there is to look at.
             await Task.Delay(120, cancellationToken);
+            if (streamed is AssistEvent.Finished)
+                yield return new AssistEvent.Spent(Cost(request));
             yield return streamed;
         }
+    }
+
+    private long _cached;
+
+    /// <summary>
+    /// What a cached provider would have charged for this request: whatever the
+    /// last one sent is read back, and the rest is written. Four characters to
+    /// the token, as <see cref="AssistMessage.Size"/> reckons it, and a system
+    /// prompt that is the same every turn.
+    /// </summary>
+    private AssistUsage Cost(AssistRequest request)
+    {
+        var sent = (request.System.Length + request.Messages.Sum(message => message.Size)) / 4;
+        var read = Math.Min(_cached, sent);
+        _cached = sent;
+        return new AssistUsage(CacheRead: read, CacheWrite: sent - read, Output: 80);
     }
 }
 

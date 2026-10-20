@@ -235,15 +235,19 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
     /// a docked conversation outlives the pane it was opened from, and a folder
     /// can be opened after the conversation has started.
     /// </param>
+    /// <param name="meter">What every request this pane makes is counted against, or null to show nothing.</param>
     public AssistantViewModel(
         HostAgent agent,
         AssistSettings settings,
         Action<string> stage,
         Func<string?>? workspace = null,
         Func<string?>? localWorkspace = null,
-        Func<string>? connectedTools = null)
+        Func<string>? connectedTools = null,
+        UsageMeter? meter = null)
     {
         _agent = agent;
+        if (meter is not null)
+            meter.Changed += (_, total) => _screen.Now(() => Spending = total.Describe());
         _stage = stage;
         _workspace = workspace;
         _localWorkspace = localWorkspace;
@@ -323,6 +327,14 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
     /// that should be readable without opening Settings.
     /// </summary>
     public string Answering => $"{_agent.ProviderName} · {_agent.Model}";
+
+    /// <summary>
+    /// What this pane has sent and received so far, and how much of it the
+    /// provider's cache took. Beside what gets sent, because it is the other
+    /// half of the same question.
+    /// </summary>
+    [ObservableProperty]
+    public partial string Spending { get; private set; } = "";
 
     public ObservableCollection<AssistRow> Rows { get; } = [];
 

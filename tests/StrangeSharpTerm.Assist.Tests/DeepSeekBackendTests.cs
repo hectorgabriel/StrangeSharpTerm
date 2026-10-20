@@ -24,6 +24,8 @@ public class DeepSeekBackendTests
         var body = JsonDocument.Parse(stub.Body!).RootElement;
         body.GetProperty("model").GetString().ShouldBe("deepseek-v4-pro");
         body.GetProperty("stream").GetBoolean().ShouldBeTrue();
+        // Or the stream says nothing about what it cost.
+        body.GetProperty("stream_options").GetProperty("include_usage").GetBoolean().ShouldBeTrue();
     }
 
     /// <summary>The system prompt is the first message here, not a field of its own.</summary>

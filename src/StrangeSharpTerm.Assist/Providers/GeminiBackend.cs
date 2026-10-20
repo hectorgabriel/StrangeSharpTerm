@@ -79,6 +79,7 @@ public sealed class GeminiBackend(Client client, string model) : IAssistBackend,
 
         var stop = AssistStop.EndTurn;
         var called = false;
+        AssistUsage? usage = null;
 
         try
         {
@@ -102,6 +103,19 @@ public sealed class GeminiBackend(Client client, string model) : IAssistBackend,
                 // no candidates at all. The request was fine; Google declined it.
                 if (chunk.PromptFeedback?.BlockReason is not null)
                     stop = AssistStop.Refusal;
+
+                // On every chunk, counted so far, so the last one is the whole.
+                // The prompt's count includes what came from the cache, which
+                // Gemini does on its own for a repeated prefix, and thinking is
+                // billed as output, so it goes there.
+                if (chunk.UsageMetadata is { } counted)
+                {
+                    var cached = (long)(counted.CachedContentTokenCount ?? 0);
+                    usage = new AssistUsage(
+                        Input: Math.Max(0, (counted.PromptTokenCount ?? 0) - cached),
+                        CacheRead: cached,
+                        Output: (long)(counted.CandidatesTokenCount ?? 0) + (counted.ThoughtsTokenCount ?? 0));
+                }
 
                 if (chunk.Candidates is not [var candidate, ..])
                     continue;
@@ -133,6 +147,9 @@ public sealed class GeminiBackend(Client client, string model) : IAssistBackend,
         {
             await chunks.DisposeAsync();
         }
+
+        if (usage is not null)
+            yield return new AssistEvent.Spent(usage);
 
         // Gemini finishes a turn that ends in calls with a plain STOP. The loop
         // above runs the calls on ToolUse, so that is what it is told.
