@@ -121,6 +121,7 @@ public sealed partial class AssistRow : ObservableObject
     {
         null => "",
         { State: StepState.Waiting } => "waiting for you",
+        { State: StepState.Queued } => "queued",
         { State: StepState.Running } => "running",
         { State: StepState.Refused } => "refused",
         { State: StepState.TimedOut } => "gave up waiting",
