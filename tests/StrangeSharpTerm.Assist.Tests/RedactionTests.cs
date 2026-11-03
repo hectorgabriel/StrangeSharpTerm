@@ -96,6 +96,7 @@ public class RedactionTests
 
     [Theory]
     [InlineData("sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789")]
+    [InlineData("altheia-sk-AbCd_EfGh-IjKlMnOpQrStUvWxYz0123456789abcdef")]
     [InlineData("ghp_AbCdEfGhIjKlMnOpQrStUvWxYz0123")]
     [InlineData("AKIAIOSFODNN7EXAMPLE")]
     [InlineData("xoxb-123456789012-1234567890123-AbCdEfGhIjKlMnOpQrSt")]

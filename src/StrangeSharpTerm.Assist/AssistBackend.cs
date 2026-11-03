@@ -167,7 +167,7 @@ public sealed record AssistUsage(long Input = 0, long CacheRead = 0, long CacheW
 /// </summary>
 public interface IAssistBackend
 {
-    /// <summary>As the pane header says it: "Claude", "DeepSeek", "Gemini".</summary>
+    /// <summary>As the pane header says it: "Claude", "DeepSeek", "Gemini", "AltheIA".</summary>
     string ProviderName { get; }
 
     /// <summary>The model answering, which the header names beside the provider.</summary>

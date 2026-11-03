@@ -415,6 +415,7 @@ public static class AssistBackends
         {
             AssistProviderId.DeepSeek => DeepSeekBackend.Create(key, settings.ModelName, settings.Endpoint),
             AssistProviderId.Gemini => GeminiBackend.Create(key, settings.ModelName, settings.Endpoint),
+            AssistProviderId.Altheia => AltheiaBackend.Create(key, settings.ModelName, settings.Endpoint),
             _ => ClaudeBackend.Create(key, settings.ModelName, settings.Endpoint),
         };
     }

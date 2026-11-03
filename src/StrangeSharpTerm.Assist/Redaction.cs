@@ -183,7 +183,7 @@ public static partial class Redaction
     // arrives every few months -- which is why the assignment rule above is the
     // one doing most of the work.
     [GeneratedRegex(
-        """\b(?:sk-ant-[A-Za-z0-9\-_]{16,}|sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9\-]{10,}|AIza[0-9A-Za-z\-_]{30,}|glpat-[A-Za-z0-9\-_]{16,}|npm_[A-Za-z0-9]{30,}|dckr_pat_[A-Za-z0-9\-_]{16,})\b""",
+        """\b(?:altheia-sk-[A-Za-z0-9\-_]{16,}|sk-ant-[A-Za-z0-9\-_]{16,}|sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|xox[baprs]-[A-Za-z0-9\-]{10,}|AIza[0-9A-Za-z\-_]{30,}|glpat-[A-Za-z0-9\-_]{16,}|npm_[A-Za-z0-9]{30,}|dckr_pat_[A-Za-z0-9\-_]{16,})\b""",
         RegexOptions.None)]
     private static partial Regex ProviderKey();
 }

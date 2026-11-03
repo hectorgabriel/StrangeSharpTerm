@@ -1,0 +1,12 @@
+data: {"id":"1","object":"chat.completion.chunk","model":"qwen3.8-27b-fp8","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"1","object":"chat.completion.chunk","model":"qwen3.8-27b-fp8","choices":[{"index":0,"delta":{"content":"The journal is "},"finish_reason":null}]}
+
+data: {"id":"1","object":"chat.completion.chunk","model":"qwen3.8-27b-fp8","choices":[{"index":0,"delta":{"content":"37G of a 49G filesystem."},"finish_reason":null}]}
+
+data: {"id":"1","object":"chat.completion.chunk","model":"qwen3.8-27b-fp8","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"1","object":"chat.completion.chunk","model":"qwen3.8-27b-fp8","choices":[],"usage":{"prompt_tokens":120,"completion_tokens":14,"total_tokens":134}}
+
+data: [DONE]
+

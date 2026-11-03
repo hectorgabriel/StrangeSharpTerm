@@ -6,12 +6,12 @@ namespace StrangeSharpTerm.Assist.Providers;
 /// <summary>
 /// Turns a chat-completions stream into <see cref="AssistEvent"/>s.
 ///
-/// Separate from <see cref="DeepSeekBackend"/> so that a recorded stream can be
+/// Separate from <see cref="ChatCompletionsBackend"/> so that a recorded stream can be
 /// decoded without a socket. That is how the wire format is checked at all: the
 /// documentation for this API was unreachable when the Swift app was written and
 /// two of the details below came from a working client rather than from it.
 /// </summary>
-internal sealed class DeepSeekStream
+internal sealed class DeepSeekStream(string? provider = null)
 {
     /// <summary>
     /// Tool calls assemble across deltas, keyed by the index the wire gives
@@ -65,7 +65,7 @@ internal sealed class DeepSeekStream
         {
             var message = error.TryGetProperty("message", out var text) ? text.GetString() : null;
             throw new AssistException(
-                $"{AssistProvider.DeepSeek.Name} could not answer. ({message ?? "no reason given"})");
+                $"{provider ?? AssistProvider.DeepSeek.Name} could not answer. ({message ?? "no reason given"})");
         }
 
         if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
