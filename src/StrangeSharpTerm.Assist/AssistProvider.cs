@@ -11,6 +11,7 @@ public enum AssistProviderId
     Claude,
     DeepSeek,
     Gemini,
+    Altheia,
 }
 
 /// <summary>
@@ -81,12 +82,27 @@ public sealed record AssistProvider
         KeyVariable = "GEMINI_API_KEY",
     };
 
-    public static IReadOnlyList<AssistProvider> All { get; } = [Claude, DeepSeek, Gemini];
+    /// <summary>
+    /// The model Grupo Reyes runs itself. The key also lists <c>bge-m3</c>, which
+    /// makes embeddings and cannot hold a conversation, so it is not on the menu.
+    /// </summary>
+    public static AssistProvider Altheia { get; } = new()
+    {
+        Id = AssistProviderId.Altheia,
+        Name = "AltheIA",
+        DefaultModel = "qwen3.8-27b-fast",
+        KnownModels = ["qwen3.8-27b-fast", "qwen3.8-27b-deep"],
+        DataGoesTo = "Grupo Reyes servers (company network)",
+        KeyVariable = "ALTHEIA_KEY",
+    };
+
+    public static IReadOnlyList<AssistProvider> All { get; } = [Claude, DeepSeek, Gemini, Altheia];
 
     public static AssistProvider For(AssistProviderId id) => id switch
     {
         AssistProviderId.DeepSeek => DeepSeek,
         AssistProviderId.Gemini => Gemini,
+        AssistProviderId.Altheia => Altheia,
         _ => Claude,
     };
 }

@@ -124,3 +124,29 @@ through `ClientOptions.HttpClientFactory`. The `gemini.*` fixtures, unlike the
 others, were written from Google's documented wire format rather than recorded,
 because there was no account to record one with. Replacing them with a real
 recording is worth doing the first time one is to hand.
+
+## AltheIA, added later
+
+**AltheIA stays raw HTTP**, by the same rule as DeepSeek: it is OpenAI-shaped and
+has no SDK. It shares DeepSeek's client rather than copying it, so what the two
+have in common moved to `ChatCompletionsBackend`, and each keeps a small file
+saying only how it differs. Its data stays on the company's servers.
+
+Its quick start, `artifacts/quickstart-altheia.pdf`, decides three things:
+
+- **`max_tokens` is always sent**, 8192, the opposite of DeepSeek's rule, because
+  this server asks for it and documents no moving ceiling.
+- **`temperature` is never sent.** Zero makes this model repeat itself without
+  end, and the server's default is the recommended one.
+- **Requests wait for a free slot.** A key may have two in flight, and a fan-out
+  runs three hosts at once. `AltheiaBackend` queues the third inside the process,
+  because the limit is the key's and not a pane's. Another app using the same key
+  can still cause a 429, which is reported rather than retried.
+
+The certificate is the company's own and is verified as usual: the machine has to
+trust it. The plain-HTTP endpoint the quick start mentions is not used, since it
+would send the key across the network unencrypted.
+
+**Tested the same way.** `altheia.answer.sse` was written from the quick start
+rather than recorded, so it should be replaced with a real recording the first
+time one is to hand.

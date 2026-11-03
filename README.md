@@ -137,9 +137,11 @@ folded once there is a plan to read, because which of three identical servers
 gets the single-node install is the decision, and the plan alone shows only
 which one won.
 
-All three providers, Claude, DeepSeek and Gemini, are reached through one seam;
-see `docs/adr/0006` for why two are SDKs and one is not. Each reads its key from
-Settings, or from `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY` or `GEMINI_API_KEY`.
+All four providers, Claude, DeepSeek, Gemini and AltheIA, are reached through one
+seam; see `docs/adr/0006` for why two are SDKs and two are not. Each reads its key
+from Settings, or from `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`, `GEMINI_API_KEY`
+or `ALTHEIA_KEY`. AltheIA is only on the company network or VPN, and the machine
+has to trust its certificate (`artifacts/altheia.crt`).
 
 ```sh
 # one real exchange against a real host and a real provider

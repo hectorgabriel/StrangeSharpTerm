@@ -47,6 +47,19 @@ public class SettingsAndKeysTests
     }
 
     [Fact]
+    public void AltheiasDefaultsAndWhereItsDataGoes()
+    {
+        var settings = new AssistSettings { Provider = AssistProviderId.Altheia };
+
+        settings.ModelName.ShouldBe("qwen3.8-27b-fast");
+        settings.Backend.Name.ShouldBe("AltheIA");
+        settings.Backend.DataGoesTo.ShouldContain("company network");
+        // The name its quick start tells people to export.
+        settings.Backend.KeyVariable.ShouldBe("ALTHEIA_KEY");
+        settings.Backend.KeyAccount.ShouldBe("altheia");
+    }
+
+    [Fact]
     public void NothingIsSentByDefaultThatWasNotAskedFor()
     {
         var settings = new AssistSettings();
@@ -133,12 +146,15 @@ public class SettingsAndKeysTests
         store.SetSecret(AssistProvider.Claude.KeyAccount, "k");
         store.SetSecret(AssistProvider.DeepSeek.KeyAccount, "k");
         store.SetSecret(AssistProvider.Gemini.KeyAccount, "k");
+        store.SetSecret(AssistProvider.Altheia.KeyAccount, "k");
 
         AssistBackends.For(new AssistSettings(), store).ShouldNotBeNull().ProviderName.ShouldBe("Claude");
         AssistBackends.For(new AssistSettings { Provider = AssistProviderId.DeepSeek }, store)
             .ShouldNotBeNull().ProviderName.ShouldBe("DeepSeek");
         AssistBackends.For(new AssistSettings { Provider = AssistProviderId.Gemini }, store)
             .ShouldNotBeNull().ProviderName.ShouldBe("Gemini");
+        AssistBackends.For(new AssistSettings { Provider = AssistProviderId.Altheia }, store)
+            .ShouldNotBeNull().ProviderName.ShouldBe("AltheIA");
     }
 
     /// <summary>

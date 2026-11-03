@@ -100,10 +100,11 @@ public class AssistSettingsTests : IDisposable
         var sheet = Sheet();
 
         var providers = sheet.Providers.ToArray();
-        providers.Length.ShouldBe(3);
+        providers.Length.ShouldBe(4);
         providers[0].DataGoesTo.ShouldBe("Data goes to Anthropic (United States)");
         providers[1].DataGoesTo.ShouldBe("Data goes to DeepSeek (China)");
         providers[2].DataGoesTo.ShouldBe("Data goes to Google (United States)");
+        providers[3].DataGoesTo.ShouldBe("Data goes to Grupo Reyes servers (company network)");
         providers[0].IsChosen.ShouldBeTrue();
     }
 
