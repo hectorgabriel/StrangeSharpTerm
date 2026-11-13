@@ -949,11 +949,10 @@ public sealed partial class ShellViewModel : ObservableObject
         if (Detail is not { } detail)
             return;
 
-        Failure = null;
         var connection = detail.Connection;
         var pane = new Pane { Title = $"{connection.Name} files", Kind = new PaneKind.Files(), ConnectionId = connection.Id };
 
-        try
+        await Opening($"browsing {connection.Name}", async () =>
         {
             // Off the UI thread for the same reason a connection is: SFTP costs
             // its own authentication (see SshNetSession.OpenSftp), and a window
@@ -961,16 +960,9 @@ public sealed partial class ShellViewModel : ObservableObject
             var files = await Task.Run(() => _sessions.Files(connection));
             var browser = new FileBrowserViewModel(files, connection.Name, _dialogs);
 
-            Workspace.Open(pane, Panes.Count > 0 ? Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal : null);
-            _views[pane.Id] = _browser(browser);
-            Show();
+            Place(pane, _browser(browser), Beside);
             await browser.Refresh();
-        }
-        catch (Exception e)
-        {
-            System.Diagnostics.Trace.WriteLine($"browsing {connection.Name} failed: {e}");
-            Failure = SshFailure.Classify(e).Summary;
-        }
+        });
     }
 
     /// <summary>How a browser becomes something on screen. Replaced in tests.</summary>
@@ -1009,7 +1001,7 @@ public sealed partial class ShellViewModel : ObservableObject
             ConnectionId = connection.Id,
         };
 
-        try
+        await Opening($"opening a workspace on {connection.Name}", async () =>
         {
             // Off the UI thread for the same reason the browser is: SFTP costs
             // its own authentication, and a window that freezes while a host
@@ -1038,17 +1030,10 @@ public sealed partial class ShellViewModel : ObservableObject
             _workspaces[connection.Id] = model;
             _workspacePanes[connection.Id] = pane.Id;
 
-            Workspace.Open(pane, Panes.Count > 0 ? Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal : null);
-            _views[pane.Id] = _workspaceView(model);
-            Show();
+            Place(pane, _workspaceView(model), Beside);
             _conversations.GetValueOrDefault(connection.Id)?.WorkspaceChanged();
             await model.Refresh();
-        }
-        catch (Exception e)
-        {
-            System.Diagnostics.Trace.WriteLine($"opening a workspace on {connection.Name} failed: {e}");
-            Failure = SshFailure.Classify(e).Summary;
-        }
+        });
     }
 
     /// <summary>How a workspace becomes something on screen. Replaced in tests.</summary>
@@ -1090,9 +1075,7 @@ public sealed partial class ShellViewModel : ObservableObject
         };
 
         _editorPane = pane.Id;
-        Workspace.Open(pane, Panes.Count > 0 ? Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal : null);
-        _views[pane.Id] = _editorView(LocalFiles);
-        Show();
+        Place(pane, _editorView(LocalFiles), Beside);
     }
 
     /// <summary>
@@ -1202,7 +1185,6 @@ public sealed partial class ShellViewModel : ObservableObject
         if (Detail is not { } detail)
             return;
 
-        Failure = null;
         var connection = detail.Connection;
         var forwards = Inventory.Tree.Resolve(connection.Id).Settings.PortForwards;
         var pane = new Pane
@@ -1212,22 +1194,13 @@ public sealed partial class ShellViewModel : ObservableObject
             ConnectionId = connection.Id,
         };
 
-        try
+        await Opening($"opening tunnels for {connection.Name}", async () =>
         {
             // Connecting is what takes the time; the forwards themselves are
             // already known, and none is started until someone asks.
             var tunnels = await Task.Run(() => _sessions.Tunnels(connection));
-            var model = new TunnelsViewModel(tunnels, connection.Name, forwards);
-
-            Workspace.Open(pane, Panes.Count > 0 ? Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal : null);
-            _views[pane.Id] = _tunnelsView(model);
-            Show();
-        }
-        catch (Exception e)
-        {
-            System.Diagnostics.Trace.WriteLine($"opening tunnels for {connection.Name} failed: {e}");
-            Failure = SshFailure.Classify(e).Summary;
-        }
+            Place(pane, _tunnelsView(new TunnelsViewModel(tunnels, connection.Name, forwards)), Beside);
+        });
     }
 
     /// <summary>How a set of tunnels becomes something on screen. Replaced in tests.</summary>
@@ -1562,10 +1535,9 @@ public sealed partial class ShellViewModel : ObservableObject
     /// <summary>Opens a shell on a host, in its own tab.</summary>
     public async Task OpenTerminal(Connection connection, SplitAxis? splitting = null)
     {
-        Failure = null;
         var pane = new Pane { Title = connection.Name, Kind = new PaneKind.Terminal(), ConnectionId = connection.Id };
 
-        try
+        await Opening($"opening {connection.Name}", async () =>
         {
             // Connecting blocks on the network, so it happens off the UI thread;
             // a window that freezes while a host times out is the thing this
@@ -1580,18 +1552,46 @@ public sealed partial class ShellViewModel : ObservableObject
             session.TitleChanged += (_, title) => Dispatcher.UIThread.Post(() => Workspace.UpdateTitle(session.Id, title));
             session.Ended += (_, _) => Dispatcher.UIThread.Post(() => Workspace.PaneExited(session.Id, null));
 
-            Workspace.Open(pane with { Id = session.Id }, splitting);
-            _views[session.Id] = view;
-            Show();
+            Place(pane with { Id = session.Id }, view, splitting);
+        });
+    }
+
+    /// <summary>
+    /// Runs whatever opens a pane on a host, and says so if it cannot.
+    ///
+    /// One implementation, because every pane fails the same way -- the host
+    /// did not answer, or would not let us in -- and has the same two things
+    /// to do about it. The summary goes where the user was looking. The whole
+    /// exception goes to the trace, and from there to the log, because a
+    /// one-line summary is not enough to fix anything by.
+    /// </summary>
+    /// <param name="what">What was being done, as the log should say it: "opening web1".</param>
+    private async Task Opening(string what, Func<Task> open)
+    {
+        Failure = null;
+        try
+        {
+            await open();
         }
         catch (Exception e)
         {
-            // A failed connection says why, where the user was looking -- and the
-            // whole exception goes to the trace, because a one-line summary is
-            // not enough to fix anything by.
-            System.Diagnostics.Trace.WriteLine($"opening {connection.Name} failed: {e}");
+            System.Diagnostics.Trace.WriteLine($"{what} failed: {e}");
             Failure = SshFailure.Classify(e).Summary;
         }
+    }
+
+    /// <summary>
+    /// Where a pane that is not a shell goes: beside whatever is open, along
+    /// the way the tab is already split, or in a tab of its own when nothing is.
+    /// </summary>
+    private SplitAxis? Beside => Panes.Count > 0 ? Workspace.ActiveTab?.Axis ?? SplitAxis.Horizontal : null;
+
+    /// <summary>Puts a pane in the window with the control that draws it.</summary>
+    private void Place(Pane pane, Control view, SplitAxis? splitting)
+    {
+        Workspace.Open(pane, splitting);
+        _views[pane.Id] = view;
+        Show();
     }
 
     private readonly Dictionary<NodeId, Control> _views = [];
