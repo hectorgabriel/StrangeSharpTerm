@@ -245,6 +245,18 @@
                         <TextBlock Text="Snippets…" />
                     </Button>
                 </StackPanel>
+
+                <StackPanel Spacing="6" IsVisible="{Binding HasLog}">
+                    <Border Height="1" Background="{DynamicResource BorderBrush}" Margin="0,14" />
+
+                    <TextBlock Classes="section" Text="DIAGNOSTICS" />
+                    <TextBlock Classes="muted" FontSize="11" TextWrapping="Wrap"
+                               Text="{x:Static vm:SettingsViewModel.LogNote}" />
+                    <Button Padding="12,6" Margin="0,4,0,0" HorizontalAlignment="Left"
+                            Command="{Binding RevealLogCommand}">
+                        <TextBlock Text="Show log file…" />
+                    </Button>
+                </StackPanel>
             </StackPanel>
         </ScrollViewer>
 

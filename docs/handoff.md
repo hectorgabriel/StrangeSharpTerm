@@ -210,7 +210,10 @@ says. Three things it took to get right:
   so far — a terminal attached before its control was loaded, a focus that went
   to a templated wrapper rather than the view inside it, field values drawn with
   a null brush and so invisible. `STRANGESHARPTERM_TRACE=1` turns on Avalonia's
-  log, which a windowed app otherwise sends nowhere.
+  log on the console, harmless lines and all. Without it the same trace goes to
+  `logs/strangesharpterm.log` beside the inventory (Settings → Show log file…),
+  minus the bindings that are only waiting for a value, with secrets taken out,
+  and with an unhandled exception written down before the app stops.
 - **Count the connections.** `sshd.log` in the directory `./build/local-sshd.sh`
   prints says how many times a host was authenticated to: one `Accepted
   publickey` line per connection, with a `Starting session` line per channel on
