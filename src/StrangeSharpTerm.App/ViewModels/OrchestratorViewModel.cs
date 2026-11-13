@@ -867,6 +867,11 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
     [RelayCommand(CanExecute = nameof(CanRun))]
     public async Task Run()
     {
+        // Before anything decides what it was: a command, a goal, a question
+        // about the plan and an instruction are all things someone typed and
+        // may want back.
+        _typed.Remember(Instruction.Trim());
+
         // A command is not an instruction, and must not become a run across
         // eight hosts because it started with a slash.
         if (Handle(Instruction.Trim()))
@@ -1255,6 +1260,22 @@ public sealed partial class OrchestratorViewModel : ObservableObject, ICommandGa
         Refusal = null;
         Progress = "";
         PlanChanged();
+    }
+
+    /// <summary>What has been typed here and sent, for the up arrow to walk back through.</summary>
+    private readonly TypedHistory _typed = new();
+
+    /// <summary>
+    /// What was typed before this, or after it, as the assistant pane does it.
+    /// False at either end, so the view can leave the caret alone.
+    /// </summary>
+    public bool Recall(int direction)
+    {
+        if (_typed.Walk(direction, Instruction) is not { } recalled)
+            return false;
+
+        Instruction = recalled;
+        return true;
     }
 
     [RelayCommand]

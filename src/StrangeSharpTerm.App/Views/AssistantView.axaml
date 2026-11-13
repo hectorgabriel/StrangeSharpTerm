@@ -256,7 +256,8 @@
             <TextBox Grid.Column="0" Watermark="Ask about this host…"
                      AcceptsReturn="True" TextWrapping="Wrap"
                      MinHeight="32" MaxHeight="160" VerticalContentAlignment="Center"
-                     Text="{Binding Question}" KeyDown="Typed" />
+                     Text="{Binding Question}" Classes="chat"
+                     ToolTip.Tip="{x:Static views:ChatKeys.Hint}" />
             <Button Grid.Column="1" Margin="8,0,0,0" Padding="12,6"
                     Theme="{StaticResource PrimaryButton}"
                     IsVisible="{Binding !IsAsking}" Command="{Binding AskCommand}">

@@ -565,10 +565,9 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
     [RelayCommand(CanExecute = nameof(CanRetry))]
     public async Task Retry()
     {
-        if (IsAsking || _asked.Count == 0)
+        if (IsAsking || _asked.Last is not { } question)
             return;
 
-        var question = _asked[^1];
         _agent.Rewind();
         await Put(question);
     }
@@ -618,44 +617,24 @@ public sealed partial class AssistantViewModel : ObservableObject, ICommandGate,
         }
     }
 
-    /// <summary>
-    /// What has been asked here, oldest first, for the up arrow to walk back
-    /// through.
-    ///
-    /// The pane's own, not the agent's: the agent's transcript is what was
-    /// asked and answered, and this is what was typed -- which includes the
-    /// question you are part way through rewriting.
-    /// </summary>
-    private readonly List<string> _asked = [];
+    /// <summary>What has been asked here, for the up arrow to walk back through.</summary>
+    private readonly TypedHistory _asked = new();
 
-    private int _walked;
-
-    private void Remember(string question)
-    {
-        // Not twice in a row: asking the same thing again is one entry to walk
-        // back to, not two.
-        if (_asked.Count == 0 || _asked[^1] != question)
-            _asked.Add(question);
-        _walked = 0;
-    }
+    private void Remember(string question) => _asked.Remember(question);
 
     /// <summary>
     /// The question before this one, or the one after it.
     ///
-    /// Returns false at either end so the view can leave the caret alone rather
-    /// than blanking the field at the bottom of the list.
+    /// Returns false at either end so the view can leave the caret alone.
+    /// Walking forward past the newest puts back whatever was being written
+    /// when the walk began.
     /// </summary>
     public bool Recall(int direction)
     {
-        if (_asked.Count == 0)
+        if (_asked.Walk(direction, Question) is not { } recalled)
             return false;
 
-        var walked = Math.Clamp(_walked + direction, 0, _asked.Count);
-        if (walked == _walked)
-            return false;
-
-        _walked = walked;
-        Question = walked == 0 ? "" : _asked[^walked];
+        Question = recalled;
         return true;
     }
 
