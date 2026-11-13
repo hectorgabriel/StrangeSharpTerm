@@ -33,6 +33,9 @@ class Program
             return;
         }
 
+        // After --version, which must not leave a file behind on a build machine.
+        LogFile.Install();
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

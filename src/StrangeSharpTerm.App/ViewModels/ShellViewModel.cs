@@ -597,7 +597,8 @@ public sealed partial class ShellViewModel : ObservableObject
                 ? new McpHub(McpPreferences.Load(where), saved => McpPreferences.Save(where, saved), _toolTokens.Value)
                 : null,
             _dialogs,
-            _toolTokens.Value);
+            _toolTokens.Value,
+            () => LogFile.Reveal(LogFile.DefaultPath()));
 
         await _dialogs.Manage(settings);
     }

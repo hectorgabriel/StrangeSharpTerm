@@ -123,8 +123,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         Action<AssistSettings>? save = null,
         McpHub? tools = null,
         IDialogService? dialogs = null,
-        ISecretStore? toolKeys = null)
+        ISecretStore? toolKeys = null,
+        Action? revealLog = null)
     {
+        _revealLog = revealLog;
         _theme = theme;
         _credentials = credentials;
         _snippets = snippets;
@@ -459,6 +461,19 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [RelayCommand]
     public async Task OpenSnippets() => await _snippets();
+
+    private readonly Action? _revealLog;
+
+    /// <summary>False where there is no log to show: a fixture, or a test.</summary>
+    public bool HasLog => _revealLog is not null;
+
+    public static string LogNote =>
+        "What went wrong and when, kept on this machine and never sent anywhere. Secrets are taken out "
+        + "before a line is written, as they are before anything goes to a provider.";
+
+    /// <summary>Shows the log file where it is, rather than opening it: it is usually wanted as an attachment.</summary>
+    [RelayCommand]
+    public void RevealLog() => _revealLog?.Invoke();
 
     private IReadOnlyList<ThemeChoice> Choices() =>
         [.. AppPalette.BuiltIn.Select(palette => new ThemeChoice(palette, palette.Id == _theme.Palette.Id))];
