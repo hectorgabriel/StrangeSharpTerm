@@ -546,11 +546,13 @@
                  reaches every host at once was the one you had to click. -->
             <TextBox Grid.Row="1" Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap"
                      MinHeight="32" MaxHeight="160" VerticalContentAlignment="Center"
-                     Text="{Binding Instruction}" KeyDown="Typed"
+                     Text="{Binding Instruction}" Classes="chat"
+                     ToolTip.Tip="{x:Static views:ChatKeys.Hint}"
                      Watermark="Ask every selected host…" IsVisible="{Binding IsAsking}" />
             <TextBox Grid.Row="1" Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap"
                      MinHeight="32" MaxHeight="160" VerticalContentAlignment="Center"
-                     Text="{Binding Instruction}" KeyDown="Typed"
+                     Text="{Binding Instruction}" Classes="chat"
+                     ToolTip.Tip="{x:Static views:ChatKeys.Hint}"
                      Watermark="{Binding PlanWatermark}" IsVisible="{Binding IsPlanning}" />
 
             <!-- Does what the field says: plans, revises or asks. Never runs
